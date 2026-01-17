@@ -5,7 +5,7 @@
 all: build
 
 build:
-	go build -o dats ./cmd/dats
+	go build -o dats ./src/dats
 
 test: build
 	cd examples && $(MAKE) test

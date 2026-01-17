@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mhaynie/bats-declarative/internal/generator"
+	"github.com/mhaynie/bats-declarative/src/internal/generator"
 )
 
 const usage = `dats - Declarative Automated Testing System
