@@ -1,0 +1,16 @@
+# Binary
+/dats
+
+# Generated files
+*.gen.bats
+*.gen.bats.d
+fixtures/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store

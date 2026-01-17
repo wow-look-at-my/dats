@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/mhaynie/bats-declarative/schema.json",
+  "title": "DATS Test File",
+  "description": "Schema for Declarative Automated Testing System (.dats) files",
+  "type": "object",
+  "required": ["tests"],
+  "properties": {
+    "tests": {
+      "type": "array",
+      "description": "Array of test cases",
+      "items": {
+        "$ref": "#/definitions/test"
+      }
+    }
+  },
+  "definitions": {
+    "test": {
+      "type": "object",
+      "required": ["name", "cmd"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the test case"
+        },
+        "cmd": {
+          "type": "string",
+          "description": "Command to execute. Use {inputs.X} and {outputs.X} placeholders for file paths."
+        },
+        "exit": {
+          "description": "Expected exit code (0-255) or EXIT_* variable name",
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "string",
+              "pattern": "^EXIT_[A-Z_]+$"
+            }
+          ],
+          "default": 0
+        },
+        "stdin": {
+          "type": "string",
+          "description": "Content to pipe to command's stdin"
+        },
+        "inputs": {
+          "type": "object",
+          "description": "Input files to create before running the command",
+          "additionalProperties": {
+            "type": "string",
+            "description": "File content"
+          }
+        },
+        "outputs": {
+          "$ref": "#/definitions/outputBlock"
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputBlock": {
+      "type": "object",
+      "description": "Output validation block",
+      "properties": {
+        "stdout": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Patterns to match in stdout"
+        },
+        "stderr": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Patterns to match in stderr"
+        },
+        "!stdout": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Patterns that must NOT appear in stdout"
+        },
+        "!stderr": {
+          "$ref": "#/definitions/outputCheck",
+          "description": "Patterns that must NOT appear in stderr"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/definitions/fileCheck",
+        "description": "Output file validation"
+      }
+    },
+    "outputCheck": {
+      "description": "Output validation - either a list of patterns or line-specific checks",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of patterns to match anywhere in output"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Map of line numbers (0-indexed) to regex patterns"
+        }
+      ]
+    },
+    "fileCheck": {
+      "type": "object",
+      "description": "Validation for an output file",
+      "properties": {
+        "exists": {
+          "type": "boolean",
+          "description": "Whether the file should exist"
+        },
+        "contains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Patterns that must appear in the file"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

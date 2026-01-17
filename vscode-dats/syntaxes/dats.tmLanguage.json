@@ -1,0 +1,114 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "DATS",
+  "scopeName": "source.dats",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#tests" },
+    { "include": "#keys" },
+    { "include": "#values" },
+    { "include": "#placeholders" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.dats",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "tests": {
+      "patterns": [
+        {
+          "match": "^(tests):\\s*$",
+          "captures": {
+            "1": { "name": "keyword.control.dats" }
+          }
+        }
+      ]
+    },
+    "keys": {
+      "patterns": [
+        {
+          "match": "^\\s*(name|cmd|exit|stdin|inputs|outputs):",
+          "captures": {
+            "1": { "name": "keyword.other.dats" }
+          }
+        },
+        {
+          "match": "^\\s*(stdout|stderr|!stdout|!stderr):",
+          "captures": {
+            "1": { "name": "support.type.dats" }
+          }
+        },
+        {
+          "match": "^\\s*(exists|contains):",
+          "captures": {
+            "1": { "name": "support.function.dats" }
+          }
+        }
+      ]
+    },
+    "values": {
+      "patterns": [
+        {
+          "name": "constant.numeric.dats",
+          "match": "\\b[0-9]+\\b"
+        },
+        {
+          "name": "constant.language.exit-code.dats",
+          "match": "\\bEXIT_[A-Z_]+\\b"
+        },
+        {
+          "name": "constant.language.boolean.dats",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "string.quoted.double.dats",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "include": "#placeholders" },
+            { "include": "#escape-characters" }
+          ]
+        },
+        {
+          "name": "string.quoted.single.dats",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "include": "#placeholders" }
+          ]
+        },
+        {
+          "name": "string.unquoted.dats",
+          "match": "(?<=:\\s).+$",
+          "patterns": [
+            { "include": "#placeholders" }
+          ]
+        }
+      ]
+    },
+    "placeholders": {
+      "patterns": [
+        {
+          "name": "variable.other.placeholder.input.dats",
+          "match": "\\{inputs\\.[^}]+\\}"
+        },
+        {
+          "name": "variable.other.placeholder.output.dats",
+          "match": "\\{outputs\\.[^}]+\\}"
+        }
+      ]
+    },
+    "escape-characters": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.dats",
+          "match": "\\\\."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "dats",
+  "displayName": "DATS - Declarative Automated Testing System",
+  "description": "Language support for .dats test definition files",
+  "version": "0.1.0",
+  "publisher": "mhaynie",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Testing"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "dats",
+        "aliases": ["DATS", "dats"],
+        "extensions": [".dats"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "dats",
+        "scopeName": "source.dats",
+        "path": "./syntaxes/dats.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "dats",
+        "path": "./snippets/dats.json"
+      }
+    ],
+    "yamlValidation": [
+      {
+        "fileMatch": "*.dats",
+        "url": "./schema.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "*.dats",
+        "url": "./schema.json"
+      }
+    ]
+  },
+  "activationEvents": [
+    "onLanguage:dats"
+  ],
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "typescript": "^5.0.0"
+  }
+}
