@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { findTestRange, findInputs, findOutputs, matchInputsPlaceholder, matchOutputsPlaceholder } from './parser';
 
 export function activate(context: vscode.ExtensionContext) {
     // Register completion provider for {inputs.X} and {outputs.X}
@@ -24,19 +25,16 @@ class DatsCompletionProvider implements vscode.CompletionItemProvider {
         const textBeforeCursor = lineText.substring(0, position.character);
 
         // Check if we're typing {inputs. or {outputs.
-        const inputsMatch = textBeforeCursor.match(/\{inputs\.([a-zA-Z0-9_.-]*)$/);
-        const outputsMatch = textBeforeCursor.match(/\{outputs\.([a-zA-Z0-9_.-]*)$/);
-
-        if (inputsMatch) {
-            const prefix = inputsMatch[1];
+        const inputsPrefix = matchInputsPlaceholder(textBeforeCursor);
+        if (inputsPrefix !== undefined) {
             const inputs = this.findInputsInCurrentTest(document, position);
-            return this.createCompletions(inputs, prefix, 'input');
+            return this.createCompletions(inputs, inputsPrefix, 'input');
         }
 
-        if (outputsMatch) {
-            const prefix = outputsMatch[1];
+        const outputsPrefix = matchOutputsPlaceholder(textBeforeCursor);
+        if (outputsPrefix !== undefined) {
             const outputs = this.findOutputsInCurrentTest(document, position);
-            return this.createCompletions(outputs, prefix, 'output');
+            return this.createCompletions(outputs, outputsPrefix, 'output');
         }
 
         // Check if we just typed { - suggest {inputs.X} and {outputs.X} with known files
@@ -109,106 +107,21 @@ class DatsCompletionProvider implements vscode.CompletionItemProvider {
             });
     }
 
-    private createSnippetCompletion(
-        label: string,
-        snippet: string,
-        detail: string
-    ): vscode.CompletionItem {
-        const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Snippet);
-        item.insertText = new vscode.SnippetString(snippet);
-        item.detail = detail;
-        return item;
-    }
-
     private findInputsInCurrentTest(document: vscode.TextDocument, position: vscode.Position): string[] {
-        const testRange = this.findCurrentTestRange(document, position);
-        if (!testRange) return [];
+        const lines = document.getText().split('\n');
+        const range = findTestRange(lines, position.line);
+        if (!range) return [];
 
-        return this.extractKeys(document, testRange, 'inputs');
+        const testLines = lines.slice(range[0], range[1]);
+        return findInputs(testLines);
     }
 
     private findOutputsInCurrentTest(document: vscode.TextDocument, position: vscode.Position): string[] {
-        const testRange = this.findCurrentTestRange(document, position);
-        if (!testRange) return [];
+        const lines = document.getText().split('\n');
+        const range = findTestRange(lines, position.line);
+        if (!range) return [];
 
-        // For outputs, we want keys under the outputs block that aren't stdout/stderr/!stdout/!stderr
-        const allOutputKeys = this.extractKeys(document, testRange, 'outputs');
-        const reservedKeys = ['stdout', 'stderr', '!stdout', '!stderr'];
-        return allOutputKeys.filter(key => !reservedKeys.includes(key));
-    }
-
-    private findCurrentTestRange(
-        document: vscode.TextDocument,
-        position: vscode.Position
-    ): vscode.Range | undefined {
-        const text = document.getText();
-        const lines = text.split('\n');
-
-        // Find test boundaries by looking for "- name:" patterns
-        let testStart = -1;
-        let testEnd = lines.length;
-
-        // Search backwards for test start
-        for (let i = position.line; i >= 0; i--) {
-            if (lines[i].match(/^\s*-\s*name:/)) {
-                testStart = i;
-                break;
-            }
-        }
-
-        if (testStart === -1) return undefined;
-
-        // Search forwards for next test or end
-        for (let i = position.line + 1; i < lines.length; i++) {
-            if (lines[i].match(/^\s*-\s*name:/)) {
-                testEnd = i;
-                break;
-            }
-        }
-
-        return new vscode.Range(testStart, 0, testEnd, 0);
-    }
-
-    private extractKeys(
-        document: vscode.TextDocument,
-        range: vscode.Range,
-        blockName: string
-    ): string[] {
-        const text = document.getText(range);
-        const lines = text.split('\n');
-        const keys: string[] = [];
-
-        // Find the block and extract keys at the next indentation level
-        let inBlock = false;
-        let blockIndent = -1;
-
-        for (const line of lines) {
-            // Check if this line starts the block we're looking for
-            const blockMatch = line.match(new RegExp(`^(\\s*)${blockName}:\\s*$`));
-            if (blockMatch) {
-                inBlock = true;
-                blockIndent = blockMatch[1].length;
-                continue;
-            }
-
-            if (inBlock) {
-                // Check if we've exited the block (same or less indentation, non-empty)
-                const currentIndent = line.match(/^(\s*)/)?.[1].length ?? 0;
-                const isNonEmpty = line.trim().length > 0;
-
-                if (isNonEmpty && currentIndent <= blockIndent) {
-                    inBlock = false;
-                    continue;
-                }
-
-                // Extract key at block indent + 2 (standard YAML indent)
-                const keyMatch = line.match(/^\s+([a-zA-Z0-9_.-]+):/);
-                if (keyMatch && currentIndent > blockIndent) {
-                    keys.push(keyMatch[1]);
-                }
-            }
-        }
-
-        return keys;
+        const testLines = lines.slice(range[0], range[1]);
+        return findOutputs(testLines);
     }
 }

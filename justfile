@@ -13,9 +13,10 @@ build:
 examples:
     make examples/example.gen.bats
 
-# Run tests
+# Run all tests with coverage
 test: examples
     go test -cover ./src/dats/...
+    cd src/vscode-dats && npm test
     bats examples/*.gen.bats
 
 # Clean build artifacts (ignored files only)
