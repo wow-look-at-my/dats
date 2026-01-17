@@ -1,25 +1,21 @@
 # DATS - Declarative Automated Testing System
 
-# Default recipe
-default: build
+mod vscode 'src/vscode-dats'
 
-# Build the dats binary
-build:
-    go fmt ./src/dats/...
-    go vet ./src/dats/...
-    go build -o dats ./src/dats
+_help:
+    @just --list --list-submodules
 
-# Generate example tests (uses make for dependencies)
-examples:
-    make examples/example.gen.bats
+# Build everything (Go binary + VS Code extension)
+build: _build-go (vscode::build)
 
 # Run all tests with coverage
-test: examples
+test: _build-go
     go test -cover ./src/dats/...
     cd src/vscode-dats && npm test
+    ./dats examples/example.dats examples/
     bats examples/*.gen.bats
 
-# Clean build artifacts (ignored files only)
+[private]
 clean:
     git clean -Xdf
 
@@ -28,14 +24,7 @@ install: build
     mkdir -p ~/.local/bin
     ln -sf "$(pwd)/dats" ~/.local/bin/dats
 
-# Build VS Code extension
-vscode-build:
-    cd src/vscode-dats && npm run build
-
-# Install VS Code extension dependencies
-vscode-install:
-    cd src/vscode-dats && npm install
-
-# Update VS Code extension dependencies
-vscode-update:
-    cd src/vscode-dats && npx npm-check-updates -u && npm install
+_build-go:
+    go fmt ./src/dats/...
+    go vet ./src/dats/...
+    go build -o dats ./src/dats

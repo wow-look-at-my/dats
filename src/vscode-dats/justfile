@@ -1,0 +1,8 @@
+# DATS VS Code Extension
+
+# Build extension and package as .vsix
+build:
+    npx npm-check-updates -u
+    npm install
+    npm run build
+    npm run package

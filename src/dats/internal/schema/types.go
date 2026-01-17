@@ -116,7 +116,7 @@ func (o *OutputBlock) UnmarshalYAML(node *yaml.Node) error {
 // - A list of patterns to match anywhere in output
 // - A map of line numbers to patterns (for line-specific assertions)
 type OutputCheck struct {
-	Patterns  []string       // patterns to match anywhere
+	Patterns   []string       // patterns to match anywhere
 	LineChecks map[int]string // line-specific patterns (0-indexed)
 }
 

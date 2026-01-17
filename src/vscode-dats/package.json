@@ -52,13 +52,15 @@
     "build:web": "esbuild src/extension.ts --bundle --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser",
     "watch": "npm run build:node -- --watch",
     "test": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package": "vsce package --out dats.vsix"
   },
   "devDependencies": {
     "@types/vscode": "^1.108.1",
-    "@vitest/coverage-v8": "^3.1.1",
+    "@vitest/coverage-v8": "^4.0.17",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
     "typescript": "^5.9.3",
-    "vitest": "^3.1.1"
+    "vitest": "^4.0.17"
   }
 }
