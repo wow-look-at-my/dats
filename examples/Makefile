@@ -5,16 +5,18 @@ RUNTIME_DIR := ../runtime
 DATS_FILES := $(wildcard *.dats)
 BATS_FILES := $(DATS_FILES:.dats=.gen.bats)
 
-.PHONY: all test clean
-
+# Default target
 all: $(BATS_FILES)
 
+# Generate BATS from DATS
 %.gen.bats: %.dats $(DATS)
 	$(DATS) $< . --runtime-dir=$(RUNTIME_DIR)
 
+# Run tests
 test: $(BATS_FILES)
 	bats *.gen.bats
 
+# Clean generated files
 clean:
 	rm -rf *.gen.bats *.gen.bats.d fixtures/
 
