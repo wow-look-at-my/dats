@@ -11,6 +11,11 @@
     "Programming Languages",
     "Testing"
   ],
+  "main": "./dist/extension.js",
+  "browser": "./dist/web/extension.js",
+  "activationEvents": [
+    "onLanguage:dats"
+  ],
   "contributes": {
     "languages": [
       {
@@ -38,15 +43,19 @@
         "fileMatch": "*.dats",
         "url": "./schema.json"
       }
-    ],
-    "jsonValidation": [
-      {
-        "fileMatch": "*.dats",
-        "url": "./schema.json"
-      }
     ]
   },
-  "activationEvents": [
-    "onLanguage:dats"
-  ]
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:node && npm run build:web",
+    "build:node": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "build:web": "esbuild src/extension.ts --bundle --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser",
+    "watch": "npm run build:node -- --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.0.0"
+  }
 }
