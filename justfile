@@ -15,11 +15,9 @@ test: build
 examples: build
     ./dats examples/example.dats examples/ --runtime-dir=runtime
 
-# Clean build artifacts
+# Clean build artifacts (ignored files only)
 clean:
-    rm -f dats
-    rm -f examples/*.gen.bats examples/*.gen.bats.d
-    rm -rf examples/fixtures/
+    git clean -Xdf
 
 # Install to /usr/local/bin
 install: build

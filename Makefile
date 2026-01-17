@@ -25,12 +25,6 @@ examples: $(BATS_FILES)
 test: $(BATS_FILES)
 	bats examples/*.gen.bats
 
-# Clean build artifacts
-clean:
-	rm -f dats
-	rm -f examples/*.gen.bats examples/*.gen.bats.d
-	rm -rf examples/fixtures/
-
 # Install to /usr/local/bin
 install: dats
 	cp dats /usr/local/bin/

@@ -16,9 +16,5 @@ all: $(BATS_FILES)
 test: $(BATS_FILES)
 	bats *.gen.bats
 
-# Clean generated files
-clean:
-	rm -rf *.gen.bats *.gen.bats.d fixtures/
-
 # Include generated dependency files
 -include $(BATS_FILES:.bats=.bats.d)
