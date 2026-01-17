@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mhaynie/bats-declarative/src/internal/schema"
+	"github.com/mhaynie/bats-declarative/src/dats/internal/schema"
 	"gopkg.in/yaml.v3"
 )
 
