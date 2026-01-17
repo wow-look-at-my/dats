@@ -15,6 +15,7 @@ examples:
 
 # Run tests
 test: examples
+    go test -cover ./src/dats/...
     bats examples/*.gen.bats
 
 # Clean build artifacts (ignored files only)
