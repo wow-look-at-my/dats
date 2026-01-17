@@ -5,6 +5,8 @@ default: build
 
 # Build the dats binary
 build:
+    go fmt ./src/dats/...
+    go vet ./src/dats/...
     go build -o dats ./src/dats
 
 # Generate example tests (uses make for dependencies)
@@ -22,14 +24,6 @@ clean:
 # Install to /usr/local/bin
 install: build
     cp dats /usr/local/bin/
-
-# Format Go code
-fmt:
-    go fmt ./...
-
-# Vet Go code
-vet:
-    go vet ./...
 
 # Build VS Code extension
 vscode-build:
