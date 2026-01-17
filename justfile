@@ -21,9 +21,10 @@ test: examples
 clean:
     git clean -Xdf
 
-# Install to /usr/local/bin
+# Symlink to ~/.local/bin
 install: build
-    cp dats /usr/local/bin/
+    mkdir -p ~/.local/bin
+    ln -sf "$(pwd)/dats" ~/.local/bin/dats
 
 # Build VS Code extension
 vscode-build:
