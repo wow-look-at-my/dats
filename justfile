@@ -7,13 +7,13 @@ default: build
 build:
     go build -o dats ./src/dats
 
-# Run tests
-test: build
-    cd examples && bats *.gen.bats
+# Generate example tests (uses make for dependencies)
+examples:
+    make examples/example.gen.bats
 
-# Generate example tests
-examples: build
-    ./dats examples/example.dats examples/ --runtime-dir=runtime
+# Run tests
+test: examples
+    bats examples/*.gen.bats
 
 # Clean build artifacts (ignored files only)
 clean:

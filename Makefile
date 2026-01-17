@@ -1,4 +1,5 @@
 # DATS - Declarative Automated Testing System
+# File-producing targets only. Use `just` for commands.
 
 # Go source files
 GO_SRC := $(shell find src/dats -name '*.go')
@@ -7,9 +8,6 @@ GO_SRC := $(shell find src/dats -name '*.go')
 DATS_FILES := $(wildcard examples/*.dats)
 BATS_FILES := $(DATS_FILES:.dats=.gen.bats)
 
-# Default target
-all: dats
-
 # Build the dats binary
 dats: $(GO_SRC) go.mod go.sum
 	go build -o $@ ./src/dats
@@ -17,25 +15,6 @@ dats: $(GO_SRC) go.mod go.sum
 # Generate BATS files from DATS
 examples/%.gen.bats: examples/%.dats dats
 	./dats $< examples/ --runtime-dir=runtime
-
-# Generate all examples
-examples: $(BATS_FILES)
-
-# Run tests
-test: $(BATS_FILES)
-	bats examples/*.gen.bats
-
-# Install to /usr/local/bin
-install: dats
-	cp dats /usr/local/bin/
-
-# Format Go code
-fmt: $(GO_SRC)
-	go fmt ./...
-
-# Vet Go code
-vet: $(GO_SRC)
-	go vet ./...
 
 # Include generated dependency files
 -include $(BATS_FILES:.bats=.bats.d)
