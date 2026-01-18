@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mhaynie/bats-declarative/src/dats/internal/schema"
+	"github.com/mhaynie/bats-declarative/internal/schema"
 )
 
 func TestBashEscape(t *testing.T) {
