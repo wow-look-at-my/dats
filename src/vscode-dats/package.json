@@ -1,5 +1,6 @@
 {
   "name": "dats",
+  "packageManager": "pnpm@10.26.2",
   "displayName": "DATS - Declarative Automated Testing System",
   "description": "Language support for .dats test definition files",
   "version": "0.1.0",

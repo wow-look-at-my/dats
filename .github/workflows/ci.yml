@@ -13,6 +13,7 @@ jobs:
   build-go:
     uses: ./.github/workflows/build-go.yml
     with:
+      working-directory: src/dats
       output-name: dats
 
   build-vscode:

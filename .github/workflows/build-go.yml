@@ -3,6 +3,10 @@ name: Build Go Binaries
 on:
   workflow_call:
     inputs:
+      working-directory:
+        description: Directory containing the Go module
+        type: string
+        required: true
       output-name:
         description: Output binary name (without extension)
         type: string
@@ -11,12 +15,15 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory }}/go.mod
 
       - name: Check formatting
         run: |
@@ -44,6 +51,9 @@ jobs:
           - goos: windows
             goarch: amd64
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
     env:
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
@@ -52,7 +62,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ inputs.working-directory }}/go.mod
 
       - uses: extractions/setup-just@v2
 
@@ -65,4 +75,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}*
+          path: ${{ inputs.working-directory }}/${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}*
