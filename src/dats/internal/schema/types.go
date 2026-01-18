@@ -2,10 +2,13 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
+
+var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
@@ -14,7 +17,7 @@ type TestFile struct {
 
 // Test represents a single test case
 type Test struct {
-	Name    string            `yaml:"name"`
+	Desc    string            `yaml:"desc,omitempty"`
 	Exit    ExitCode          `yaml:"exit"`
 	Cmd     string            `yaml:"cmd"`
 	Stdin   string            `yaml:"stdin,omitempty"`
@@ -35,9 +38,12 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 		e.Value = intVal
 		return nil
 	}
-	// Try string
+	// Try string - must match EXIT_* pattern
 	var strVal string
 	if err := node.Decode(&strVal); err == nil {
+		if !exitVarPattern.MatchString(strVal) {
+			return fmt.Errorf("exit %q must be an integer (0-255) or EXIT_* variable name", strVal)
+		}
 		e.Variable = strVal
 		return nil
 	}

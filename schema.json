@@ -17,11 +17,11 @@
   "definitions": {
     "test": {
       "type": "object",
-      "required": ["name", "cmd"],
+      "required": ["cmd"],
       "properties": {
-        "name": {
+        "desc": {
           "type": "string",
-          "description": "Name of the test case"
+          "description": "Optional description of the test case"
         },
         "cmd": {
           "type": "string",

@@ -1,15 +1,46 @@
 import * as vscode from 'vscode';
 import { findTestRange, findInputs, findOutputs, matchInputsPlaceholder, matchOutputsPlaceholder } from './parser';
+import { validateDatsDocument } from './validator';
+import { DatsHoverProvider } from './hover';
+import { DatsKeyCompletionProvider } from './keyCompletion';
 
 export function activate(context: vscode.ExtensionContext) {
+    // Schema validation diagnostics
+    const diagnosticCollection = vscode.languages.createDiagnosticCollection('dats');
+    context.subscriptions.push(diagnosticCollection);
+
+    const validateDocument = (document: vscode.TextDocument) => {
+        if (document.languageId !== 'dats') return;
+        const diagnostics = validateDatsDocument(document);
+        diagnosticCollection.set(document.uri, diagnostics);
+    };
+
+    // Validate all open dats documents on activation
+    vscode.workspace.textDocuments.forEach(validateDocument);
+
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument(validateDocument),
+        vscode.workspace.onDidChangeTextDocument(e => validateDocument(e.document)),
+        vscode.workspace.onDidCloseTextDocument(doc => diagnosticCollection.delete(doc.uri))
+    );
+
     // Register completion provider for {inputs.X} and {outputs.X}
-    const completionProvider = vscode.languages.registerCompletionItemProvider(
+    const placeholderCompletionProvider = vscode.languages.registerCompletionItemProvider(
         'dats',
         new DatsCompletionProvider(),
         '.', '{' // Trigger on . and {
     );
 
-    context.subscriptions.push(completionProvider);
+    // Register completion provider for YAML keys
+    const keyCompletionProvider = vscode.languages.registerCompletionItemProvider(
+        'dats',
+        new DatsKeyCompletionProvider()
+    );
+
+    // Register hover provider for field documentation
+    const hoverProvider = vscode.languages.registerHoverProvider('dats', new DatsHoverProvider());
+
+    context.subscriptions.push(placeholderCompletionProvider, keyCompletionProvider, hoverProvider);
 }
 
 export function deactivate() {}

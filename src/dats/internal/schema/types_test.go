@@ -31,6 +31,23 @@ func TestExitCode_UnmarshalYAML_String(t *testing.T) {
 	}
 }
 
+func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
+	invalidCodes := []string{
+		"0dfsdfs",
+		"abc",
+		"EXIT",
+		"exit_success",
+		"123abc",
+	}
+	for _, code := range invalidCodes {
+		var e ExitCode
+		err := yaml.Unmarshal([]byte(code), &e)
+		if err == nil {
+			t.Errorf("expected error for %q, got none", code)
+		}
+	}
+}
+
 func TestExitCode_String(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -139,13 +156,13 @@ binary:
 func TestTestFile_UnmarshalYAML(t *testing.T) {
 	input := `
 tests:
-  - name: test one
+  - desc: test one
     exit: 0
     cmd: echo hello
     outputs:
       stdout:
         - "hello"
-  - name: test two
+  - desc: test two
     exit: EXIT_FAILURE
     cmd: exit 1
 `
@@ -158,8 +175,8 @@ tests:
 	if len(tf.Tests) != 2 {
 		t.Fatalf("expected 2 tests, got %d", len(tf.Tests))
 	}
-	if tf.Tests[0].Name != "test one" {
-		t.Errorf("expected name 'test one', got %q", tf.Tests[0].Name)
+	if tf.Tests[0].Desc != "test one" {
+		t.Errorf("expected desc 'test one', got %q", tf.Tests[0].Desc)
 	}
 	if tf.Tests[0].Exit.Value != 0 {
 		t.Errorf("expected exit 0, got %d", tf.Tests[0].Exit.Value)

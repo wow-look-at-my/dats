@@ -155,11 +155,10 @@ func TestGenerator_Generate(t *testing.T) {
 	os.MkdirAll(outputDir, 0755)
 	os.MkdirAll(runtimeDir, 0755)
 
-	// Create a simple .dats file
+	// Create a simple .dats file (no desc - should use cmd as test name)
 	datsContent := `
 tests:
-  - name: simple test
-    exit: 0
+  - exit: 0
     cmd: echo hello
     outputs:
       stdout:
@@ -184,11 +183,11 @@ tests:
 		t.Errorf("BatsFile not created: %s", result.BatsFile)
 	}
 
-	// Check content
+	// Check content - test name should be auto-generated from cmd
 	content, _ := os.ReadFile(result.BatsFile)
 	contentStr := string(content)
 
-	if !strings.Contains(contentStr, "@test \"simple test\"") {
+	if !strings.Contains(contentStr, "@test \"echo hello\"") {
 		t.Errorf("missing test declaration in output:\n%s", contentStr)
 	}
 	if !strings.Contains(contentStr, "run echo hello") {
@@ -211,7 +210,7 @@ func TestGenerator_Generate_WithInputs(t *testing.T) {
 
 	datsContent := `
 tests:
-  - name: cat test
+  - desc: cat test
     exit: 0
     inputs:
       data.txt: |

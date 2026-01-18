@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker ps:*)"
+      "Bash(docker ps:*)",
+      "Bash(just)",
+      "Bash(just vscode::build:*)",
+      "Bash(just vscode::install:*)"
     ]
   }
 }

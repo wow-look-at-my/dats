@@ -4,6 +4,7 @@
 # Generated files
 *.gen.bats
 *.gen.bats.d
+*.vsix
 fixtures/
 
 # IDE

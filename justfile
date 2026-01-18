@@ -1,5 +1,7 @@
 # DATS - Declarative Automated Testing System
 
+export BUILD_DIR := justfile_directory() / "build"
+
 mod vscode 'src/vscode-dats'
 
 _help:
@@ -9,9 +11,8 @@ _help:
 build: _build-go (vscode::build)
 
 # Run all tests with coverage
-test: _build-go
+test: _build-go (vscode::test)
     go test -cover ./src/dats/...
-    cd src/vscode-dats && npm test
     ./dats examples/example.dats examples/
     bats examples/*.gen.bats
 

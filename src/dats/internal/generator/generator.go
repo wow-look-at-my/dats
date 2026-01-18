@@ -99,7 +99,7 @@ func (g *Generator) generateBats(testFile *schema.TestFile, baseName string) (st
 	for i, test := range testFile.Tests {
 		testContent, files, err := g.generateTest(&test, baseName, i)
 		if err != nil {
-			return "", nil, fmt.Errorf("generating test %q: %w", test.Name, err)
+			return "", nil, fmt.Errorf("generating test %q: %w", test.Desc, err)
 		}
 		buf.WriteString(testContent)
 		buf.WriteString("\n")
@@ -116,8 +116,12 @@ func (g *Generator) generateTest(test *schema.Test, baseName string, index int) 
 	var buf strings.Builder
 	inputFiles := make(map[string]string)
 
-	// Test function declaration
-	buf.WriteString(fmt.Sprintf("@test %q {\n", test.Name))
+	// Test function declaration - use desc if provided, otherwise use cmd
+	testName := test.Desc
+	if testName == "" {
+		testName = test.Cmd
+	}
+	buf.WriteString(fmt.Sprintf("@test %q {\n", testName))
 
 	// Create fixture directory for this test
 	fixtureDir := fmt.Sprintf("fixtures/%s/%d", baseName, index)

@@ -17,9 +17,9 @@ just install        # Symlink binary to ~/.local/bin/dats
 
 For VS Code extension:
 ```bash
-just vscode-install  # Install npm dependencies
-just vscode-build    # Build the extension
-just vscode-update   # Update npm dependencies
+just vscode::build   # Build extension and package as .vsix
+just vscode::install # Build and install in VS Code
+just vscode::update  # Update npm dependencies
 ```
 
 ## Running Specific Tests
@@ -74,7 +74,7 @@ Located in `src/vscode-dats/`. Provides:
 
 ```yaml
 tests:
-  - name: test name        # Required
+  - desc: optional description
     cmd: command to run    # Required, supports {inputs.X} and {outputs.X}
     exit: 0                # Optional, default 0 (or EXIT_* variable)
     stdin: "input"         # Optional, piped to cmd
