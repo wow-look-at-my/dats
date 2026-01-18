@@ -145,6 +145,30 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         const isListItemStart = /^\s*-\s*$/.test(lineText.substring(0, position.character)) ||
                                 /^\s*-\s*[a-zA-Z]*$/.test(lineText.substring(0, position.character));
 
+        // First, find what the expected key indent would be for a test
+        // by finding the parent "- " line
+        let testItemLine = -1;
+        let testItemIndent = -1;
+        for (let i = line - 1; i >= 0; i--) {
+            const prevLine = document.lineAt(i).text;
+            if (prevLine.trim() === '') continue;
+            if (prevLine.match(/^\s*-\s/)) {
+                testItemLine = i;
+                testItemIndent = this.getIndent(prevLine);
+                break;
+            }
+            if (this.getIndent(prevLine) === 0) break;
+        }
+
+        // If we found a test item, check if we're at the right indent for test keys
+        if (testItemLine !== -1) {
+            const expectedKeyIndent = testItemIndent + 2;
+            // If we're deeper than expected key indent, we're inside a value (e.g., multiline string)
+            if (indent > expectedKeyIndent) {
+                return 'unknown'; // Don't suggest anything
+            }
+        }
+
         // Walk backwards to find context
         for (let i = line - 1; i >= 0; i--) {
             const prevLine = document.lineAt(i).text;
@@ -221,58 +245,68 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
 
     private findExistingKeysInBlock(document: vscode.TextDocument, position: vscode.Position): Set<string> {
         const keys = new Set<string>();
-        const currentIndent = this.getIndent(document.lineAt(position.line).text);
-
-        // Determine the block's indent level (for list items, look at sibling indent)
-        let blockIndent = currentIndent;
         const currentLine = document.lineAt(position.line).text;
-        if (currentLine.match(/^\s*-\s/)) {
-            // We're on a list item line, siblings are at same indent
-            blockIndent = currentIndent;
-        }
+        const currentIndent = this.getIndent(currentLine);
 
-        // Find the start of the current block
-        let blockStart = position.line;
-        for (let i = position.line - 1; i >= 0; i--) {
+        // Find the start of the current test item (the line with "- ")
+        let testStart = -1;
+        let testIndent = -1;
+        for (let i = position.line; i >= 0; i--) {
             const line = document.lineAt(i).text;
-            const lineIndent = this.getIndent(line);
-
             if (line.trim() === '') continue;
 
-            if (lineIndent < currentIndent) {
-                // Found parent, block starts after this
-                blockStart = i + 1;
-                break;
-            }
-
-            if (line.match(/^\s*-\s/) && lineIndent <= currentIndent) {
-                // Found a sibling or parent list item
-                blockStart = i;
+            // Found a list item line - this is the start of our test
+            if (line.match(/^\s*-\s/)) {
+                testStart = i;
+                testIndent = this.getIndent(line);
                 break;
             }
         }
 
-        // Find the end of the current block
-        let blockEnd = position.line;
+        if (testStart === -1) {
+            return keys;
+        }
+
+        // The keys inside the test are indented more than the "- " line
+        const keyIndent = testIndent + 2;
+
+        // Find the end of the current test item
+        let testEnd = position.line;
         for (let i = position.line + 1; i < document.lineCount; i++) {
             const line = document.lineAt(i).text;
-            const lineIndent = this.getIndent(line);
-
             if (line.trim() === '') continue;
 
-            if (lineIndent < currentIndent || (line.match(/^\s*-\s/) && lineIndent <= currentIndent)) {
+            const lineIndent = this.getIndent(line);
+            // End if we hit another list item at same or less indent, or any line with less indent than test content
+            if (line.match(/^\s*-\s/) && lineIndent <= testIndent) {
                 break;
             }
-            blockEnd = i;
+            if (lineIndent < keyIndent && !line.match(/^\s*-\s/)) {
+                break;
+            }
+            testEnd = i;
         }
 
-        // Extract keys in the block
-        for (let i = blockStart; i <= blockEnd; i++) {
+        // Extract keys in the test - look for keys at keyIndent level
+        for (let i = testStart; i <= testEnd; i++) {
             const line = document.lineAt(i).text;
-            // Match YAML keys, including quoted keys like "!stdout"
-            const keyMatch = line.match(/^\s*-?\s*"?(!?[a-zA-Z_][a-zA-Z0-9_]*)"?\s*:/);
-            if (keyMatch) {
-                keys.add(keyMatch[1]);
+            const lineIndent = this.getIndent(line);
+
+            // Match the first key on the "- " line (like "- desc:")
+            if (i === testStart) {
+                const firstKeyMatch = line.match(/^\s*-\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/);
+                if (firstKeyMatch) {
+                    keys.add(firstKeyMatch[1]);
+                }
+                continue;
+            }
+
+            // Match keys at the expected indent level
+            if (lineIndent === keyIndent) {
+                const keyMatch = line.match(/^\s*"?(!?[a-zA-Z_][a-zA-Z0-9_]*)"?\s*:/);
+                if (keyMatch) {
+                    keys.add(keyMatch[1]);
+                }
             }
         }
 
