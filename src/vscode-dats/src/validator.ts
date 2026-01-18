@@ -76,7 +76,7 @@ export function validateDatsDocument(document: vscode.TextDocument): vscode.Diag
 }
 
 function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['desc', 'exit', 'cmd', 'stdin', 'inputs', 'outputs']);
+    const validKeys = new Set(['desc', 'exit', 'cmd', 'inputs', 'outputs']);
 
     // Check for unknown keys
     for (const item of test.items) {
@@ -98,6 +98,12 @@ function validateTest(test: YAMLMap, lineCounter: LineCounter, document: vscode.
     const exitPair = test.items.find(item => item.key instanceof Scalar && item.key.value === 'exit');
     if (exitPair && exitPair.value) {
         validateExitCode(exitPair.value, lineCounter, document, diagnostics);
+    }
+
+    // Validate inputs if present
+    const inputsNode = test.get('inputs', true);
+    if (inputsNode && isMap(inputsNode)) {
+        validateInputs(inputsNode as YAMLMap, lineCounter, document, diagnostics);
     }
 
     // Validate outputs if present
@@ -124,26 +130,45 @@ function validateExitCode(node: any, lineCounter: LineCounter, document: vscode.
     }
 }
 
+function validateInputs(inputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
+    const validKeys = new Set(['stdin', 'files']);
+
+    for (const item of inputs.items) {
+        const key = item.key;
+        if (key instanceof Scalar && !validKeys.has(key.value as string)) {
+            const range = nodeRange(key, lineCounter, document);
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown inputs property "${key.value}"`, vscode.DiagnosticSeverity.Warning));
+        }
+    }
+}
+
 function validateOutputs(outputs: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr']);
+    const validKeys = new Set(['stdout', 'stderr', '!stdout', '!stderr', 'files', '!files']);
 
     for (const item of outputs.items) {
         const key = item.key;
         if (!(key instanceof Scalar)) continue;
 
         const keyStr = key.value as string;
-        // Known keys or file names are valid
         if (!validKeys.has(keyStr)) {
-            // It's a file check - validate the file check structure
-            if (item.value && isMap(item.value)) {
-                validateFileCheck(item.value as YAMLMap, lineCounter, document, diagnostics);
+            const range = nodeRange(key, lineCounter, document);
+            diagnostics.push(new vscode.Diagnostic(range, `Unknown outputs property "${keyStr}"`, vscode.DiagnosticSeverity.Warning));
+        }
+
+        // Validate files and !files maps
+        if ((keyStr === 'files' || keyStr === '!files') && item.value && isMap(item.value)) {
+            const filesMap = item.value as YAMLMap;
+            for (const fileItem of filesMap.items) {
+                if (fileItem.value && isMap(fileItem.value)) {
+                    validateFileCheck(fileItem.value as YAMLMap, lineCounter, document, diagnostics);
+                }
             }
         }
     }
 }
 
 function validateFileCheck(fileCheck: YAMLMap, lineCounter: LineCounter, document: vscode.TextDocument, diagnostics: vscode.Diagnostic[]) {
-    const validKeys = new Set(['exists', 'contains']);
+    const validKeys = new Set(['exists', 'match', 'notMatch']);
 
     for (const item of fileCheck.items) {
         const key = item.key;

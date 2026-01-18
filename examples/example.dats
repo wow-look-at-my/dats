@@ -11,8 +11,9 @@ tests:
   - desc: cat reads file
     exit: 0
     inputs:
-      input.txt: |
-        Hello, world!
+      files:
+        input.txt: |
+          Hello, world!
     cmd: cat {inputs.input.txt}
     outputs:
       stdout:
@@ -21,7 +22,8 @@ tests:
   # Command reading from stdin
   - desc: cat reads stdin
     exit: 0
-    stdin: "Hello from stdin"
+    inputs:
+      stdin: "Hello from stdin"
     cmd: cat
     outputs:
       stdout:
@@ -31,8 +33,9 @@ tests:
   - desc: concatenate two files
     exit: 0
     inputs:
-      a.txt: "Line A"
-      b.txt: "Line B"
+      files:
+        a.txt: "Line A"
+        b.txt: "Line B"
     cmd: cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}
     outputs:
       stdout:
@@ -62,7 +65,8 @@ tests:
   # Expected non-zero exit
   - desc: grep returns 1 when not found
     exit: 1
-    stdin: "hello world"
+    inputs:
+      stdin: "hello world"
     cmd: grep -q "notfound"
 
   # Using EXIT_* variable

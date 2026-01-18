@@ -25,9 +25,13 @@ const TEST_KEYS: KeyDef[] = [
     { key: 'desc', description: 'Test description (optional)' },
     { key: 'exit', description: 'Expected exit code (0-255 or EXIT_*)' },
     { key: 'cmd', description: 'Command to execute' },
-    { key: 'stdin', description: 'Standard input content' },
-    { key: 'inputs', description: 'Input files to create', insertText: 'inputs:\n      ' },
+    { key: 'inputs', description: 'Input configuration', insertText: 'inputs:\n      ' },
     { key: 'outputs', description: 'Output validations', insertText: 'outputs:\n      ' }
+];
+
+const INPUTS_KEYS: KeyDef[] = [
+    { key: 'stdin', description: 'Standard input content' },
+    { key: 'files', description: 'Input files to create', insertText: 'files:\n        ' }
 ];
 
 const TESTS_ARRAY_SNIPPETS: KeyDef[] = [
@@ -52,19 +56,22 @@ const TESTS_ARRAY_SNIPPETS: KeyDef[] = [
 ];
 
 const OUTPUT_KEYS: KeyDef[] = [
-    { key: 'stdout', description: 'Standard output assertions', insertText: 'stdout:\n        - ' },
-    { key: 'stderr', description: 'Standard error assertions', insertText: 'stderr:\n        - ' },
-    { key: '!stdout', description: 'Patterns that must NOT appear in stdout', insertText: '"!stdout":\n        - ' },
-    { key: '!stderr', description: 'Patterns that must NOT appear in stderr', insertText: '"!stderr":\n        - ' }
+    { key: 'stdout', description: 'Regex patterns to match in stdout', insertText: 'stdout:\n        - ' },
+    { key: 'stderr', description: 'Regex patterns to match in stderr', insertText: 'stderr:\n        - ' },
+    { key: '!stdout', description: 'Regex patterns that must NOT appear in stdout', insertText: '"!stdout":\n        - ' },
+    { key: '!stderr', description: 'Regex patterns that must NOT appear in stderr', insertText: '"!stderr":\n        - ' },
+    { key: 'files', description: 'Output files to validate', insertText: 'files:\n        ' },
+    { key: '!files', description: 'Negative output file assertions', insertText: '"!files":\n        ' }
 ];
 
 const FILE_CHECK_KEYS: KeyDef[] = [
     { key: 'exists', description: 'File existence check (true/false)' },
-    { key: 'contains', description: 'Patterns that must appear in file', insertText: 'contains:\n          - ' }
+    { key: 'match', description: 'Regex patterns that must match in file', insertText: 'match:\n          - ' },
+    { key: 'notMatch', description: 'Regex patterns that must NOT match in file', insertText: 'notMatch:\n          - ' }
 ];
 
 type Context = {
-    type: 'root' | 'tests-array' | 'test' | 'outputs' | 'file-check' | 'unknown';
+    type: 'root' | 'tests-array' | 'test' | 'inputs' | 'outputs' | 'file-check' | 'unknown';
     existingKeys: Set<string>;
 };
 
@@ -98,6 +105,9 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
                 break;
             case 'test':
                 availableKeys = TEST_KEYS;
+                break;
+            case 'inputs':
+                availableKeys = INPUTS_KEYS;
                 break;
             case 'outputs':
                 availableKeys = OUTPUT_KEYS;
@@ -195,28 +205,39 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         return { type: 'tests-array', existingKeys: new Set() };
     }
 
-    private determineTestContext(testMap: YAMLMap, offset: number, lineCounter: LineCounter): Context {
+    private determineTestContext(testMap: YAMLMap, offset: number, _lineCounter: LineCounter): Context {
         // Check if we're inside outputs
         const outputsNode = testMap.get('outputs', true);
         if (outputsNode && isMap(outputsNode)) {
             const outputsMap = outputsNode as YAMLMap;
             if (outputsMap.range && offset >= outputsMap.range[0] && offset <= outputsMap.range[1]) {
-                // Check if we're inside a file check (not stdout/stderr)
+                // Check if we're inside files or !files map
                 for (const item of outputsMap.items) {
                     if (!(item instanceof Pair)) continue;
                     const key = item.key;
                     if (!(key instanceof Scalar)) continue;
                     const keyStr = String(key.value);
 
-                    // Skip standard output keys
-                    if (['stdout', 'stderr', '!stdout', '!stderr'].includes(keyStr)) continue;
-
-                    // This is a file check - see if we're inside it
-                    const value = item.value;
-                    if (value && isMap(value)) {
-                        const fileMap = value as YAMLMap;
-                        if (fileMap.range && offset >= fileMap.range[0] && offset <= fileMap.range[1]) {
-                            return { type: 'file-check', existingKeys: this.getMapKeys(fileMap) };
+                    // Check if we're inside files or !files
+                    if (keyStr === 'files' || keyStr === '!files') {
+                        const filesMap = item.value;
+                        if (filesMap && isMap(filesMap)) {
+                            const fm = filesMap as YAMLMap;
+                            if (fm.range && offset >= fm.range[0] && offset <= fm.range[1]) {
+                                // Check if we're inside a specific file check
+                                for (const fileItem of fm.items) {
+                                    if (!(fileItem instanceof Pair)) continue;
+                                    const fileValue = fileItem.value;
+                                    if (fileValue && isMap(fileValue)) {
+                                        const fileCheckMap = fileValue as YAMLMap;
+                                        if (fileCheckMap.range && offset >= fileCheckMap.range[0] && offset <= fileCheckMap.range[1]) {
+                                            return { type: 'file-check', existingKeys: this.getMapKeys(fileCheckMap) };
+                                        }
+                                    }
+                                }
+                                // We're in files/!files but not inside a specific file check
+                                return { type: 'unknown', existingKeys: new Set() };
+                            }
                         }
                     }
                 }
@@ -225,12 +246,22 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
             }
         }
 
-        // Check if we're inside inputs (don't suggest test keys there)
+        // Check if we're inside inputs
         const inputsNode = testMap.get('inputs', true);
         if (inputsNode && isMap(inputsNode)) {
             const inputsMap = inputsNode as YAMLMap;
             if (inputsMap.range && offset >= inputsMap.range[0] && offset <= inputsMap.range[1]) {
-                return { type: 'unknown', existingKeys: new Set() };
+                // Check if we're inside the files map
+                const filesNode = inputsMap.get('files', true);
+                if (filesNode && isMap(filesNode)) {
+                    const filesMap = filesNode as YAMLMap;
+                    if (filesMap.range && offset >= filesMap.range[0] && offset <= filesMap.range[1]) {
+                        // We're inside inputs/files - no key suggestions (user defines filenames)
+                        return { type: 'unknown', existingKeys: new Set() };
+                    }
+                }
+                // We're in inputs but not in files
+                return { type: 'inputs', existingKeys: this.getMapKeys(inputsMap) };
             }
         }
 

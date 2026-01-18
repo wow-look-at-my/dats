@@ -213,8 +213,9 @@ tests:
   - desc: cat test
     exit: 0
     inputs:
-      data.txt: |
-        hello world
+      files:
+        data.txt: |
+          hello world
     cmd: cat {inputs.data.txt}
     outputs:
       stdout:

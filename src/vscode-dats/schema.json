@@ -42,20 +42,30 @@
           ],
           "default": 0
         },
+        "inputs": {
+          "$ref": "#/definitions/inputBlock"
+        },
+        "outputs": {
+          "$ref": "#/definitions/outputBlock"
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputBlock": {
+      "type": "object",
+      "description": "Input configuration",
+      "properties": {
         "stdin": {
           "type": "string",
           "description": "Content to pipe to command's stdin"
         },
-        "inputs": {
+        "files": {
           "type": "object",
           "description": "Input files to create before running the command",
           "additionalProperties": {
             "type": "string",
             "description": "File content"
           }
-        },
-        "outputs": {
-          "$ref": "#/definitions/outputBlock"
         }
       },
       "additionalProperties": false
@@ -66,25 +76,36 @@
       "properties": {
         "stdout": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns to match in stdout"
+          "description": "Regex patterns to match in stdout"
         },
         "stderr": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns to match in stderr"
+          "description": "Regex patterns to match in stderr"
         },
         "!stdout": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns that must NOT appear in stdout"
+          "description": "Regex patterns that must NOT appear in stdout"
         },
         "!stderr": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns that must NOT appear in stderr"
+          "description": "Regex patterns that must NOT appear in stderr"
+        },
+        "files": {
+          "type": "object",
+          "description": "Output files to validate",
+          "additionalProperties": {
+            "$ref": "#/definitions/fileCheck"
+          }
+        },
+        "!files": {
+          "type": "object",
+          "description": "Negative output file assertions",
+          "additionalProperties": {
+            "$ref": "#/definitions/fileCheck"
+          }
         }
       },
-      "additionalProperties": {
-        "$ref": "#/definitions/fileCheck",
-        "description": "Output file validation"
-      }
+      "additionalProperties": false
     },
     "outputCheck": {
       "description": "Output validation - either a list of patterns or line-specific checks",
@@ -94,7 +115,7 @@
           "items": {
             "type": "string"
           },
-          "description": "List of patterns to match anywhere in output"
+          "description": "List of regex patterns to match anywhere in output"
         },
         {
           "type": "object",
@@ -113,12 +134,19 @@
           "type": "boolean",
           "description": "Whether the file should exist"
         },
-        "contains": {
+        "match": {
           "type": "array",
           "items": {
             "type": "string"
           },
-          "description": "Patterns that must appear in the file"
+          "description": "Regex patterns that must match in the file"
+        },
+        "notMatch": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Regex patterns that must NOT match in the file"
         }
       },
       "additionalProperties": false

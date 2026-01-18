@@ -125,10 +125,18 @@ stderr:
   - "error"
 "!stdout":
   - "bad"
-binary:
-  exists: true
-  contains:
-    - "ELF"
+"!stderr":
+  - "warning"
+files:
+  binary:
+    exists: true
+    match:
+      - "ELF"
+    notMatch:
+      - "corrupted"
+"!files":
+  error.log:
+    exists: false
 `
 	var o OutputBlock
 	err := yaml.Unmarshal([]byte(input), &o)
@@ -145,11 +153,26 @@ binary:
 	if len(o.NotStdout.Patterns) != 1 || o.NotStdout.Patterns[0] != "bad" {
 		t.Errorf("unexpected !stdout: %v", o.NotStdout)
 	}
+	if len(o.NotStderr.Patterns) != 1 || o.NotStderr.Patterns[0] != "warning" {
+		t.Errorf("unexpected !stderr: %v", o.NotStderr)
+	}
 	if _, ok := o.Files["binary"]; !ok {
 		t.Errorf("expected binary in Files")
 	}
 	if o.Files["binary"].Exists == nil || *o.Files["binary"].Exists != true {
 		t.Errorf("expected binary.exists = true")
+	}
+	if len(o.Files["binary"].Match) != 1 || o.Files["binary"].Match[0] != "ELF" {
+		t.Errorf("expected binary.match = [ELF], got %v", o.Files["binary"].Match)
+	}
+	if len(o.Files["binary"].NotMatch) != 1 || o.Files["binary"].NotMatch[0] != "corrupted" {
+		t.Errorf("expected binary.notMatch = [corrupted], got %v", o.Files["binary"].NotMatch)
+	}
+	if _, ok := o.NotFiles["error.log"]; !ok {
+		t.Errorf("expected error.log in NotFiles")
+	}
+	if o.NotFiles["error.log"].Exists == nil || *o.NotFiles["error.log"].Exists != false {
+		t.Errorf("expected error.log.exists = false")
 	}
 }
 

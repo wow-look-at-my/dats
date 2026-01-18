@@ -128,7 +128,7 @@ func (g *Generator) generateTest(test *schema.Test, baseName string, index int) 
 
 	// Process inputs - create fixture files
 	inputPaths := make(map[string]string) // input name -> fixture path
-	for name, content := range test.Inputs {
+	for name, content := range test.Inputs.Files {
 		fixturePath := filepath.Join(fixtureDir, "inputs", name)
 		inputFiles[fixturePath] = content
 		inputPaths[name] = fixturePath
@@ -150,9 +150,9 @@ func (g *Generator) generateTest(test *schema.Test, baseName string, index int) 
 	}
 
 	// Generate the run command
-	if test.Stdin != "" {
+	if test.Inputs.Stdin != "" {
 		// Pipe stdin to command using here-string
-		escapedStdin := bashEscape(test.Stdin)
+		escapedStdin := bashEscape(test.Inputs.Stdin)
 		// Use here-string (<<<) to provide stdin
 		buf.WriteString(fmt.Sprintf("  run bash -c %s <<< %s\n", bashEscapeDouble(cmd), escapedStdin))
 	} else {
@@ -186,8 +186,33 @@ func (g *Generator) generateTest(test *schema.Test, baseName string, index int) 
 			}
 		}
 
-		for _, pattern := range check.Contains {
-			buf.WriteString(fmt.Sprintf("  grep -q %s \"%s\"\n", bashEscape(pattern), path))
+		for _, pattern := range check.Match {
+			buf.WriteString(fmt.Sprintf("  grep -qE %s \"%s\"\n", bashEscape(pattern), path))
+		}
+
+		for _, pattern := range check.NotMatch {
+			buf.WriteString(fmt.Sprintf("  ! grep -qE %s \"%s\"\n", bashEscape(pattern), path))
+		}
+	}
+
+	// Generate negative file assertions (!files)
+	for name, check := range test.Outputs.NotFiles {
+		path := filepath.Join("$BATS_TEST_DIRNAME", fixtureDir, "outputs", name)
+
+		if check.Exists != nil {
+			if *check.Exists {
+				buf.WriteString(fmt.Sprintf("  [ -f \"%s\" ]\n", path))
+			} else {
+				buf.WriteString(fmt.Sprintf("  [ ! -f \"%s\" ]\n", path))
+			}
+		}
+
+		for _, pattern := range check.Match {
+			buf.WriteString(fmt.Sprintf("  grep -qE %s \"%s\"\n", bashEscape(pattern), path))
+		}
+
+		for _, pattern := range check.NotMatch {
+			buf.WriteString(fmt.Sprintf("  ! grep -qE %s \"%s\"\n", bashEscape(pattern), path))
 		}
 	}
 

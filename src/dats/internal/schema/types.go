@@ -17,12 +17,17 @@ type TestFile struct {
 
 // Test represents a single test case
 type Test struct {
-	Desc    string            `yaml:"desc,omitempty"`
-	Exit    ExitCode          `yaml:"exit"`
-	Cmd     string            `yaml:"cmd"`
-	Stdin   string            `yaml:"stdin,omitempty"`
-	Inputs  map[string]string `yaml:"inputs,omitempty"`
-	Outputs OutputBlock       `yaml:"outputs,omitempty"`
+	Desc    string      `yaml:"desc,omitempty"`
+	Exit    ExitCode    `yaml:"exit"`
+	Cmd     string      `yaml:"cmd"`
+	Inputs  InputBlock  `yaml:"inputs,omitempty"`
+	Outputs OutputBlock `yaml:"outputs,omitempty"`
+}
+
+// InputBlock contains stdin and input files
+type InputBlock struct {
+	Stdin string            `yaml:"stdin,omitempty"`
+	Files map[string]string `yaml:"files,omitempty"`
 }
 
 // ExitCode can be an int or a string like "EXIT_SUCCESS"
@@ -60,62 +65,12 @@ func (e ExitCode) String() string {
 
 // OutputBlock contains all output validations
 type OutputBlock struct {
-	Stdout    OutputCheck          // stdout patterns or line checks
-	Stderr    OutputCheck          // stderr patterns or line checks
-	NotStdout OutputCheck          // negative stdout assertions (!stdout)
-	NotStderr OutputCheck          // negative stderr assertions (!stderr)
-	Files     map[string]FileCheck // output files to validate
-}
-
-func (o *OutputBlock) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("outputs must be a mapping")
-	}
-
-	o.Files = make(map[string]FileCheck)
-
-	for i := 0; i < len(node.Content); i += 2 {
-		keyNode := node.Content[i]
-		valueNode := node.Content[i+1]
-
-		key := keyNode.Value
-
-		switch key {
-		case "stdout":
-			var check OutputCheck
-			if err := valueNode.Decode(&check); err != nil {
-				return fmt.Errorf("invalid stdout: %w", err)
-			}
-			o.Stdout = check
-		case "stderr":
-			var check OutputCheck
-			if err := valueNode.Decode(&check); err != nil {
-				return fmt.Errorf("invalid stderr: %w", err)
-			}
-			o.Stderr = check
-		case "!stdout":
-			var check OutputCheck
-			if err := valueNode.Decode(&check); err != nil {
-				return fmt.Errorf("invalid !stdout: %w", err)
-			}
-			o.NotStdout = check
-		case "!stderr":
-			var check OutputCheck
-			if err := valueNode.Decode(&check); err != nil {
-				return fmt.Errorf("invalid !stderr: %w", err)
-			}
-			o.NotStderr = check
-		default:
-			// It's a file check
-			var fileCheck FileCheck
-			if err := valueNode.Decode(&fileCheck); err != nil {
-				return fmt.Errorf("invalid file check for %s: %w", key, err)
-			}
-			o.Files[key] = fileCheck
-		}
-	}
-
-	return nil
+	Stdout    OutputCheck          `yaml:"stdout,omitempty"`
+	Stderr    OutputCheck          `yaml:"stderr,omitempty"`
+	NotStdout OutputCheck          `yaml:"!stdout,omitempty"`
+	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
+	Files     map[string]FileCheck `yaml:"files,omitempty"`
+	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
 }
 
 // OutputCheck represents either:
@@ -170,5 +125,6 @@ func (o OutputCheck) IsEmpty() bool {
 // FileCheck defines validation for an output file
 type FileCheck struct {
 	Exists   *bool    `yaml:"exists,omitempty"`
-	Contains []string `yaml:"contains,omitempty"`
+	Match    []string `yaml:"match,omitempty"`
+	NotMatch []string `yaml:"notMatch,omitempty"`
 }

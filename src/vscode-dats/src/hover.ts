@@ -17,41 +17,53 @@ const FIELD_DOCS: Record<string, { summary: string; detail?: string }> = {
         summary: 'Command to execute',
         detail: 'Shell command to run. Use {inputs.filename} and {outputs.filename} placeholders to reference files.'
     },
+    inputs: {
+        summary: 'Input configuration',
+        detail: 'Contains stdin content and input files to create before the test runs.'
+    },
     stdin: {
         summary: 'Standard input content',
         detail: 'String to pipe to the command\'s stdin.'
     },
-    inputs: {
-        summary: 'Input files to create',
-        detail: 'Map of filename to content. Files are created before the test runs. Reference with {inputs.filename}.'
+    files: {
+        summary: 'Files map',
+        detail: 'Under inputs: Map of filename to content. Under outputs: Map of filename to file checks.'
     },
     outputs: {
         summary: 'Output validations',
-        detail: 'Define assertions for stdout, stderr, or output files.'
+        detail: 'Define assertions for stdout, stderr, and output files.'
     },
     stdout: {
         summary: 'Standard output assertions',
-        detail: 'Array of patterns to match in stdout, or map of line numbers to patterns.'
+        detail: 'Array of regex patterns to match in stdout, or map of line numbers to patterns.'
     },
     stderr: {
         summary: 'Standard error assertions',
-        detail: 'Array of patterns to match in stderr, or map of line numbers to patterns.'
+        detail: 'Array of regex patterns to match in stderr, or map of line numbers to patterns.'
     },
     '!stdout': {
         summary: 'Negative stdout assertions',
-        detail: 'Patterns that must NOT appear in stdout.'
+        detail: 'Regex patterns that must NOT appear in stdout.'
     },
     '!stderr': {
         summary: 'Negative stderr assertions',
-        detail: 'Patterns that must NOT appear in stderr.'
+        detail: 'Regex patterns that must NOT appear in stderr.'
+    },
+    '!files': {
+        summary: 'Negative file assertions',
+        detail: 'Map of filenames to checks that should fail or not exist.'
     },
     exists: {
         summary: 'File existence check',
         detail: 'true to assert file exists, false to assert it does not exist.'
     },
-    contains: {
+    match: {
         summary: 'File content patterns',
-        detail: 'Array of patterns that must appear in the file.'
+        detail: 'Array of regex patterns that must match in the file.'
+    },
+    notMatch: {
+        summary: 'Negative file content patterns',
+        detail: 'Array of regex patterns that must NOT match in the file.'
     }
 };
 
