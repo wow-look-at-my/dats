@@ -34,8 +34,6 @@ tests:
       a.txt: "Line A"
       b.txt: "Line B"
     cmd: cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}
-    stdin:
-      
     outputs:
       stdout:
         - "Line A"

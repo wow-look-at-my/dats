@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { parseDocument, isMap, isSeq, YAMLMap, LineCounter, Pair, Scalar } from 'yaml';
 
 interface KeyDef {
     key: string;
@@ -62,6 +63,11 @@ const FILE_CHECK_KEYS: KeyDef[] = [
     { key: 'contains', description: 'Patterns that must appear in file', insertText: 'contains:\n          - ' }
 ];
 
+type Context = {
+    type: 'root' | 'tests-array' | 'test' | 'outputs' | 'file-check' | 'unknown';
+    existingKeys: Set<string>;
+};
+
 export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider {
     provideCompletionItems(
         document: vscode.TextDocument,
@@ -78,12 +84,11 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         }
 
         const context = this.determineContext(document, position);
-        const existingKeys = this.findExistingKeysInBlock(document, position);
 
         let availableKeys: KeyDef[] = [];
         let availableSnippets: KeyDef[] = [];
 
-        switch (context) {
+        switch (context.type) {
             case 'root':
                 availableKeys = ROOT_KEYS;
                 availableSnippets = ROOT_SNIPPETS;
@@ -105,7 +110,7 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         }
 
         // Filter out keys that already exist
-        const filteredKeys = availableKeys.filter(k => !existingKeys.has(k.key));
+        const filteredKeys = availableKeys.filter(k => !context.existingKeys.has(k.key));
 
         const completions: vscode.CompletionItem[] = [];
 
@@ -136,180 +141,110 @@ export class DatsKeyCompletionProvider implements vscode.CompletionItemProvider 
         return /^(\s*-?\s*)$/.test(textBeforeCursor) || /^(\s*-?\s*)[a-zA-Z!]*$/.test(textBeforeCursor);
     }
 
-    private determineContext(document: vscode.TextDocument, position: vscode.Position): string {
-        const line = position.line;
-        const lineText = document.lineAt(line).text;
-        const indent = this.getIndent(lineText);
+    private determineContext(document: vscode.TextDocument, position: vscode.Position): Context {
+        const text = document.getText();
+        const lineCounter = new LineCounter();
+        const offset = document.offsetAt(position);
 
-        // Check if we're on a line that starts with "- " (list item start)
-        const isListItemStart = /^\s*-\s*$/.test(lineText.substring(0, position.character)) ||
-                                /^\s*-\s*[a-zA-Z]*$/.test(lineText.substring(0, position.character));
-
-        // First, find what the expected key indent would be for a test
-        // by finding the parent "- " line
-        let testItemLine = -1;
-        let testItemIndent = -1;
-        for (let i = line - 1; i >= 0; i--) {
-            const prevLine = document.lineAt(i).text;
-            if (prevLine.trim() === '') continue;
-            if (prevLine.match(/^\s*-\s/)) {
-                testItemLine = i;
-                testItemIndent = this.getIndent(prevLine);
-                break;
-            }
-            if (this.getIndent(prevLine) === 0) break;
+        let doc;
+        try {
+            doc = parseDocument(text, { lineCounter, keepSourceTokens: true });
+        } catch {
+            return { type: 'unknown', existingKeys: new Set() };
         }
 
-        // If we found a test item, check if we're at the right indent for test keys
-        if (testItemLine !== -1) {
-            const expectedKeyIndent = testItemIndent + 2;
-            // If we're deeper than expected key indent, we're inside a value (e.g., multiline string)
-            if (indent > expectedKeyIndent) {
-                return 'unknown'; // Don't suggest anything
+        const root = doc.contents;
+        if (!isMap(root)) {
+            return { type: 'root', existingKeys: new Set() };
+        }
+
+        // Check if we're at root level (before or outside tests)
+        const testsNode = root.get('tests', true);
+        if (!testsNode || !isSeq(testsNode)) {
+            return { type: 'root', existingKeys: this.getMapKeys(root) };
+        }
+
+        // Check if cursor is before tests array content
+        if (testsNode.range && offset < testsNode.range[0]) {
+            return { type: 'root', existingKeys: this.getMapKeys(root) };
+        }
+
+        // Find which test item we're in
+        for (let i = 0; i < testsNode.items.length; i++) {
+            const testItem = testsNode.items[i];
+            if (!isMap(testItem)) continue;
+
+            const testMap = testItem as YAMLMap;
+            const range = testMap.range;
+            if (!range) continue;
+
+            // Check if cursor is within this test item's range
+            // We need to also check if we're between this item and the next
+            const nextItem = testsNode.items[i + 1];
+            const nextStart = nextItem && isMap(nextItem) && (nextItem as YAMLMap).range
+                ? (nextItem as YAMLMap).range![0]
+                : Infinity;
+
+            if (offset >= range[0] && offset < nextStart) {
+                // We're in this test - now determine if we're at test level, outputs level, etc.
+                return this.determineTestContext(testMap, offset, lineCounter);
             }
         }
 
-        // Walk backwards to find context
-        for (let i = line - 1; i >= 0; i--) {
-            const prevLine = document.lineAt(i).text;
-            const prevIndent = this.getIndent(prevLine);
+        // We're in the tests array but not in a specific test item (e.g., adding a new test)
+        return { type: 'tests-array', existingKeys: new Set() };
+    }
 
-            // Skip blank lines
-            if (prevLine.trim() === '') continue;
+    private determineTestContext(testMap: YAMLMap, offset: number, lineCounter: LineCounter): Context {
+        // Check if we're inside outputs
+        const outputsNode = testMap.get('outputs', true);
+        if (outputsNode && isMap(outputsNode)) {
+            const outputsMap = outputsNode as YAMLMap;
+            if (outputsMap.range && offset >= outputsMap.range[0] && offset <= outputsMap.range[1]) {
+                // Check if we're inside a file check (not stdout/stderr)
+                for (const item of outputsMap.items) {
+                    if (!(item instanceof Pair)) continue;
+                    const key = item.key;
+                    if (!(key instanceof Scalar)) continue;
+                    const keyStr = String(key.value);
 
-            // Found a line with less indentation - this is our parent
-            if (prevIndent < indent) {
-                if (prevLine.includes('tests:')) {
-                    // We're directly under tests: - if on a list item line, show test snippets
-                    // If indented further, we're inside a test
-                    if (isListItemStart && indent === prevIndent + 2) {
-                        return 'tests-array';
+                    // Skip standard output keys
+                    if (['stdout', 'stderr', '!stdout', '!stderr'].includes(keyStr)) continue;
+
+                    // This is a file check - see if we're inside it
+                    const value = item.value;
+                    if (value && isMap(value)) {
+                        const fileMap = value as YAMLMap;
+                        if (fileMap.range && offset >= fileMap.range[0] && offset <= fileMap.range[1]) {
+                            return { type: 'file-check', existingKeys: this.getMapKeys(fileMap) };
+                        }
                     }
-                    return 'test';
                 }
-                if (prevLine.includes('outputs:')) {
-                    return 'outputs';
-                }
-                if (/^\s+\w+:/.test(prevLine) && this.isInOutputsBlock(document, i)) {
-                    // We're inside a file check block (e.g., binary:)
-                    return 'file-check';
-                }
-                if (prevLine.match(/^\s*-\s/)) {
-                    // Parent is a list item - we're inside a test
-                    return 'test';
-                }
-            }
 
-            // Same indent with a list item - sibling in tests array
-            if (prevIndent === indent && prevLine.match(/^\s*-\s/) && isListItemStart) {
-                // Check if parent is tests:
-                for (let j = i - 1; j >= 0; j--) {
-                    const ancestorLine = document.lineAt(j).text;
-                    if (ancestorLine.trim() === '') continue;
-                    if (this.getIndent(ancestorLine) < indent && ancestorLine.includes('tests:')) {
-                        return 'tests-array';
-                    }
-                    if (this.getIndent(ancestorLine) < indent) break;
-                }
-            }
-
-            // If we hit the root level
-            if (prevIndent === 0 && prevLine.trim() !== '') {
-                break;
+                return { type: 'outputs', existingKeys: this.getMapKeys(outputsMap) };
             }
         }
 
-        // At root level
-        if (indent === 0 || (indent <= 2 && !lineText.includes('-'))) {
-            return 'root';
-        }
-
-        return 'unknown';
-    }
-
-    private isInOutputsBlock(document: vscode.TextDocument, startLine: number): boolean {
-        for (let i = startLine - 1; i >= 0; i--) {
-            const line = document.lineAt(i).text;
-            if (line.includes('outputs:')) return true;
-            if (line.match(/^\s*-\s/) && this.getIndent(line) < this.getIndent(document.lineAt(startLine).text)) {
-                return false; // Hit a test item before outputs
+        // Check if we're inside inputs (don't suggest test keys there)
+        const inputsNode = testMap.get('inputs', true);
+        if (inputsNode && isMap(inputsNode)) {
+            const inputsMap = inputsNode as YAMLMap;
+            if (inputsMap.range && offset >= inputsMap.range[0] && offset <= inputsMap.range[1]) {
+                return { type: 'unknown', existingKeys: new Set() };
             }
         }
-        return false;
+
+        // We're at the test level
+        return { type: 'test', existingKeys: this.getMapKeys(testMap) };
     }
 
-    private getIndent(line: string): number {
-        const match = line.match(/^(\s*)/);
-        return match ? match[1].length : 0;
-    }
-
-    private findExistingKeysInBlock(document: vscode.TextDocument, position: vscode.Position): Set<string> {
+    private getMapKeys(map: YAMLMap): Set<string> {
         const keys = new Set<string>();
-        const currentLine = document.lineAt(position.line).text;
-        const currentIndent = this.getIndent(currentLine);
-
-        // Find the start of the current test item (the line with "- ")
-        let testStart = -1;
-        let testIndent = -1;
-        for (let i = position.line; i >= 0; i--) {
-            const line = document.lineAt(i).text;
-            if (line.trim() === '') continue;
-
-            // Found a list item line - this is the start of our test
-            if (line.match(/^\s*-\s/)) {
-                testStart = i;
-                testIndent = this.getIndent(line);
-                break;
+        for (const item of map.items) {
+            if (item instanceof Pair && item.key instanceof Scalar) {
+                keys.add(String(item.key.value));
             }
         }
-
-        if (testStart === -1) {
-            return keys;
-        }
-
-        // The keys inside the test are indented more than the "- " line
-        const keyIndent = testIndent + 2;
-
-        // Find the end of the current test item
-        let testEnd = position.line;
-        for (let i = position.line + 1; i < document.lineCount; i++) {
-            const line = document.lineAt(i).text;
-            if (line.trim() === '') continue;
-
-            const lineIndent = this.getIndent(line);
-            // End if we hit another list item at same or less indent, or any line with less indent than test content
-            if (line.match(/^\s*-\s/) && lineIndent <= testIndent) {
-                break;
-            }
-            if (lineIndent < keyIndent && !line.match(/^\s*-\s/)) {
-                break;
-            }
-            testEnd = i;
-        }
-
-        // Extract keys in the test - look for keys at keyIndent level
-        for (let i = testStart; i <= testEnd; i++) {
-            const line = document.lineAt(i).text;
-            const lineIndent = this.getIndent(line);
-
-            // Match the first key on the "- " line (like "- desc:")
-            if (i === testStart) {
-                const firstKeyMatch = line.match(/^\s*-\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/);
-                if (firstKeyMatch) {
-                    keys.add(firstKeyMatch[1]);
-                }
-                continue;
-            }
-
-            // Match keys at the expected indent level
-            if (lineIndent === keyIndent) {
-                const keyMatch = line.match(/^\s*"?(!?[a-zA-Z_][a-zA-Z0-9_]*)"?\s*:/);
-                if (keyMatch) {
-                    keys.add(keyMatch[1]);
-                }
-            }
-        }
-
         return keys;
     }
 }
