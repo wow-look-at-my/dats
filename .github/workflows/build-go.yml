@@ -1,0 +1,70 @@
+name: Build Go Binaries
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: Go package path to build
+        type: string
+        required: true
+      output-name:
+        description: Output binary name (without extension)
+        type: string
+        required: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::warning::Unformatted files: $unformatted"
+          fi
+
+      - run: go vet ./...
+      - run: go test -cover ./...
+
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          output="${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          [[ "${{ matrix.goos }}" == "windows" ]] && output="${output}.exe"
+          go build -o "$output" ${{ inputs.package }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}*

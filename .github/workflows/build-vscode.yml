@@ -1,0 +1,43 @@
+name: Build VS Code Extension
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing the VS Code extension
+        type: string
+        required: true
+      output-name:
+        description: Output filename for the .vsix (without extension)
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+
+      - name: Build and package
+        run: |
+          npx esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
+          npx esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
+          npx vsce package --out "${{ inputs.output-name }}.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.output-name }}-vsix
+          path: ${{ inputs.working-directory }}/${{ inputs.output-name }}.vsix
