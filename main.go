@@ -3,27 +3,24 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/mhaynie/bats-declarative/internal/generator"
+	"github.com/mhaynie/bats-declarative/internal/runtime"
 )
 
 const usage = `dats - Declarative Automated Testing System
 
-Usage: dats <file.dats> [output_dir] [--runtime-dir=<path>]
+Usage: dats <file.dats> [output_dir]
 
 Arguments:
   file.dats    Input .dats file to convert
   output_dir   Output directory for generated files (default: same as input)
 
-Options:
-  --runtime-dir=<path>  Path to runtime directory containing test_helper.bash
-                        (default: ./runtime or alongside the dats binary)
-
 Examples:
-  dats tests.dats                    # Generate tests.gen.bats in current dir
-  dats tests.dats ./output           # Generate in ./output directory
-  dats tests.dats ./output --runtime-dir=/path/to/runtime
+  dats tests.dats                    # Generate and run tests.gen.bats
+  dats tests.dats ./output           # Generate in ./output and run tests
 `
 
 func main() {
@@ -52,27 +49,13 @@ func main() {
 
 	// Determine output directory
 	outputDir := filepath.Dir(inputPath)
-	if len(os.Args) >= 3 && os.Args[2][0] != '-' {
+	if len(os.Args) >= 3 {
 		outputDir = os.Args[2]
 	}
 
 	// Create output directory if needed
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Determine runtime directory
-	runtimeDir := findRuntimeDir()
-	for _, arg := range os.Args[2:] {
-		if len(arg) > 14 && arg[:14] == "--runtime-dir=" {
-			runtimeDir = arg[14:]
-		}
-	}
-
-	if runtimeDir == "" {
-		fmt.Fprintf(os.Stderr, "Error: could not find runtime directory\n")
-		fmt.Fprintf(os.Stderr, "Specify with --runtime-dir=<path>\n")
 		os.Exit(1)
 	}
 
@@ -89,16 +72,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	absRuntime, err := filepath.Abs(runtimeDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
 	gen := &generator.Generator{
-		InputPath:  absInput,
-		OutputDir:  absOutput,
-		RuntimeDir: absRuntime,
+		InputPath: absInput,
+		OutputDir: absOutput,
 	}
 
 	result, err := gen.Generate()
@@ -111,29 +87,45 @@ func main() {
 	if len(result.InputFiles) > 0 {
 		fmt.Printf("Created %d fixture file(s)\n", len(result.InputFiles))
 	}
+
+	// Run the tests
+	exitCode := runTests(result.BatsFile)
+	os.Exit(exitCode)
 }
 
-// findRuntimeDir looks for the runtime directory in common locations
-func findRuntimeDir() string {
-	// Check relative to current directory
-	if _, err := os.Stat("runtime/test_helper.bash"); err == nil {
-		return "runtime"
+// runTests extracts the embedded runtime to a temp directory and runs bats
+func runTests(batsFile string) int {
+	// Create temp directory for runtime files
+	tmpDir, err := os.MkdirTemp("", "dats-runtime-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating temp directory: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Extract embedded runtime files
+	_, err = runtime.ExtractTo(tmpDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error extracting runtime: %v\n", err)
+		return 1
 	}
 
-	// Check relative to executable
-	exe, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exe)
-		runtimePath := filepath.Join(exeDir, "runtime")
-		if _, err := os.Stat(filepath.Join(runtimePath, "test_helper.bash")); err == nil {
-			return runtimePath
+	// Run bats with DATS_RUNTIME_DIR set
+	cmd := exec.Command("bats", batsFile)
+	cmd.Env = append(os.Environ(), "DATS_RUNTIME_DIR="+tmpDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Printf("Running: bats %s\n", batsFile)
+	err = cmd.Run()
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return exitErr.ExitCode()
 		}
-		// Also check one level up (for when binary is in bin/)
-		runtimePath = filepath.Join(exeDir, "..", "runtime")
-		if _, err := os.Stat(filepath.Join(runtimePath, "test_helper.bash")); err == nil {
-			return runtimePath
-		}
+		fmt.Fprintf(os.Stderr, "Error running bats: %v\n", err)
+		return 1
 	}
 
-	return ""
+	return 0
 }

@@ -1,6 +1,6 @@
 # DATS Documentation
 
-DATS (Declarative Automated Testing System) converts `.dats` YAML files into BATS (Bash Automated Testing System) test files.
+DATS (Declarative Automated Testing System) converts `.dats` YAML files into BATS (Bash Automated Testing System) test files and runs them.
 
 ## Documentation Index
 
@@ -23,17 +23,13 @@ tests:
         - "Hello, World!"
 ```
 
-2. Generate the BATS test:
+2. Run with dats:
 
 ```bash
 dats mytest.dats
 ```
 
-3. Run the test:
-
-```bash
-bats mytest.gen.bats
-```
+That's it! DATS generates the BATS test file and runs it automatically.
 
 ## Key Concepts
 

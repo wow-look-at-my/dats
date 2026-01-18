@@ -1,324 +1,181 @@
 # Examples
 
-## Basic Command Testing
+This page shows real examples from `examples/example.dats` in the DATS repository.
 
-### Simple Command
+## Complete Example File
+
+Here is the full `examples/example.dats` file:
 
 ```yaml
 tests:
-  - desc: echo outputs hello
-    cmd: echo hello
+  # Simple command with no inputs
+  - desc: echo test
+    exit: 0
+    cmd: echo Hello World
     outputs:
       stdout:
-        - "hello"
-```
+        - "Hello World"
 
-### Command with Exit Code
-
-```yaml
-tests:
-  - desc: false returns 1
-    exit: 1
-    cmd: false
-```
-
-### Using Exit Variables
-
-```yaml
-tests:
-  - desc: true returns success
-    exit: EXIT_SUCCESS
-    cmd: true
-
-  - desc: false returns failure
-    exit: EXIT_FAILURE
-    cmd: false
-```
-
----
-
-## Input Handling
-
-### Stdin Input
-
-```yaml
-tests:
-  - desc: grep finds pattern in stdin
-    cmd: grep hello
-    inputs:
-      stdin: "hello world"
-    outputs:
-      stdout:
-        - "hello world"
-```
-
-### File Input
-
-```yaml
-tests:
+  # Command reading from file
   - desc: cat reads file
-    cmd: cat {inputs.data.txt}
+    exit: 0
     inputs:
       files:
-        data.txt: "file content"
+        input.txt: |
+          Hello, world!
+    cmd: cat {inputs.input.txt}
     outputs:
       stdout:
-        - "file content"
-```
+        - "Hello, world!"
 
-### Multiple Files
+  # Command reading from stdin
+  - desc: cat reads stdin
+    exit: 0
+    inputs:
+      stdin: "Hello from stdin"
+    cmd: cat
+    outputs:
+      stdout:
+        - "Hello from stdin"
 
-```yaml
-tests:
-  - desc: diff two files
-    exit: 1
-    cmd: diff {inputs.a.txt} {inputs.b.txt}
+  # Multiple input files
+  - desc: concatenate two files
+    exit: 0
     inputs:
       files:
-        a.txt: "line 1"
-        b.txt: "line 2"
-```
-
-### Combined Stdin and Files
-
-```yaml
-tests:
-  - desc: process with config
-    cmd: process --config {inputs.config.json}
-    inputs:
-      stdin: "input data"
-      files:
-        config.json: |
-          {"mode": "test"}
-```
-
----
-
-## Output Validation
-
-### Pattern Matching
-
-```yaml
-tests:
-  - desc: output contains expected patterns
-    cmd: echo "Hello, World! Status: OK"
+        a.txt: "Line A"
+        b.txt: "Line B"
+    cmd: cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}
     outputs:
       stdout:
-        - "Hello"
-        - "World"
-        - "OK"
-```
+        - "Line A"
+        - "Line B"
 
-### Line-Specific Assertions
-
-```yaml
-tests:
-  - desc: validate specific lines
-    cmd: printf "header\ndata line\nfooter"
+  # Line-specific assertions
+  - desc: line matching
+    exit: 0
+    cmd: printf "line0\nline1\nline2"
     outputs:
       stdout:
-        0: "^header$"
-        1: "^data"
-        2: "footer$"
-```
+        0: "^line0$"
+        2: "^line2$"
 
-### Negated Assertions
-
-```yaml
-tests:
+  # Negative assertions
   - desc: no errors in output
-    cmd: echo "success"
+    exit: 0
+    cmd: echo success
     outputs:
       stdout:
         - "success"
       "!stdout":
         - "error"
         - "fail"
-        - "exception"
-```
 
----
-
-## File Output Validation
-
-### Check File Exists
-
-```yaml
-tests:
-  - desc: command creates output file
-    cmd: touch {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          exists: true
-```
-
-### Check File Content
-
-```yaml
-tests:
-  - desc: command writes expected content
-    cmd: echo "data" > {outputs.out.txt}
-    outputs:
-      files:
-        out.txt:
-          exists: true
-          match:
-            - "^data$"
-```
-
-### Negative File Checks
-
-```yaml
-tests:
-  - desc: command does not create error log
-    cmd: process --quiet
-    outputs:
-      "!files":
-        error.log:
-          exists: false
-```
-
----
-
-## Common Patterns
-
-### Testing CLI Tools
-
-```yaml
-tests:
-  - desc: help flag works
-    exit: 0
-    cmd: mytool --help
-    outputs:
-      stdout:
-        - "Usage:"
-        - "--help"
-
-  - desc: version flag works
-    exit: 0
-    cmd: mytool --version
-    outputs:
-      stdout:
-        - "v[0-9]+\\.[0-9]+"
-```
-
-### Testing Error Handling
-
-```yaml
-tests:
-  - desc: invalid input returns error
+  # Expected non-zero exit
+  - desc: grep returns 1 when not found
     exit: 1
-    cmd: mytool --bad-flag
-    outputs:
-      stderr:
-        - "unknown flag"
-      "!stdout":
-        - "success"
+    inputs:
+      stdin: "hello world"
+    cmd: grep -q "notfound"
+
+  # Using EXIT_* variable
+  - desc: exit code variable
+    exit: EXIT_SUCCESS
+    cmd: true
 ```
 
-### Testing File Transformations
+## Running the Examples
+
+```bash
+dats examples/example.dats examples/
+```
+
+Output:
+```
+Generated: /path/to/examples/example.gen.bats
+Created 3 fixture file(s)
+Running: bats /path/to/examples/example.gen.bats
+1..8
+ok 1 echo test
+ok 2 cat reads file
+ok 3 cat reads stdin
+ok 4 concatenate two files
+ok 5 line matching
+ok 6 no errors in output
+ok 7 grep returns 1 when not found
+ok 8 exit code variable
+```
+
+## Pattern Breakdown
+
+### Simple Command
 
 ```yaml
-tests:
-  - desc: json to yaml conversion
-    cmd: convert {inputs.data.json} -o {outputs.data.yaml}
-    inputs:
-      files:
-        data.json: |
-          {"key": "value"}
-    outputs:
-      files:
-        data.yaml:
-          exists: true
-          match:
-            - "key: value"
+- desc: echo test
+  cmd: echo Hello World
+  outputs:
+    stdout:
+      - "Hello World"
 ```
 
-### Testing Pipelines
+Exit code defaults to 0 if not specified.
+
+### File Inputs
 
 ```yaml
-tests:
-  - desc: pipeline processes data
-    cmd: cat {inputs.data.txt} | grep pattern | wc -l
-    inputs:
-      files:
-        data.txt: |
-          pattern match 1
-          no match here
-          pattern match 2
-    outputs:
-      stdout:
-        - "2"
+- desc: cat reads file
+  inputs:
+    files:
+      input.txt: |
+        Hello, world!
+  cmd: cat {inputs.input.txt}
 ```
 
----
+The `{inputs.input.txt}` placeholder expands to the fixture file path.
 
-## Complete Real-World Example
+### Stdin Input
 
 ```yaml
-tests:
-  # Basic functionality
-  - desc: processes valid input
-    exit: 0
-    cmd: mycompiler {inputs.source.lang}
-    inputs:
-      files:
-        source.lang: |
-          function main() {
-            print("Hello")
-          }
-    outputs:
-      stdout:
-        - "Compiled successfully"
-      "!stderr":
-        - "error"
-        - "warning"
-
-  # Error handling
-  - desc: syntax error reports line number
-    exit: 1
-    cmd: mycompiler {inputs.bad.lang}
-    inputs:
-      files:
-        bad.lang: |
-          function main( {
-            broken
-          }
-    outputs:
-      stderr:
-        - "syntax error"
-        - "line 1"
-      "!stdout":
-        - "Compiled successfully"
-
-  # Output file generation
-  - desc: generates binary output
-    exit: 0
-    cmd: mycompiler {inputs.source.lang} -o {outputs/binary}
-    inputs:
-      files:
-        source.lang: "print(42)"
-    outputs:
-      files:
-        binary:
-          exists: true
-
-  # Help and version
-  - desc: shows help
-    exit: 0
-    cmd: mycompiler --help
-    outputs:
-      stdout:
-        0: "^Usage: mycompiler"
-        - "--help"
-        - "--version"
-        - "--output"
-
-  - desc: shows version
-    exit: 0
-    cmd: mycompiler --version
-    outputs:
-      stdout:
-        - "^mycompiler v[0-9]+\\.[0-9]+\\.[0-9]+$"
+- desc: cat reads stdin
+  inputs:
+    stdin: "Hello from stdin"
+  cmd: cat
 ```
+
+### Line-Specific Assertions
+
+```yaml
+- desc: line matching
+  cmd: printf "line0\nline1\nline2"
+  outputs:
+    stdout:
+      0: "^line0$"
+      2: "^line2$"
+```
+
+Integer keys (0, 2) specify line numbers. Values are regex patterns.
+
+### Negative Assertions
+
+```yaml
+- desc: no errors in output
+  cmd: echo success
+  outputs:
+    stdout:
+      - "success"
+    "!stdout":
+      - "error"
+      - "fail"
+```
+
+`!stdout` patterns must NOT appear in the output.
+
+### Exit Code Variables
+
+```yaml
+- desc: exit code variable
+  exit: EXIT_SUCCESS
+  cmd: true
+```
+
+Use `EXIT_SUCCESS` or `EXIT_FAILURE` for readable test definitions.

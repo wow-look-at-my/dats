@@ -90,7 +90,7 @@ func TestExpandPlaceholders(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := expandPlaceholders(tt.cmd, inputPaths, outputPaths, "/base")
+			got := expandPlaceholders(tt.cmd, inputPaths, outputPaths)
 			if got != tt.want {
 				t.Errorf("expandPlaceholders() = %q, want %q", got, tt.want)
 			}
@@ -149,11 +149,9 @@ func TestGenerator_Generate(t *testing.T) {
 	tmpDir := t.TempDir()
 	inputDir := filepath.Join(tmpDir, "input")
 	outputDir := filepath.Join(tmpDir, "output")
-	runtimeDir := filepath.Join(tmpDir, "runtime")
 
 	os.MkdirAll(inputDir, 0755)
 	os.MkdirAll(outputDir, 0755)
-	os.MkdirAll(runtimeDir, 0755)
 
 	// Create a simple .dats file (no desc - should use cmd as test name)
 	datsContent := `
@@ -168,9 +166,8 @@ tests:
 	os.WriteFile(datsPath, []byte(datsContent), 0644)
 
 	gen := &Generator{
-		InputPath:  datsPath,
-		OutputDir:  outputDir,
-		RuntimeDir: runtimeDir,
+		InputPath: datsPath,
+		OutputDir: outputDir,
 	}
 
 	result, err := gen.Generate()
@@ -202,11 +199,9 @@ func TestGenerator_Generate_WithInputs(t *testing.T) {
 	tmpDir := t.TempDir()
 	inputDir := filepath.Join(tmpDir, "input")
 	outputDir := filepath.Join(tmpDir, "output")
-	runtimeDir := filepath.Join(tmpDir, "runtime")
 
 	os.MkdirAll(inputDir, 0755)
 	os.MkdirAll(outputDir, 0755)
-	os.MkdirAll(runtimeDir, 0755)
 
 	datsContent := `
 tests:
@@ -225,9 +220,8 @@ tests:
 	os.WriteFile(datsPath, []byte(datsContent), 0644)
 
 	gen := &Generator{
-		InputPath:  datsPath,
-		OutputDir:  outputDir,
-		RuntimeDir: runtimeDir,
+		InputPath: datsPath,
+		OutputDir: outputDir,
 	}
 
 	result, err := gen.Generate()

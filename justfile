@@ -15,7 +15,6 @@ build output="$BUILD_DIR/dats":
 test: build
     go test -cover ./...
     "$BUILD_DIR/dats" examples/example.dats examples/
-    bats examples/*.gen.bats
 
 [private]
 clean:

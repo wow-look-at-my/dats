@@ -3,7 +3,7 @@
 ## Synopsis
 
 ```
-dats <file.dats> [output_dir] [--runtime-dir=<path>]
+dats <file.dats> [output_dir]
 ```
 
 ## Arguments
@@ -21,32 +21,17 @@ Generated files:
 - `<basename>.gen.bats.d` - Make dependency file
 - `fixtures/<basename>/` - Input fixture files (if tests define inputs)
 
-### `--runtime-dir=<path>` (optional)
-
-Path to the runtime directory containing `test_helper.bash`.
-
-The runtime directory is discovered in this order:
-1. Explicit `--runtime-dir` argument
-2. `./runtime` relative to current working directory
-3. Alongside the dats binary
-4. One level up from the binary (for `bin/dats` layouts)
-
 ## Examples
 
-### Basic Usage
-
 ```bash
-# Generate test.gen.bats in same directory as test.dats
+# Generate and run tests (output in same directory as input)
 dats test.dats
 
-# Generate in a specific output directory
+# Generate and run tests in a specific output directory
 dats test.dats ./generated/
-
-# Specify runtime directory explicitly
-dats test.dats ./generated/ --runtime-dir=/path/to/runtime
 ```
 
-### Help
+## Help
 
 ```bash
 dats -h
@@ -73,7 +58,7 @@ examples/
           b.txt
 ```
 
-### Dependency File
+## Dependency File
 
 The `.gen.bats.d` file lists all dependencies for Make-based build systems:
 
@@ -83,36 +68,8 @@ The `.gen.bats.d` file lists all dependencies for Make-based build systems:
 
 This enables incremental rebuilds when source files change.
 
-## Integration with BATS
+## Exit Codes
 
-After generating, run tests with BATS:
-
-```bash
-# Run a single test file
-bats example.gen.bats
-
-# Run all generated tests
-bats *.gen.bats
-
-# Run with verbose output
-bats --verbose-run example.gen.bats
-```
-
-## Build System Integration
-
-### Just
-
-```just
-test:
-    dats tests/suite.dats tests/
-    bats tests/suite.gen.bats
-```
-
-### Make
-
-```makefile
-%.gen.bats: %.dats
-    dats $< $(dir $<)
-
--include $(wildcard *.gen.bats.d)
-```
+DATS passes through the exit code from BATS:
+- `0` - All tests passed
+- `1` - One or more tests failed
