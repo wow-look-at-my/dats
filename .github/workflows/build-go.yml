@@ -3,10 +3,6 @@ name: Build Go Binaries
 on:
   workflow_call:
     inputs:
-      package:
-        description: Go package path to build
-        type: string
-        required: true
       output-name:
         description: Output binary name (without extension)
         type: string
@@ -48,6 +44,9 @@ jobs:
           - goos: windows
             goarch: amd64
     runs-on: ubuntu-latest
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,14 +54,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: extractions/setup-just@v2
+
       - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
         run: |
           output="${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
           [[ "${{ matrix.goos }}" == "windows" ]] && output="${output}.exe"
-          go build -o "$output" ${{ inputs.package }}
+          just build "$output"
 
       - uses: actions/upload-artifact@v4
         with:

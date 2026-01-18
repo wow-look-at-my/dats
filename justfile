@@ -8,7 +8,7 @@ _help:
     @just --list --list-submodules
 
 # Build everything (Go binary + VS Code extension)
-build: _build-go (vscode::build)
+build output="dats": (_build-go output) (vscode::build)
 
 # Run all tests with coverage
 test: _build-go (vscode::test)
@@ -25,7 +25,7 @@ install: build
     mkdir -p ~/.local/bin
     ln -sf "$(pwd)/dats" ~/.local/bin/dats
 
-_build-go:
+_build-go output="dats":
     go fmt ./src/dats/...
     go vet ./src/dats/...
-    go build -o dats ./src/dats
+    go build -o {{output}} ./src/dats
