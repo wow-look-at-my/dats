@@ -5,25 +5,25 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mhaynie/bats-declarative/internal/generator"
+	"github.com/mhaynie/bats-declarative/internal/runner"
 )
 
 const usage = `dats - Declarative Automated Testing System
 
-Usage: dats <file.dats> [output_dir] [--runtime-dir=<path>]
+Usage: dats [options] <file.dats>...
 
 Arguments:
-  file.dats    Input .dats file to convert
-  output_dir   Output directory for generated files (default: same as input)
+  file.dats    Input .dats file(s) to run
 
 Options:
-  --runtime-dir=<path>  Path to runtime directory containing test_helper.bash
-                        (default: ./runtime or alongside the dats binary)
+  -v, --verbose   Show verbose output (command details, full output on failure)
+  --keep-temp     Keep temp directory for debugging
+  -h, --help      Show this help message
 
 Examples:
-  dats tests.dats                    # Generate tests.gen.bats in current dir
-  dats tests.dats ./output           # Generate in ./output directory
-  dats tests.dats ./output --runtime-dir=/path/to/runtime
+  dats tests.dats                    # Run tests from tests.dats
+  dats -v tests.dats                 # Run with verbose output
+  dats tests/*.dats                  # Run multiple test files
 `
 
 func main() {
@@ -32,108 +32,72 @@ func main() {
 		os.Exit(1)
 	}
 
-	inputPath := os.Args[1]
+	var files []string
+	verbose := false
+	keepTemp := false
 
-	if inputPath == "-h" || inputPath == "--help" {
-		fmt.Print(usage)
-		os.Exit(0)
-	}
-
-	// Validate input file exists and has .dats extension
-	if filepath.Ext(inputPath) != ".dats" {
-		fmt.Fprintf(os.Stderr, "Error: input file must have .dats extension\n")
-		os.Exit(1)
-	}
-
-	if _, err := os.Stat(inputPath); os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Error: input file %s does not exist\n", inputPath)
-		os.Exit(1)
-	}
-
-	// Determine output directory
-	outputDir := filepath.Dir(inputPath)
-	if len(os.Args) >= 3 && os.Args[2][0] != '-' {
-		outputDir = os.Args[2]
-	}
-
-	// Create output directory if needed
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Determine runtime directory
-	runtimeDir := findRuntimeDir()
-	for _, arg := range os.Args[2:] {
-		if len(arg) > 14 && arg[:14] == "--runtime-dir=" {
-			runtimeDir = arg[14:]
+	for _, arg := range os.Args[1:] {
+		switch arg {
+		case "-h", "--help":
+			fmt.Print(usage)
+			os.Exit(0)
+		case "-v", "--verbose":
+			verbose = true
+		case "--keep-temp":
+			keepTemp = true
+		default:
+			if arg[0] == '-' {
+				fmt.Fprintf(os.Stderr, "Error: unknown option %s\n", arg)
+				os.Exit(1)
+			}
+			files = append(files, arg)
 		}
 	}
 
-	if runtimeDir == "" {
-		fmt.Fprintf(os.Stderr, "Error: could not find runtime directory\n")
-		fmt.Fprintf(os.Stderr, "Specify with --runtime-dir=<path>\n")
+	if len(files) == 0 {
+		fmt.Fprint(os.Stderr, "Error: no input files specified\n")
+		fmt.Fprint(os.Stderr, usage)
 		os.Exit(1)
 	}
 
-	// Make paths absolute
-	absInput, err := filepath.Abs(inputPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	absOutput, err := filepath.Abs(outputDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	absRuntime, err := filepath.Abs(runtimeDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	gen := &generator.Generator{
-		InputPath:  absInput,
-		OutputDir:  absOutput,
-		RuntimeDir: absRuntime,
-	}
-
-	result, err := gen.Generate()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating tests: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("Generated: %s\n", result.BatsFile)
-	if len(result.InputFiles) > 0 {
-		fmt.Printf("Created %d fixture file(s)\n", len(result.InputFiles))
-	}
-}
-
-// findRuntimeDir looks for the runtime directory in common locations
-func findRuntimeDir() string {
-	// Check relative to current directory
-	if _, err := os.Stat("runtime/test_helper.bash"); err == nil {
-		return "runtime"
-	}
-
-	// Check relative to executable
-	exe, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exe)
-		runtimePath := filepath.Join(exeDir, "runtime")
-		if _, err := os.Stat(filepath.Join(runtimePath, "test_helper.bash")); err == nil {
-			return runtimePath
+	// Validate all input files exist and have .dats extension
+	for _, path := range files {
+		if filepath.Ext(path) != ".dats" {
+			fmt.Fprintf(os.Stderr, "Error: input file %s must have .dats extension\n", path)
+			os.Exit(1)
 		}
-		// Also check one level up (for when binary is in bin/)
-		runtimePath = filepath.Join(exeDir, "..", "runtime")
-		if _, err := os.Stat(filepath.Join(runtimePath, "test_helper.bash")); err == nil {
-			return runtimePath
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Error: input file %s does not exist\n", path)
+			os.Exit(1)
 		}
 	}
 
-	return ""
+	r := runner.NewRunner(os.Stdout, verbose, keepTemp)
+
+	totalPassed := 0
+	totalFailed := 0
+
+	for _, path := range files {
+		result, err := r.RunFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error running %s: %v\n", path, err)
+			os.Exit(1)
+		}
+		totalPassed += result.Passed
+		totalFailed += result.Failed
+	}
+
+	// Print overall summary if multiple files
+	if len(files) > 1 {
+		fmt.Printf("\nTotal: %d/%d passed", totalPassed, totalPassed+totalFailed)
+		if totalFailed > 0 {
+			fmt.Printf(", %d failed", totalFailed)
+		}
+		fmt.Println()
+	}
+
+	// Exit with non-zero if any tests failed
+	if totalFailed > 0 {
+		os.Exit(1)
+	}
 }
