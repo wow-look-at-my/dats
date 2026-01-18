@@ -1,0 +1,49 @@
+name: Build VS Code Extension
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory containing the VS Code extension
+        type: string
+        required: true
+      output-name:
+        description: Output filename for the .vsix (without extension)
+        type: string
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+      - uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Test and build
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          just test
+          just build
+          mv "$BUILD_DIR/dats.vsix" "${{ inputs.output-name }}.vsix"
+        env:
+          BUILD_DIR: ${{ github.workspace }}/build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.output-name }}-vsix
+          path: ${{ inputs.working-directory }}/${{ inputs.output-name }}.vsix

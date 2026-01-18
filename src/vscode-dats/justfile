@@ -3,24 +3,23 @@
 # Build extension and package as .vsix
 build: _compile
     mkdir -p "$BUILD_DIR"
-    npx vsce package --out "$BUILD_DIR/dats.vsix"
+    pnpm vsce package --no-dependencies --out "$BUILD_DIR/dats.vsix"
 
 # Install extension in VS Code
 install: build
     code --install-extension "$BUILD_DIR/dats.vsix" --force
 
 # Update dependencies to latest versions
-update:
-    npx npm-check-updates -u
-    npm install
+update: && _deps
+    pnpm update --latest
 
 # Run tests
 test:
-    npx vitest run --coverage
+    pnpm vitest run --coverage
 
-_compile: _deps
-    npx esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
-    npx esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
+_compile: _deps && test
+    pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/extension.js --external:vscode --format=cjs --platform=node
+    pnpm esbuild src/extension.ts --bundle --minify --outfile=dist/web/extension.js --external:vscode --format=cjs --platform=browser
 
 _deps:
-    npm install
+    pnpm install

@@ -1,5 +1,5 @@
-# Binary
-/dats
+# Build output
+/build/
 
 # Generated files
 *.gen.bats
