@@ -13,18 +13,12 @@ jobs:
   build-go:
     uses: ./.github/workflows/build-go.yml
     with:
-      working-directory: src/dats
-      output-name: dats
-
-  build-vscode:
-    uses: ./.github/workflows/build-vscode.yml
-    with:
-      working-directory: src/vscode-dats
+      working-directory: .
       output-name: dats
 
   release:
     if: github.ref == 'refs/heads/master' || inputs.release
-    needs: [build-go, build-vscode]
+    needs: [build-go]
     runs-on: ubuntu-latest
     permissions:
       contents: write

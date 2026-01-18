@@ -1,4 +1,4 @@
-module github.com/mhaynie/bats-declarative/src/dats
+module github.com/mhaynie/bats-declarative
 
 go 1.24.11
 
