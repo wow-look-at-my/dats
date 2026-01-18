@@ -1,102 +1,187 @@
-# Plan: Fix DATS Documentation + Code Issues
+# Plan: Replace BATS with Native Test Runner
 
-## Issues Identified
+## Summary
 
-1. **Examples are fabricated** - Need to generate real examples by running dats
-2. **Docs explain bypassing dats** - Remove references to manually editing generated files, calling bats directly, etc.
-3. **Runtime helpers doc is confusing** - Mixing DATS-specific helpers with bats-assert documentation
-4. **--runtime-dir shouldn't be documented** - It auto-discovers; remove from docs
-5. **bats-assert/bats-support not embedded** - Should be embedded in binary (MIT license)
-6. **dats should run tests** - Currently only generates; needs to execute bats after generation
+Drop the intermediate BATS generation step. Instead of `dats generate foo.dats` producing `.gen.bats` files that require BATS to run, the `dats` binary will directly execute tests from `.dats` files.
 
-## Plan
+**Current flow:**
+```
+.dats → (generator) → .gen.bats → (bats) → results
+```
 
-### Part A: Code Changes
+**New flow:**
+```
+.dats → (dats run) → results
+```
 
-#### A1. Embed runtime files in the dats binary
-The bats-support and bats-assert libraries (MIT license) should be embedded directly in the Go executable using `go:embed`. This eliminates runtime directory discovery entirely.
+## Why Drop BATS
 
-**New package: `internal/runtime/`**
-- Create `internal/runtime/embedded.go`:
-  ```go
-  //go:embed files/*
-  var Files embed.FS
-  ```
-- Move `runtime/` contents to `internal/runtime/files/`
-- Remove orphaned `.git` files from bats-assert/bats-support
+1. **Extra dependency** - Users need BATS, bats-support, bats-assert installed
+2. **Two-step process** - Generate then run is unnecessary indirection
+3. **Limited value** - We only use a small subset of BATS features:
+   - `run` to capture exit code and output
+   - `assert_output --partial` / `refute_output --partial`
+   - `assert_line --index N --regexp`
+   - Exit code comparison
+4. **Simpler debugging** - Native runner can provide better error messages
 
-**Changes to generator:**
-- Generated .bats files no longer use relative `load` paths
-- Instead, dats writes helper files to temp dir at test time
+## CLI Interface (unchanged)
 
-#### A2. Add test execution to dats
-After generating the .bats file, dats should run bats automatically:
+```bash
+# Run tests directly (same invocation as before)
+dats examples/example.dats
 
-1. Create temp directory
-2. Extract embedded runtime files to temp dir
-3. Run `bats <generated.bats>` with runtime in temp
-4. Stream bats output to stdout/stderr
-5. Pass through bats exit code
-6. Clean up temp dir
+# Verbose output
+dats -v examples/example.dats
+```
 
-#### A3. Remove --runtime-dir and findRuntimeDir()
-- Delete all runtime directory discovery code from main.go
-- Delete `--runtime-dir` argument parsing
-- Delete `findRuntimeDir()` function
-- CLI becomes simply: `dats <file.dats> [output_dir]`
+The only change is behavior: instead of generating a `.gen.bats` file, it runs the tests and prints results.
 
-#### A4. Update generator to use embedded runtime
-- Modify `internal/generator/generator.go`
-- Generated .bats files should load helper from a path provided at generation time
-- Or: Generate self-contained tests that don't need external helpers
+## Implementation Plan
 
-### Part B: Documentation Changes
+### Phase 1: Core Runner Infrastructure
 
-#### B1. Rewrite docs/README.md
-- Remove "Run the test: `bats`" step
-- Show: `dats mytest.dats` generates AND runs tests
+**File: `internal/runner/runner.go`**
 
-#### B2. Rewrite docs/cli.md
-- Remove `--runtime-dir` from synopsis and examples
-- Remove "Integration with BATS" section
-- Remove Make integration examples
-- Keep simple: `dats <file.dats> [output_dir]`
+```go
+type Runner struct {
+    Verbose bool
+    WorkDir string  // temp directory for fixtures
+}
 
-#### B3. Rewrite docs/runtime.md
-- Focus ONLY on DATS-specific helpers:
-  - `assert_exit_code`
-  - `run_with_stderr` / `assert_stderr` / `refute_stderr`
-  - `setup_dats_tmpdir` / `teardown_dats_tmpdir`
-  - `EXIT_SUCCESS` / `EXIT_FAILURE`
-- Remove bats-assert function docs (external library)
-- Remove "extending the runtime" section
+type TestResult struct {
+    Test     *schema.Test
+    Passed   bool
+    Duration time.Duration
+    Failures []string  // list of assertion failures
+}
 
-#### B4. Rewrite docs/examples.md
-- Reference real `examples/example.dats` file content
-- Don't invent fake examples
+func (r *Runner) RunFile(path string) ([]TestResult, error)
+func (r *Runner) RunTest(test *schema.Test) TestResult
+```
 
-#### B5. Rewrite docs/generated-output.md
-- Use real generated output from `examples/example.gen.bats`
-- Remove any fabricated transformation examples
+### Phase 2: Command Execution
+
+**File: `internal/runner/exec.go`**
+
+Execute commands and capture:
+- Exit code
+- Stdout (as string and split into lines)
+- Stderr (as string and split into lines)
+
+```go
+type ExecResult struct {
+    ExitCode int
+    Stdout   string
+    StdoutLines []string
+    Stderr   string
+    StderrLines []string
+}
+
+func Execute(cmd string, stdin string, env []string) (*ExecResult, error)
+```
+
+Use `os/exec` with:
+- `cmd.Stdin` for stdin piping
+- `cmd.Stdout` / `cmd.Stderr` as `bytes.Buffer`
+- Check `cmd.ProcessState.ExitCode()` for exit code
+
+### Phase 3: Assertion Engine
+
+**File: `internal/runner/assert.go`**
+
+```go
+// Check if pattern appears in text (substring match)
+func AssertContains(text, pattern string) error
+func RefuteContains(text, pattern string) error
+
+// Check if line N matches regex
+func AssertLineRegex(lines []string, lineNum int, pattern string) error
+
+// Check exit code
+func AssertExitCode(actual int, expected schema.ExitCode) error
+
+// File assertions
+func AssertFileExists(path string) error
+func RefuteFileExists(path string) error
+func AssertFileMatches(path string, patterns []string) error
+func RefuteFileMatches(path string, patterns []string) error
+```
+
+### Phase 4: Fixture Management
+
+**File: `internal/runner/fixtures.go`**
+
+- Create temp directory per test file
+- Write input files to `<tmpdir>/<test-index>/inputs/`
+- Resolve `{inputs.X}` and `{outputs.X}` placeholders
+- Cleanup on completion (or preserve with flag for debugging)
+
+### Phase 5: Output Formatting
+
+**File: `internal/runner/output.go`**
+
+TAP-like output:
+```
+Running examples/example.dats (5 tests)
+
+ok 1 - echo test
+ok 2 - cat reads file
+not ok 3 - line matching
+  # Expected line 0 to match "^line0$", got "wrongline"
+ok 4 - exit code test
+ok 5 - negated pattern test
+
+4/5 passed, 1 failed
+```
+
+Verbose mode shows:
+- Command being run
+- Full stdout/stderr on failure
+- Assertion details
+
+### Phase 6: Update CLI
+
+**File: `main.go`**
+
+Same interface, different behavior:
+- Parse `.dats` file
+- Call runner instead of generator
+- Print results, exit non-zero on failure
 
 ## Files to Modify
 
-### Code
-- `main.go` - Add bats execution, remove --runtime-dir, remove findRuntimeDir()
-- `internal/generator/generator.go` - Update load path handling
-- `internal/runtime/` (NEW) - Create package with embedded files
-- `runtime/` - Move to `internal/runtime/files/`, delete orphaned .git files
+| File | Action |
+|------|--------|
+| `main.go` | Add `run` subcommand, wire up runner |
+| `internal/runner/runner.go` | **NEW** - Core test runner |
+| `internal/runner/exec.go` | **NEW** - Command execution |
+| `internal/runner/assert.go` | **NEW** - Assertion functions |
+| `internal/runner/fixtures.go` | **NEW** - Fixture file management |
+| `internal/runner/output.go` | **NEW** - Result formatting |
 
-### Docs
-- `docs/README.md` - Update quick start
-- `docs/cli.md` - Remove --runtime-dir, remove bats invocation
-- `docs/runtime.md` - Remove bats-assert docs, focus on DATS helpers
-- `docs/examples.md` - Replace with real example.dats content
-- `docs/generated-output.md` - Use real example.gen.bats content
-- `docs/file-format.md` - Keep as-is (syntax reference is fine)
+## Files to Remove
+
+| File | Reason |
+|------|--------|
+| `internal/generator/generator.go` | No longer generating BATS |
+| `internal/generator/generator_test.go` | Tests for removed generator |
+| `runtime/test_helper.bash` | BATS helper no longer needed |
+| `runtime/test_helper/bats-support/` | BATS library |
+| `runtime/test_helper/bats-assert/` | BATS library |
+| `examples/*.gen.bats` | Generated files no longer produced |
 
 ## Verification
-1. `just build` - Ensure dats compiles with embedded runtime
-2. `dats examples/example.dats examples/` - Should generate AND run tests automatically
-3. Verify no external runtime files needed - binary is self-contained
-4. Review all docs contain only real examples and no bypass instructions
+
+1. Run `dats run examples/example.dats` - should execute all tests
+2. Verify exit code 0 when all tests pass, non-zero when any fail
+3. Verify verbose mode shows useful debugging info
+4. Verify fixture cleanup happens (or doesn't with debug flag)
+5. Compare behavior against current BATS-based execution for same .dats files
+
+## Migration Notes
+
+- Existing `.gen.bats` files will no longer be produced
+- Users who run BATS directly will need to switch to `dats run`
+- The `.dats` file format remains unchanged
+- justfile `test` recipe will change from `bats examples/*.gen.bats` to `dats run examples/*.dats`

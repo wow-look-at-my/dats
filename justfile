@@ -14,8 +14,7 @@ build output="$BUILD_DIR/dats":
 # Run all tests with coverage
 test: build
     go test -cover ./...
-    "$BUILD_DIR/dats" examples/example.dats examples/
-    bats examples/*.gen.bats
+    "$BUILD_DIR/dats" examples/example.dats
 
 [private]
 clean:
