@@ -12,8 +12,8 @@ _help:
 build: (dats::build) (vscode::build)
 
 # Run all tests with coverage
-test: build
-    ./dats examples/example.dats examples/
+test: (dats::build) (vscode::build) && (dats::test)
+    "$BUILD_DIR/dats" examples/example.dats examples/
     bats examples/*.gen.bats
 
 [private]
@@ -23,4 +23,4 @@ clean:
 # Symlink to ~/.local/bin
 install: build
     mkdir -p ~/.local/bin
-    ln -sf "$(pwd)/dats" ~/.local/bin/dats
+    ln -sf "$BUILD_DIR/dats" ~/.local/bin/dats

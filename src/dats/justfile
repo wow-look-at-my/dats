@@ -1,7 +1,7 @@
 # DATS Go Binary
 
 # Build the binary
-build output="dats": && test
+build output="$BUILD_DIR/dats":
     go fmt ./...
     go vet ./...
     go build -o {{output}} .
