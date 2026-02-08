@@ -14,15 +14,17 @@ import (
 // Runner executes tests from .dats files
 type Runner struct {
 	Verbose   bool
-	KeepTemp  bool // Keep temp directory for debugging
+	KeepTemp  bool   // Keep temp directory for debugging
+	CoverDir  string // Directory for GOCOVERDIR coverage data
 	Formatter *Formatter
 }
 
 // NewRunner creates a new test runner
-func NewRunner(output io.Writer, verbose bool, keepTemp bool) *Runner {
+func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *Runner {
 	return &Runner{
 		Verbose:  verbose,
 		KeepTemp: keepTemp,
+		CoverDir: coverDir,
 		Formatter: &Formatter{
 			Writer:  output,
 			Verbose: verbose,
@@ -52,6 +54,13 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		defer Cleanup(tempDir)
 	} else {
 		fmt.Fprintf(r.Formatter.Writer, "# Temp directory: %s\n", tempDir)
+	}
+
+	// Ensure coverage directory exists if specified
+	if r.CoverDir != "" {
+		if err := os.MkdirAll(r.CoverDir, 0o755); err != nil {
+			return nil, fmt.Errorf("creating coverage directory: %w", err)
+		}
 	}
 
 	r.Formatter.PrintHeader(path, len(testFile.Tests))
@@ -106,8 +115,14 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	cmd := ExpandPlaceholders(test.Cmd, ctx)
 	result.Command = cmd
 
+	// Build environment for command execution
+	var env []string
+	if r.CoverDir != "" {
+		env = append(os.Environ(), "GOCOVERDIR="+r.CoverDir)
+	}
+
 	// Execute the command
-	execResult, err := Execute(cmd, test.Inputs.Stdin, nil)
+	execResult, err := Execute(cmd, test.Inputs.Stdin, env)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)
