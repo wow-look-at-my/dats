@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
+DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative XML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
 ## Build Commands
 
@@ -36,7 +36,7 @@ go test -cover ./...
 ## Architecture
 
 ### Core Flow
-1. `.dats` YAML file is parsed using `gopkg.in/yaml.v3`
+1. `.dats` XML file is parsed using `encoding/xml` (stdlib)
 2. For each test, fixtures are set up in a temp directory
 3. Command is executed via `bash -c` with placeholder expansion
 4. Exit code, stdout, stderr, and output files are validated against assertions
@@ -44,7 +44,7 @@ go test -cover ./...
 
 ### Go Package Structure
 - `main.go` - CLI entry point, argument parsing, file validation
-- `internal/schema/types.go` - YAML schema types with custom unmarshalers
+- `internal/schema/types.go` - XML schema types with custom attribute unmarshalers
 - `internal/runner/` - Native test runner
   - `runner.go` - Orchestrates test execution (RunFile, RunTest)
   - `exec.go` - Command execution via bash, captures exit code and output
@@ -53,11 +53,18 @@ go test -cover ./...
   - `output.go` - Result types (TestResult, FileResult) and TAP-like formatting
 
 ### Key Types
-- **ExitCode** - Can be int (0-255) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`
-- **OutputCheck** - Either `[]string` (patterns) or `map[int]string` (line-specific regex, 0-indexed)
-- **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, and file checks
-- **FileCheck** - Validates output files with `exists`, `match`, and `notMatch` properties
-- **InputBlock** - Contains `stdin` (string) and `files` (map of filename to content)
+- **TestFile** - Root `<dats>` element containing `[]Test`
+- **Test** - Attributes: `desc`, `cmd`, `exit`. Children: `stdin`, `input`, `stdout`, `stderr`, `output`
+- **ExitCode** - Custom XML attr unmarshaler: int (0-255) or `EXIT_SUCCESS`/`EXIT_FAILURE`
+- **StreamCheck** - `<stdout>`/`<stderr>` with `<match>`, `<not-match>`, and `<line n="N">` children
+- **InputFile** - `<input name="file.txt">content</input>`
+- **FileOutput** - `<output name="file.txt" exists="true">` with `<match>`/`<not-match>` children
+- **ExistsBool** - Custom XML attr unmarshaler tracking whether `exists` was explicitly set
+
+### XML Design: Attributes vs Children
+XML provides a natural distinction between properties ON an object (attributes) and properties IN an object (children):
+- **Attributes** = scalar metadata about the test: `desc`, `cmd`, `exit`
+- **Children** = structured content within the test: `<stdin>`, `<input>`, `<stdout>`, `<output>`
 
 ### Placeholder System
 Commands use `{inputs.X}` and `{outputs.X}` which expand to absolute paths in the temp directory:
@@ -66,48 +73,53 @@ Commands use `{inputs.X}` and `{outputs.X}` which expand to absolute paths in th
 
 ## DATS File Format
 
-```yaml
-tests:
-  - desc: optional description
-    cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
-    exit: 0                   # Optional, default 0 (or EXIT_SUCCESS/EXIT_FAILURE)
-    inputs:
-      stdin: "input text"     # Optional, piped to cmd
-      files:                  # Optional, creates fixture files
-        file.txt: content
-    outputs:                  # Optional
-      stdout:                 # Pattern list or line-number map
-        - "pattern"           # Substring match
-      stdout:                 # Or use line-specific regex (0-indexed)
-        0: "^first line$"
-        2: "^third line$"
-      "!stdout":              # Patterns that must NOT appear
-        - "error"
-      stderr:
-        - "warning"
-      files:                  # Output file validation
-        result.txt:
-          exists: true
-          match:
-            - "expected content"
-          notMatch:
-            - "error"
+```xml
+<dats>
+  <test desc="optional description" cmd="command to run" exit="0">
+    <!-- Input: stdin content piped to cmd -->
+    <stdin>input text</stdin>
+
+    <!-- Input: fixture files created before running cmd -->
+    <input name="file.txt">content</input>
+
+    <!-- Output: stdout assertions -->
+    <stdout>
+      <match>pattern</match>           <!-- Substring match -->
+      <not-match>error</not-match>     <!-- Must NOT appear -->
+      <line n="0">^first line$</line>  <!-- Line-specific regex (0-indexed) -->
+    </stdout>
+
+    <!-- Output: stderr assertions -->
+    <stderr>
+      <match>warning</match>
+    </stderr>
+
+    <!-- Output: file assertions -->
+    <output name="result.txt" exists="true">
+      <match>expected content</match>
+      <not-match>error</not-match>
+    </output>
+  </test>
+</dats>
 ```
 
-### Test Properties
+### Test Attributes
 
-| Property | Required | Description |
-|----------|----------|-------------|
+| Attribute | Required | Description |
+|-----------|----------|-------------|
 | `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int or `EXIT_SUCCESS`/`EXIT_FAILURE` |
-| `inputs.stdin` | No | Content piped to command's stdin |
-| `inputs.files` | No | Map of filename → content (creates fixture files) |
-| `outputs.stdout` | No | Patterns to match in stdout |
-| `outputs.stderr` | No | Patterns to match in stderr |
-| `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
-| `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
-| `outputs.files` | No | Map of filename → FileCheck for output file validation |
+
+### Test Children
+
+| Element | Description |
+|---------|-------------|
+| `<stdin>` | Content piped to command's stdin |
+| `<input name="X">` | Fixture file created before running cmd |
+| `<stdout>` | Stdout assertions (`<match>`, `<not-match>`, `<line>`) |
+| `<stderr>` | Stderr assertions (`<match>`, `<not-match>`, `<line>`) |
+| `<output name="X">` | Output file validation with optional `exists` attr |
 
 ## CI/CD
 
@@ -115,7 +127,3 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push:
 - Builds Go binary for multiple platforms
 - Runs tests
 - Creates releases on master branch pushes
-
-## JSON Schema
-
-`schema.json` provides IDE validation for `.dats` files. Can be used with YAML language servers.

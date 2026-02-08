@@ -1,37 +1,45 @@
 package schema
 
 import (
+	"encoding/xml"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
-func TestExitCode_UnmarshalYAML_Int(t *testing.T) {
-	var e ExitCode
-	err := yaml.Unmarshal([]byte("42"), &e)
+func TestExitCode_UnmarshalXMLAttr_Int(t *testing.T) {
+	type wrapper struct {
+		Exit ExitCode `xml:"exit,attr"`
+	}
+	var w wrapper
+	err := xml.Unmarshal([]byte(`<wrapper exit="42"/>`), &w)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if e.Value != 42 {
-		t.Errorf("expected Value=42, got %d", e.Value)
+	if w.Exit.Value != 42 {
+		t.Errorf("expected Value=42, got %d", w.Exit.Value)
 	}
-	if e.Variable != "" {
-		t.Errorf("expected Variable='', got %q", e.Variable)
+	if w.Exit.Variable != "" {
+		t.Errorf("expected Variable='', got %q", w.Exit.Variable)
 	}
 }
 
-func TestExitCode_UnmarshalYAML_String(t *testing.T) {
-	var e ExitCode
-	err := yaml.Unmarshal([]byte("EXIT_SUCCESS"), &e)
+func TestExitCode_UnmarshalXMLAttr_String(t *testing.T) {
+	type wrapper struct {
+		Exit ExitCode `xml:"exit,attr"`
+	}
+	var w wrapper
+	err := xml.Unmarshal([]byte(`<wrapper exit="EXIT_SUCCESS"/>`), &w)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if e.Variable != "EXIT_SUCCESS" {
-		t.Errorf("expected Variable='EXIT_SUCCESS', got %q", e.Variable)
+	if w.Exit.Variable != "EXIT_SUCCESS" {
+		t.Errorf("expected Variable='EXIT_SUCCESS', got %q", w.Exit.Variable)
 	}
 }
 
-func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
+func TestExitCode_UnmarshalXMLAttr_InvalidString(t *testing.T) {
+	type wrapper struct {
+		Exit ExitCode `xml:"exit,attr"`
+	}
 	invalidCodes := []string{
 		"0dfsdfs",
 		"abc",
@@ -40,8 +48,8 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 		"123abc",
 	}
 	for _, code := range invalidCodes {
-		var e ExitCode
-		err := yaml.Unmarshal([]byte(code), &e)
+		var w wrapper
+		err := xml.Unmarshal([]byte(`<wrapper exit="`+code+`"/>`), &w)
 		if err == nil {
 			t.Errorf("expected error for %q, got none", code)
 		}
@@ -67,130 +75,135 @@ func TestExitCode_String(t *testing.T) {
 	}
 }
 
-func TestOutputCheck_UnmarshalYAML_Patterns(t *testing.T) {
-	var o OutputCheck
-	err := yaml.Unmarshal([]byte(`["pattern1", "pattern2"]`), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(o.Patterns) != 2 {
-		t.Fatalf("expected 2 patterns, got %d", len(o.Patterns))
-	}
-	if o.Patterns[0] != "pattern1" || o.Patterns[1] != "pattern2" {
-		t.Errorf("unexpected patterns: %v", o.Patterns)
-	}
-}
-
-func TestOutputCheck_UnmarshalYAML_LineChecks(t *testing.T) {
-	var o OutputCheck
-	err := yaml.Unmarshal([]byte("0: \"^line0$\"\n2: \"^line2$\""), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(o.LineChecks) != 2 {
-		t.Fatalf("expected 2 line checks, got %d", len(o.LineChecks))
-	}
-	if o.LineChecks[0] != "^line0$" {
-		t.Errorf("expected line 0 = '^line0$', got %q", o.LineChecks[0])
-	}
-	if o.LineChecks[2] != "^line2$" {
-		t.Errorf("expected line 2 = '^line2$', got %q", o.LineChecks[2])
-	}
-}
-
-func TestOutputCheck_IsEmpty(t *testing.T) {
-	tests := []struct {
-		name  string
-		check OutputCheck
-		want  bool
-	}{
-		{"empty", OutputCheck{}, true},
-		{"with patterns", OutputCheck{Patterns: []string{"a"}}, false},
-		{"with line checks", OutputCheck{LineChecks: map[int]string{0: "a"}}, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.check.IsEmpty(); got != tt.want {
-				t.Errorf("IsEmpty() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestOutputBlock_UnmarshalYAML(t *testing.T) {
-	input := `
-stdout:
-  - "hello"
-stderr:
-  - "error"
-"!stdout":
-  - "bad"
-"!stderr":
-  - "warning"
-files:
-  binary:
-    exists: true
-    match:
-      - "ELF"
-    notMatch:
-      - "corrupted"
-"!files":
-  error.log:
-    exists: false
-`
-	var o OutputBlock
-	err := yaml.Unmarshal([]byte(input), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(o.Stdout.Patterns) != 1 || o.Stdout.Patterns[0] != "hello" {
-		t.Errorf("unexpected stdout: %v", o.Stdout)
-	}
-	if len(o.Stderr.Patterns) != 1 || o.Stderr.Patterns[0] != "error" {
-		t.Errorf("unexpected stderr: %v", o.Stderr)
-	}
-	if len(o.NotStdout.Patterns) != 1 || o.NotStdout.Patterns[0] != "bad" {
-		t.Errorf("unexpected !stdout: %v", o.NotStdout)
-	}
-	if len(o.NotStderr.Patterns) != 1 || o.NotStderr.Patterns[0] != "warning" {
-		t.Errorf("unexpected !stderr: %v", o.NotStderr)
-	}
-	if _, ok := o.Files["binary"]; !ok {
-		t.Errorf("expected binary in Files")
-	}
-	if o.Files["binary"].Exists == nil || *o.Files["binary"].Exists != true {
-		t.Errorf("expected binary.exists = true")
-	}
-	if len(o.Files["binary"].Match) != 1 || o.Files["binary"].Match[0] != "ELF" {
-		t.Errorf("expected binary.match = [ELF], got %v", o.Files["binary"].Match)
-	}
-	if len(o.Files["binary"].NotMatch) != 1 || o.Files["binary"].NotMatch[0] != "corrupted" {
-		t.Errorf("expected binary.notMatch = [corrupted], got %v", o.Files["binary"].NotMatch)
-	}
-	if _, ok := o.NotFiles["error.log"]; !ok {
-		t.Errorf("expected error.log in NotFiles")
-	}
-	if o.NotFiles["error.log"].Exists == nil || *o.NotFiles["error.log"].Exists != false {
-		t.Errorf("expected error.log.exists = false")
-	}
-}
-
-func TestTestFile_UnmarshalYAML(t *testing.T) {
-	input := `
-tests:
-  - desc: test one
-    exit: 0
-    cmd: echo hello
-    outputs:
-      stdout:
-        - "hello"
-  - desc: test two
-    exit: EXIT_FAILURE
-    cmd: exit 1
-`
+func TestStreamCheck_Match(t *testing.T) {
+	input := `<dats><test cmd="echo hi"><stdout><match>hello</match><match>world</match></stdout></test></dats>`
 	var tf TestFile
-	err := yaml.Unmarshal([]byte(input), &tf)
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tf.Tests[0].Stdout == nil {
+		t.Fatal("expected stdout to be non-nil")
+	}
+	if len(tf.Tests[0].Stdout.Match) != 2 {
+		t.Fatalf("expected 2 match patterns, got %d", len(tf.Tests[0].Stdout.Match))
+	}
+	if tf.Tests[0].Stdout.Match[0] != "hello" || tf.Tests[0].Stdout.Match[1] != "world" {
+		t.Errorf("unexpected match patterns: %v", tf.Tests[0].Stdout.Match)
+	}
+}
+
+func TestStreamCheck_LineChecks(t *testing.T) {
+	input := `<dats><test cmd="echo hi"><stdout><line n="0">^line0$</line><line n="2">^line2$</line></stdout></test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tf.Tests[0].Stdout == nil {
+		t.Fatal("expected stdout to be non-nil")
+	}
+	lines := tf.Tests[0].Stdout.Lines
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 line checks, got %d", len(lines))
+	}
+	if lines[0].N != 0 || lines[0].Pattern != "^line0$" {
+		t.Errorf("expected line 0 = '^line0$', got n=%d pattern=%q", lines[0].N, lines[0].Pattern)
+	}
+	if lines[1].N != 2 || lines[1].Pattern != "^line2$" {
+		t.Errorf("expected line 2 = '^line2$', got n=%d pattern=%q", lines[1].N, lines[1].Pattern)
+	}
+}
+
+func TestStreamCheck_NotMatch(t *testing.T) {
+	input := `<dats><test cmd="echo hi"><stdout><match>hello</match><not-match>error</not-match><not-match>warning</not-match></stdout></test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	stdout := tf.Tests[0].Stdout
+	if stdout == nil {
+		t.Fatal("expected stdout to be non-nil")
+	}
+	if len(stdout.Match) != 1 || stdout.Match[0] != "hello" {
+		t.Errorf("unexpected match: %v", stdout.Match)
+	}
+	if len(stdout.NotMatch) != 2 || stdout.NotMatch[0] != "error" || stdout.NotMatch[1] != "warning" {
+		t.Errorf("unexpected not-match: %v", stdout.NotMatch)
+	}
+}
+
+func TestFileOutput_Exists(t *testing.T) {
+	input := `<dats><test cmd="echo hi">
+		<output name="result.txt" exists="true"><match>ELF</match><not-match>corrupted</not-match></output>
+		<output name="error.log" exists="false"/>
+	</test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	outputs := tf.Tests[0].Outputs
+	if len(outputs) != 2 {
+		t.Fatalf("expected 2 outputs, got %d", len(outputs))
+	}
+
+	// First output: exists=true with match/not-match
+	if outputs[0].Name != "result.txt" {
+		t.Errorf("expected name 'result.txt', got %q", outputs[0].Name)
+	}
+	if !outputs[0].Exists.Set || !outputs[0].Exists.Value {
+		t.Errorf("expected exists=true")
+	}
+	if len(outputs[0].Match) != 1 || outputs[0].Match[0] != "ELF" {
+		t.Errorf("expected match=[ELF], got %v", outputs[0].Match)
+	}
+	if len(outputs[0].NotMatch) != 1 || outputs[0].NotMatch[0] != "corrupted" {
+		t.Errorf("expected not-match=[corrupted], got %v", outputs[0].NotMatch)
+	}
+
+	// Second output: exists=false
+	if outputs[1].Name != "error.log" {
+		t.Errorf("expected name 'error.log', got %q", outputs[1].Name)
+	}
+	if !outputs[1].Exists.Set || outputs[1].Exists.Value {
+		t.Errorf("expected exists=false")
+	}
+}
+
+func TestInputFile(t *testing.T) {
+	input := `<dats><test cmd="cat {inputs.input.txt}">
+		<input name="input.txt">Hello, world!</input>
+	</test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tf.Tests[0].Inputs) != 1 {
+		t.Fatalf("expected 1 input, got %d", len(tf.Tests[0].Inputs))
+	}
+	if tf.Tests[0].Inputs[0].Name != "input.txt" {
+		t.Errorf("expected name 'input.txt', got %q", tf.Tests[0].Inputs[0].Name)
+	}
+	if tf.Tests[0].Inputs[0].Content != "Hello, world!" {
+		t.Errorf("expected content 'Hello, world!', got %q", tf.Tests[0].Inputs[0].Content)
+	}
+}
+
+func TestTestFile_FullParse(t *testing.T) {
+	input := `<dats>
+	<test desc="test one" cmd="echo hello" exit="0">
+		<stdout>
+			<match>hello</match>
+		</stdout>
+	</test>
+	<test desc="test two" cmd="exit 1" exit="EXIT_FAILURE"/>
+</dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -206,5 +219,40 @@ tests:
 	}
 	if tf.Tests[1].Exit.Variable != "EXIT_FAILURE" {
 		t.Errorf("expected exit EXIT_FAILURE, got %q", tf.Tests[1].Exit.Variable)
+	}
+}
+
+func TestExistsBool_NotSet(t *testing.T) {
+	input := `<dats><test cmd="echo hi">
+		<output name="result.txt"><match>hello</match></output>
+	</test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tf.Tests[0].Outputs[0].Exists.Set {
+		t.Errorf("expected Exists.Set=false when attribute not present")
+	}
+}
+
+func TestStdin(t *testing.T) {
+	input := `<dats><test cmd="cat"><stdin>Hello from stdin</stdin></test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tf.Tests[0].Stdin != "Hello from stdin" {
+		t.Errorf("expected stdin 'Hello from stdin', got %q", tf.Tests[0].Stdin)
+	}
+}
+
+func TestExistsBool_InvalidValue(t *testing.T) {
+	input := `<dats><test cmd="echo hi"><output name="f.txt" exists="maybe"/></test></dats>`
+	var tf TestFile
+	err := xml.Unmarshal([]byte(input), &tf)
+	if err == nil {
+		t.Error("expected error for exists='maybe', got none")
 	}
 }

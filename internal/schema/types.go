@@ -1,33 +1,79 @@
 package schema
 
 import (
+	"encoding/xml"
 	"fmt"
 	"regexp"
 	"strconv"
-
-	"gopkg.in/yaml.v3"
 )
 
 var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
 
-// TestFile represents the root of a .dats file
+// TestFile represents the root <dats> element
 type TestFile struct {
-	Tests []Test `yaml:"tests"`
+	XMLName xml.Name `xml:"dats"`
+	Tests   []Test   `xml:"test"`
 }
 
-// Test represents a single test case
+// Test represents a single <test> element.
+// Scalar properties are attributes ON the element.
+// Structured content lives IN the element as children.
 type Test struct {
-	Desc    string      `yaml:"desc,omitempty"`
-	Exit    ExitCode    `yaml:"exit"`
-	Cmd     string      `yaml:"cmd"`
-	Inputs  InputBlock  `yaml:"inputs,omitempty"`
-	Outputs OutputBlock `yaml:"outputs,omitempty"`
+	Desc    string       `xml:"desc,attr"`
+	Cmd     string       `xml:"cmd,attr"`
+	Exit    ExitCode     `xml:"exit,attr"`
+	Stdin   string       `xml:"stdin"`
+	Inputs  []InputFile  `xml:"input"`
+	Stdout  *StreamCheck `xml:"stdout"`
+	Stderr  *StreamCheck `xml:"stderr"`
+	Outputs []FileOutput `xml:"output"`
 }
 
-// InputBlock contains stdin and input files
-type InputBlock struct {
-	Stdin string            `yaml:"stdin,omitempty"`
-	Files map[string]string `yaml:"files,omitempty"`
+// InputFile represents <input name="file.txt">content</input>
+type InputFile struct {
+	Name    string `xml:"name,attr"`
+	Content string `xml:",chardata"`
+}
+
+// StreamCheck represents <stdout> or <stderr> with match/not-match/line children.
+// Combines positive and negative assertions in one block.
+type StreamCheck struct {
+	Match    []string    `xml:"match"`
+	NotMatch []string    `xml:"not-match"`
+	Lines    []LineCheck `xml:"line"`
+}
+
+// LineCheck represents <line n="0">^pattern$</line>
+type LineCheck struct {
+	N       int    `xml:"n,attr"`
+	Pattern string `xml:",chardata"`
+}
+
+// FileOutput represents <output name="result.txt" exists="true">
+type FileOutput struct {
+	Name     string     `xml:"name,attr"`
+	Exists   ExistsBool `xml:"exists,attr"`
+	Match    []string   `xml:"match"`
+	NotMatch []string   `xml:"not-match"`
+}
+
+// ExistsBool is a boolean attribute that tracks whether it was explicitly set.
+type ExistsBool struct {
+	Set   bool
+	Value bool
+}
+
+func (b *ExistsBool) UnmarshalXMLAttr(attr xml.Attr) error {
+	b.Set = true
+	switch attr.Value {
+	case "true":
+		b.Value = true
+	case "false":
+		b.Value = false
+	default:
+		return fmt.Errorf("exists must be 'true' or 'false', got %q", attr.Value)
+	}
+	return nil
 }
 
 // ExitCode can be an int or a string like "EXIT_SUCCESS"
@@ -36,95 +82,27 @@ type ExitCode struct {
 	Variable string // If non-empty, use this variable name instead of Value
 }
 
-func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
+func (e *ExitCode) UnmarshalXMLAttr(attr xml.Attr) error {
+	if attr.Value == "" {
+		return nil
+	}
 	// Try int first
-	var intVal int
-	if err := node.Decode(&intVal); err == nil {
+	if intVal, err := strconv.Atoi(attr.Value); err == nil {
 		e.Value = intVal
 		return nil
 	}
 	// Try string - must match EXIT_* pattern
-	var strVal string
-	if err := node.Decode(&strVal); err == nil {
-		if !exitVarPattern.MatchString(strVal) {
-			return fmt.Errorf("exit %q must be an integer (0-255) or EXIT_* variable name", strVal)
-		}
-		e.Variable = strVal
-		return nil
+	if !exitVarPattern.MatchString(attr.Value) {
+		return fmt.Errorf("exit %q must be an integer (0-255) or EXIT_* variable name", attr.Value)
 	}
-	return fmt.Errorf("exit must be an integer or EXIT_* variable name")
+	e.Variable = attr.Value
+	return nil
 }
 
-// String returns the exit code as a string for BATS assertions
+// String returns the exit code as a string for display
 func (e ExitCode) String() string {
 	if e.Variable != "" {
 		return "$" + e.Variable
 	}
 	return strconv.Itoa(e.Value)
-}
-
-// OutputBlock contains all output validations
-type OutputBlock struct {
-	Stdout    OutputCheck          `yaml:"stdout,omitempty"`
-	Stderr    OutputCheck          `yaml:"stderr,omitempty"`
-	NotStdout OutputCheck          `yaml:"!stdout,omitempty"`
-	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
-	Files     map[string]FileCheck `yaml:"files,omitempty"`
-	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
-}
-
-// OutputCheck represents either:
-// - A list of patterns to match anywhere in output
-// - A map of line numbers to patterns (for line-specific assertions)
-type OutputCheck struct {
-	Patterns   []string       // patterns to match anywhere
-	LineChecks map[int]string // line-specific patterns (0-indexed)
-}
-
-func (o *OutputCheck) UnmarshalYAML(node *yaml.Node) error {
-	// Try sequence first (list of patterns)
-	if node.Kind == yaml.SequenceNode {
-		var patterns []string
-		if err := node.Decode(&patterns); err != nil {
-			return err
-		}
-		o.Patterns = patterns
-		return nil
-	}
-
-	// Try mapping (line-specific checks)
-	if node.Kind == yaml.MappingNode {
-		o.LineChecks = make(map[int]string)
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode := node.Content[i]
-			valueNode := node.Content[i+1]
-
-			// Parse key as int
-			lineNum, err := strconv.Atoi(keyNode.Value)
-			if err != nil {
-				return fmt.Errorf("line check key must be an integer, got %q", keyNode.Value)
-			}
-
-			var pattern string
-			if err := valueNode.Decode(&pattern); err != nil {
-				return err
-			}
-			o.LineChecks[lineNum] = pattern
-		}
-		return nil
-	}
-
-	return fmt.Errorf("output check must be a list of patterns or map of line checks")
-}
-
-// IsEmpty returns true if no checks are defined
-func (o OutputCheck) IsEmpty() bool {
-	return len(o.Patterns) == 0 && len(o.LineChecks) == 0
-}
-
-// FileCheck defines validation for an output file
-type FileCheck struct {
-	Exists   *bool    `yaml:"exists,omitempty"`
-	Match    []string `yaml:"match,omitempty"`
-	NotMatch []string `yaml:"notMatch,omitempty"`
 }

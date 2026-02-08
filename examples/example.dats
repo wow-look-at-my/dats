@@ -1,75 +1,60 @@
-tests:
-  # Simple command with no inputs
-  - desc: echo test
-    exit: 0
-    cmd: echo Hello World
-    outputs:
-      stdout:
-        - "Hello World"
+<dats>
+  <!-- Simple command with no inputs -->
+  <test desc="echo test" cmd="echo Hello World">
+    <stdout>
+      <match>Hello World</match>
+    </stdout>
+  </test>
 
-  # Command reading from file
-  - desc: cat reads file
-    exit: 0
-    inputs:
-      files:
-        input.txt: |
-          Hello, world!
-    cmd: cat {inputs.input.txt}
-    outputs:
-      stdout:
-        - "Hello, world!"
+  <!-- Command reading from file -->
+  <test desc="cat reads file" cmd="cat {inputs.input.txt}">
+    <input name="input.txt">Hello, world!
+</input>
+    <stdout>
+      <match>Hello, world!</match>
+    </stdout>
+  </test>
 
-  # Command reading from stdin
-  - desc: cat reads stdin
-    exit: 0
-    inputs:
-      stdin: "Hello from stdin"
-    cmd: cat
-    outputs:
-      stdout:
-        - "Hello from stdin"
+  <!-- Command reading from stdin -->
+  <test desc="cat reads stdin" cmd="cat">
+    <stdin>Hello from stdin</stdin>
+    <stdout>
+      <match>Hello from stdin</match>
+    </stdout>
+  </test>
 
-  # Multiple input files
-  - desc: concatenate two files
-    exit: 0
-    inputs:
-      files:
-        a.txt: "Line A"
-        b.txt: "Line B"
-    cmd: cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}
-    outputs:
-      stdout:
-        - "Line A"
-        - "Line B"
+  <!-- Multiple input files -->
+  <test desc="concatenate two files" cmd="cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}">
+    <input name="a.txt">Line A</input>
+    <input name="b.txt">Line B</input>
+    <stdout>
+      <match>Line A</match>
+      <match>Line B</match>
+    </stdout>
+  </test>
 
-  # Line-specific assertions
-  - desc: line matching
-    exit: 0
-    cmd: printf "line0\nline1\nline2"
-    outputs:
-      stdout:
-        0: "^line0$"
-        2: "^line2$"
+  <!-- Line-specific assertions -->
+  <test desc="line matching" cmd="printf &quot;line0\nline1\nline2&quot;">
+    <stdout>
+      <line n="0">^line0$</line>
+      <line n="2">^line2$</line>
+    </stdout>
+  </test>
 
-  # Negative assertions
-  - desc: no errors in output
-    exit: 0
-    cmd: echo success
-    outputs:
-      stdout:
-        - "success"
-      "!stdout":
-        - "error"
-        - "fail"
+  <!-- Negative assertions -->
+  <test desc="no errors in output" cmd="echo success">
+    <stdout>
+      <match>success</match>
+      <not-match>error</not-match>
+      <not-match>fail</not-match>
+    </stdout>
+  </test>
 
-  # Expected non-zero exit
-  - desc: grep returns 1 when not found
-    exit: 1
-    inputs:
-      stdin: "hello world"
-    cmd: grep -q "notfound"
+  <!-- Expected non-zero exit -->
+  <test desc="grep returns 1 when not found" exit="1" cmd="grep -q &quot;notfound&quot;">
+    <stdin>hello world</stdin>
+  </test>
 
-  # Using EXIT_* variable
-  - desc: exit code variable
-    exit: EXIT_SUCCESS
-    cmd: true
+  <!-- Using EXIT_* variable -->
+  <test desc="exit code variable" exit="EXIT_SUCCESS" cmd="true"/>
+</dats>

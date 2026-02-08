@@ -29,34 +29,34 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	testDir := filepath.Join(baseDir, fmt.Sprintf("test-%d", testIndex))
 
 	// Create input files
-	if len(test.Inputs.Files) > 0 {
+	if len(test.Inputs) > 0 {
 		inputDir := filepath.Join(testDir, "inputs")
 		if err := os.MkdirAll(inputDir, 0755); err != nil {
 			return nil, fmt.Errorf("creating input dir: %w", err)
 		}
 
-		for name, content := range test.Inputs.Files {
-			path := filepath.Join(inputDir, name)
+		for _, input := range test.Inputs {
+			path := filepath.Join(inputDir, input.Name)
 			// Create parent directories if needed (for nested file paths)
 			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 				return nil, fmt.Errorf("creating input subdir: %w", err)
 			}
-			if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-				return nil, fmt.Errorf("writing input file %s: %w", name, err)
+			if err := os.WriteFile(path, []byte(input.Content), 0644); err != nil {
+				return nil, fmt.Errorf("writing input file %s: %w", input.Name, err)
 			}
-			ctx.InputPaths[name] = path
+			ctx.InputPaths[input.Name] = path
 		}
 	}
 
 	// Set up output file paths (create directories but not files)
-	if len(test.Outputs.Files) > 0 {
+	if len(test.Outputs) > 0 {
 		outputDir := filepath.Join(testDir, "outputs")
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return nil, fmt.Errorf("creating output dir: %w", err)
 		}
 
-		for name := range test.Outputs.Files {
-			ctx.OutputPaths[name] = filepath.Join(outputDir, name)
+		for _, output := range test.Outputs {
+			ctx.OutputPaths[output.Name] = filepath.Join(outputDir, output.Name)
 		}
 	}
 
