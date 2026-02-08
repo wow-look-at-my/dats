@@ -16,14 +16,16 @@ Arguments:
   file.dats    Input .dats file(s) to run
 
 Options:
-  -v, --verbose   Show verbose output (command details, full output on failure)
-  --keep-temp     Keep temp directory for debugging
-  -h, --help      Show this help message
+  -v, --verbose        Show verbose output (command details, full output on failure)
+  --keep-temp          Keep temp directory for debugging
+  --coverdir <path>    Set GOCOVERDIR on executed commands to collect coverage data
+  -h, --help           Show this help message
 
 Examples:
   dats tests.dats                    # Run tests from tests.dats
   dats -v tests.dats                 # Run with verbose output
   dats tests/*.dats                  # Run multiple test files
+  dats --coverdir ./coverage tests.dats  # Collect coverage data
 `
 
 func main() {
@@ -35,8 +37,11 @@ func main() {
 	var files []string
 	verbose := false
 	keepTemp := false
+	coverDir := ""
 
-	for _, arg := range os.Args[1:] {
+	args := os.Args[1:]
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "-h", "--help":
 			fmt.Print(usage)
@@ -45,6 +50,13 @@ func main() {
 			verbose = true
 		case "--keep-temp":
 			keepTemp = true
+		case "--coverdir":
+			if i+1 >= len(args) {
+				fmt.Fprint(os.Stderr, "Error: --coverdir requires a path argument\n")
+				os.Exit(1)
+			}
+			i++
+			coverDir = args[i]
 		default:
 			if arg[0] == '-' {
 				fmt.Fprintf(os.Stderr, "Error: unknown option %s\n", arg)
@@ -72,7 +84,7 @@ func main() {
 		}
 	}
 
-	r := runner.NewRunner(os.Stdout, verbose, keepTemp)
+	r := runner.NewRunner(os.Stdout, verbose, keepTemp, coverDir)
 
 	totalPassed := 0
 	totalFailed := 0
