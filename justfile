@@ -5,6 +5,10 @@ export BUILD_DIR := justfile_directory() / "build"
 _help:
     @just --list
 
+# Generate Go code from XSD schema
+generate:
+    go generate ./internal/schema/...
+
 # Build the binary
 build output="$BUILD_DIR/dats":
     go fmt ./...

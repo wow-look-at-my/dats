@@ -37,7 +37,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		return nil, fmt.Errorf("reading input file: %w", err)
 	}
 
-	var testFile schema.TestFile
+	var testFile schema.Dats
 	if err := xml.Unmarshal(data, &testFile); err != nil {
 		return nil, fmt.Errorf("parsing XML: %w", err)
 	}
@@ -53,16 +53,16 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		fmt.Fprintf(r.Formatter.Writer, "# Temp directory: %s\n", tempDir)
 	}
 
-	r.Formatter.PrintHeader(path, len(testFile.Tests))
+	r.Formatter.PrintHeader(path, len(testFile.Test))
 
 	result := &FileResult{
 		Path:    path,
-		Results: make([]TestResult, 0, len(testFile.Tests)),
+		Results: make([]TestResult, 0, len(testFile.Test)),
 	}
 
 	// Run each test
-	for i, test := range testFile.Tests {
-		testResult := r.RunTest(&test, tempDir, i)
+	for i, test := range testFile.Test {
+		testResult := r.RunTest(test, tempDir, i)
 		result.Results = append(result.Results, testResult)
 		r.Formatter.PrintResult(&testResult)
 
@@ -83,9 +83,12 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	start := time.Now()
 
 	// Determine test name
-	name := test.Desc
+	name := ""
+	if test.DescAttr != nil {
+		name = *test.DescAttr
+	}
 	if name == "" {
-		name = test.Cmd
+		name = test.CmdAttr
 	}
 
 	result := TestResult{
@@ -102,11 +105,15 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Expand placeholders in command
-	cmd := ExpandPlaceholders(test.Cmd, ctx)
+	cmd := ExpandPlaceholders(test.CmdAttr, ctx)
 	result.Command = cmd
 
 	// Execute the command
-	execResult, err := Execute(cmd, test.Stdin, nil)
+	stdin := ""
+	if test.Stdin != nil {
+		stdin = *test.Stdin
+	}
+	execResult, err := Execute(cmd, stdin, nil)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)
@@ -117,7 +124,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Stderr = execResult.Stderr
 
 	// Check exit code
-	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
+	if err := AssertExitCode(execResult.ExitCode, test.ExitAttr); err != nil {
 		result.Failures = append(result.Failures, err.Error())
 	}
 
@@ -129,8 +136,8 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 			}
 		}
 
-		for _, lineCheck := range test.Stdout.Lines {
-			if err := AssertLineRegex(execResult.StdoutLines, lineCheck.N, lineCheck.Pattern); err != nil {
+		for _, lineCheck := range test.Stdout.Line {
+			if err := AssertLineRegex(execResult.StdoutLines, lineCheck.NAttr, lineCheck.Value); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stdout: %v", err))
 			}
 		}
@@ -150,8 +157,8 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 			}
 		}
 
-		for _, lineCheck := range test.Stderr.Lines {
-			if err := AssertLineRegex(execResult.StderrLines, lineCheck.N, lineCheck.Pattern); err != nil {
+		for _, lineCheck := range test.Stderr.Line {
+			if err := AssertLineRegex(execResult.StderrLines, lineCheck.NAttr, lineCheck.Value); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stderr: %v", err))
 			}
 		}
@@ -164,21 +171,21 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Check output files
-	for _, output := range test.Outputs {
-		path := ctx.OutputPaths[output.Name]
+	for _, output := range test.Output {
+		path := ctx.OutputPaths[output.NameAttr]
 		if path == "" {
 			// File wasn't in the outputs map, construct path
-			path = fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, output.Name)
+			path = fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, output.NameAttr)
 		}
 
-		if output.Exists.Set {
-			if output.Exists.Value {
+		if output.ExistsAttr != nil {
+			if *output.ExistsAttr {
 				if err := AssertFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.Name, err))
+					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 				}
 			} else {
 				if err := RefuteFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.Name, err))
+					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 				}
 			}
 		}
@@ -186,14 +193,14 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		if len(output.Match) > 0 {
 			errs := AssertFileContains(path, output.Match)
 			for _, err := range errs {
-				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.Name, err))
+				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 			}
 		}
 
 		if len(output.NotMatch) > 0 {
 			errs := RefuteFileContains(path, output.NotMatch)
 			for _, err := range errs {
-				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.Name, err))
+				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 			}
 		}
 	}
