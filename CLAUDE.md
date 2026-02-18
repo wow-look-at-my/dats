@@ -9,6 +9,7 @@ DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined 
 ## Build Commands
 
 ```bash
+just generate       # Regenerate Go types from schema/dats.xsd (requires xgen)
 just build          # Build the dats binary to build/dats (runs go fmt, go vet, go build)
 just test           # Run Go tests with coverage + run example.dats
 just install        # Symlink binary to ~/.local/bin/dats
@@ -44,7 +45,9 @@ go test -cover ./...
 
 ### Go Package Structure
 - `main.go` - CLI entry point, argument parsing, file validation
-- `internal/schema/types.go` - XML schema types with custom attribute unmarshalers
+- `schema/dats.xsd` - Canonical XSD schema (source of truth for types)
+- `internal/schema/generated.go` - Go types generated from XSD via `xgen` (DO NOT EDIT)
+- `internal/schema/types.go` - Custom methods on generated types (ExitCode validation, accessors)
 - `internal/runner/` - Native test runner
   - `runner.go` - Orchestrates test execution (RunFile, RunTest)
   - `exec.go` - Command execution via bash, captures exit code and output
@@ -52,14 +55,14 @@ go test -cover ./...
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
   - `output.go` - Result types (TestResult, FileResult) and TAP-like formatting
 
-### Key Types
-- **TestFile** - Root `<dats>` element containing `[]Test`
-- **Test** - Attributes: `desc`, `cmd`, `exit`. Children: `stdin`, `input`, `stdout`, `stderr`, `output`
-- **ExitCode** - Custom XML attr unmarshaler: int (0-255) or `EXIT_SUCCESS`/`EXIT_FAILURE`
-- **StreamCheck** - `<stdout>`/`<stderr>` with `<match>`, `<not-match>`, and `<line n="N">` children
-- **InputFile** - `<input name="file.txt">content</input>`
-- **FileOutput** - `<output name="file.txt" exists="true">` with `<match>`/`<not-match>` children
-- **ExistsBool** - Custom XML attr unmarshaler tracking whether `exists` was explicitly set
+### Key Types (generated from XSD)
+- **Dats** - Root `<dats>` element containing `[]*Test`
+- **Test** - Attributes: `DescAttr`, `CmdAttr`, `ExitAttr`. Children: `Stdin`, `Input`, `Stdout`, `Stderr`, `Output`
+- **ExitCode** - `string` type with custom `UnmarshalXMLAttr` + accessor methods (`IntValue()`, `IsVariable()`, `VariableName()`)
+- **StreamCheck** - `<stdout>`/`<stderr>` with `Match`, `NotMatch`, and `Line` children
+- **InputFile** - `<input name="file.txt">content</input>` — fields: `NameAttr`, `Value`
+- **FileOutput** - `<output name="file.txt" exists="true">` — fields: `NameAttr`, `ExistsAttr *bool`, `Match`, `NotMatch`
+- **LineCheck** - `<line n="0">pattern</line>` — fields: `NAttr`, `Value`
 
 ### XML Design: Attributes vs Children
 XML provides a natural distinction between properties ON an object (attributes) and properties IN an object (children):

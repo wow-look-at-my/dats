@@ -43,19 +43,24 @@ func AssertLineRegex(lines []string, lineNum int, pattern string) error {
 }
 
 // AssertExitCode checks if the actual exit code matches expected
-func AssertExitCode(actual int, expected schema.ExitCode) error {
-	// If using a variable, we need to resolve it
-	expectedVal := expected.Value
-	if expected.Variable != "" {
-		// For EXIT_SUCCESS and EXIT_FAILURE, use standard values
-		switch expected.Variable {
+func AssertExitCode(actual int, expected *schema.ExitCode) error {
+	if expected == nil {
+		// Default is 0
+		if actual != 0 {
+			return fmt.Errorf("expected exit code 0, got %d", actual)
+		}
+		return nil
+	}
+
+	expectedVal := expected.IntValue()
+	if expected.IsVariable() {
+		switch expected.VariableName() {
 		case "EXIT_SUCCESS":
 			expectedVal = 0
 		case "EXIT_FAILURE":
 			expectedVal = 1
 		default:
-			// Unknown variable - we can't resolve it without bash context
-			return fmt.Errorf("unknown exit code variable: %s", expected.Variable)
+			return fmt.Errorf("unknown exit code variable: %s", expected.VariableName())
 		}
 	}
 
