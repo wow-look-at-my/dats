@@ -44,8 +44,8 @@ go test -cover ./...
 
 ### Go Package Structure
 - `main.go` - CLI entry point, argument parsing, file validation
-- `internal/schema/types.go` - YAML schema types with custom unmarshalers
-- `internal/runner/` - Native test runner
+- `schema/types.go` - YAML schema types with custom unmarshalers (public, importable by external modules)
+- `runner/` - Native test runner (public, importable by external modules)
   - `runner.go` - Orchestrates test execution (RunFile, RunTest)
   - `exec.go` - Command execution via bash, captures exit code and output
   - `fixtures.go` - Creates input files, expands `{inputs.X}` and `{outputs.X}` placeholders
