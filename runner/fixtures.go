@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/mhaynie/bats-declarative/internal/schema"
+	"github.com/mhaynie/bats-declarative/schema"
 )
 
 // TestContext holds the paths and context for a single test execution

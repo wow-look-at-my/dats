@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mhaynie/bats-declarative/internal/schema"
+	"github.com/mhaynie/bats-declarative/schema"
 )
 
 // AssertContains checks if pattern appears as a substring in text
