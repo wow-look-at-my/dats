@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mhaynie/bats-declarative/internal/schema"
+	"github.com/mhaynie/bats-declarative/schema"
 	"gopkg.in/yaml.v3"
 )
 
