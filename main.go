@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mhaynie/bats-declarative/runner"
+	"github.com/wow-look-at-my/dats/runner"
 )
 
 const usage = `dats - Declarative Automated Testing System
