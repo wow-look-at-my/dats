@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mhaynie/bats-declarative/runner"
+	"github.com/wow-look-at-my/dats/runner"
 	"github.com/spf13/cobra"
 )
 
