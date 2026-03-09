@@ -17,6 +17,9 @@ jobs:
 
       - uses: wow-look-at-my/go-toolchain@v1
 
+      - name: Remove symlinks from build output
+        run: find build -type l -delete
+
       - uses: actions/upload-artifact@v4
         with:
           name: binaries
