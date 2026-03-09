@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/mhaynie/bats-declarative/schema"
-	"gopkg.in/yaml.v3"
 )
 
 // Runner executes tests from .dats files
@@ -34,15 +33,9 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *
 
 // RunFile runs all tests in a .dats file
 func (r *Runner) RunFile(path string) (*FileResult, error) {
-	// Read and parse the input file
-	data, err := os.ReadFile(path)
+	testFile, err := schema.ParseFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading input file: %w", err)
-	}
-
-	var testFile schema.TestFile
-	if err := yaml.Unmarshal(data, &testFile); err != nil {
-		return nil, fmt.Errorf("parsing YAML: %w", err)
+		return nil, err
 	}
 
 	// Create temp directory for fixtures
