@@ -55,14 +55,14 @@ jobs:
 
       - name: Build
         run: |
-          output="${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          output="${{ inputs.output-name }}_${{ matrix.goos }}_${{ matrix.goarch }}"
           [[ "${{ matrix.goos }}" == "windows" ]] && output="${output}.exe"
           go build -o "$output" .
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: ${{ inputs.working-directory }}/${{ inputs.output-name }}-${{ matrix.goos }}-${{ matrix.goarch }}*
+          name: ${{ inputs.output-name }}_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: ${{ inputs.working-directory }}/${{ inputs.output-name }}_${{ matrix.goos }}_${{ matrix.goarch }}*
 
   test:
     strategy:
