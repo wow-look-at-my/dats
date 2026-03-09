@@ -10,15 +10,24 @@ on:
         default: false
 
 jobs:
-  build-go:
-    uses: ./.github/workflows/build-go.yml
-    with:
-      working-directory: .
-      output-name: dats
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: wow-look-at-my/go-toolchain@v1
+
+      - name: Remove symlinks from build output
+        run: find build -type l -delete
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: build/dats_*
 
   release:
     if: github.ref == 'refs/heads/master' || inputs.release
-    needs: [build-go]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

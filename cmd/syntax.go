@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mhaynie/bats-declarative/schema"
+	"github.com/wow-look-at-my/dats/schema"
 	"github.com/spf13/cobra"
 )
 

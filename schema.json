@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/mhaynie/bats-declarative/schema.json",
+  "$id": "https://github.com/wow-look-at-my/dats/schema.json",
   "title": "DATS Test File",
   "description": "Schema for Declarative Automated Testing System (.dats) files",
   "type": "object",
