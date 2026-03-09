@@ -4,31 +4,28 @@ import (
 	"testing"
 
 	"gopkg.in/yaml.v3"
+	"github.com/wow-look-at-my/testify/assert"
+	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestExitCode_UnmarshalYAML_Int(t *testing.T) {
 	var e ExitCode
 	err := yaml.Unmarshal([]byte("42"), &e)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if e.Value != 42 {
-		t.Errorf("expected Value=42, got %d", e.Value)
-	}
-	if e.Variable != "" {
-		t.Errorf("expected Variable='', got %q", e.Variable)
-	}
+	require.Nil(t, err)
+
+	assert.Equal(t, 42, e.Value)
+
+	assert.Equal(t, "", e.Variable)
+
 }
 
 func TestExitCode_UnmarshalYAML_String(t *testing.T) {
 	var e ExitCode
 	err := yaml.Unmarshal([]byte("EXIT_SUCCESS"), &e)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if e.Variable != "EXIT_SUCCESS" {
-		t.Errorf("expected Variable='EXIT_SUCCESS', got %q", e.Variable)
-	}
+	require.Nil(t, err)
+
+	assert.Equal(t, "EXIT_SUCCESS", e.Variable)
+
 }
 
 func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
@@ -42,17 +39,16 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 	for _, code := range invalidCodes {
 		var e ExitCode
 		err := yaml.Unmarshal([]byte(code), &e)
-		if err == nil {
-			t.Errorf("expected error for %q, got none", code)
-		}
+		assert.NotNil(t, err)
+
 	}
 }
 
 func TestExitCode_String(t *testing.T) {
 	tests := []struct {
-		name     string
-		exitCode ExitCode
-		want     string
+		name		string
+		exitCode	ExitCode
+		want		string
 	}{
 		{"int zero", ExitCode{Value: 0}, "0"},
 		{"int nonzero", ExitCode{Value: 127}, "127"},
@@ -60,9 +56,9 @@ func TestExitCode_String(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.exitCode.String(); got != tt.want {
-				t.Errorf("String() = %q, want %q", got, tt.want)
-			}
+			got := tt.exitCode.String()
+			assert.Equal(t, tt.want, got)
+
 		})
 	}
 }
@@ -70,39 +66,32 @@ func TestExitCode_String(t *testing.T) {
 func TestOutputCheck_UnmarshalYAML_Patterns(t *testing.T) {
 	var o OutputCheck
 	err := yaml.Unmarshal([]byte(`["pattern1", "pattern2"]`), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(o.Patterns) != 2 {
-		t.Fatalf("expected 2 patterns, got %d", len(o.Patterns))
-	}
-	if o.Patterns[0] != "pattern1" || o.Patterns[1] != "pattern2" {
-		t.Errorf("unexpected patterns: %v", o.Patterns)
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, 2, len(o.Patterns))
+
+	assert.False(t, o.Patterns[0] != "pattern1" || o.Patterns[1] != "pattern2")
+
 }
 
 func TestOutputCheck_UnmarshalYAML_LineChecks(t *testing.T) {
 	var o OutputCheck
 	err := yaml.Unmarshal([]byte("0: \"^line0$\"\n2: \"^line2$\""), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(o.LineChecks) != 2 {
-		t.Fatalf("expected 2 line checks, got %d", len(o.LineChecks))
-	}
-	if o.LineChecks[0] != "^line0$" {
-		t.Errorf("expected line 0 = '^line0$', got %q", o.LineChecks[0])
-	}
-	if o.LineChecks[2] != "^line2$" {
-		t.Errorf("expected line 2 = '^line2$', got %q", o.LineChecks[2])
-	}
+	require.Nil(t, err)
+
+	require.Equal(t, 2, len(o.LineChecks))
+
+	assert.Equal(t, "^line0$", o.LineChecks[0])
+
+	assert.Equal(t, "^line2$", o.LineChecks[2])
+
 }
 
 func TestOutputCheck_IsEmpty(t *testing.T) {
 	tests := []struct {
-		name  string
-		check OutputCheck
-		want  bool
+		name	string
+		check	OutputCheck
+		want	bool
 	}{
 		{"empty", OutputCheck{}, true},
 		{"with patterns", OutputCheck{Patterns: []string{"a"}}, false},
@@ -110,9 +99,9 @@ func TestOutputCheck_IsEmpty(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.check.IsEmpty(); got != tt.want {
-				t.Errorf("IsEmpty() = %v, want %v", got, tt.want)
-			}
+			got := tt.check.IsEmpty()
+			assert.Equal(t, tt.want, got)
+
 		})
 	}
 }
@@ -140,40 +129,30 @@ files:
 `
 	var o OutputBlock
 	err := yaml.Unmarshal([]byte(input), &o)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.Nil(t, err)
 
-	if len(o.Stdout.Patterns) != 1 || o.Stdout.Patterns[0] != "hello" {
-		t.Errorf("unexpected stdout: %v", o.Stdout)
-	}
-	if len(o.Stderr.Patterns) != 1 || o.Stderr.Patterns[0] != "error" {
-		t.Errorf("unexpected stderr: %v", o.Stderr)
-	}
-	if len(o.NotStdout.Patterns) != 1 || o.NotStdout.Patterns[0] != "bad" {
-		t.Errorf("unexpected !stdout: %v", o.NotStdout)
-	}
-	if len(o.NotStderr.Patterns) != 1 || o.NotStderr.Patterns[0] != "warning" {
-		t.Errorf("unexpected !stderr: %v", o.NotStderr)
-	}
-	if _, ok := o.Files["binary"]; !ok {
-		t.Errorf("expected binary in Files")
-	}
-	if o.Files["binary"].Exists == nil || *o.Files["binary"].Exists != true {
-		t.Errorf("expected binary.exists = true")
-	}
-	if len(o.Files["binary"].Match) != 1 || o.Files["binary"].Match[0] != "ELF" {
-		t.Errorf("expected binary.match = [ELF], got %v", o.Files["binary"].Match)
-	}
-	if len(o.Files["binary"].NotMatch) != 1 || o.Files["binary"].NotMatch[0] != "corrupted" {
-		t.Errorf("expected binary.notMatch = [corrupted], got %v", o.Files["binary"].NotMatch)
-	}
-	if _, ok := o.NotFiles["error.log"]; !ok {
-		t.Errorf("expected error.log in NotFiles")
-	}
-	if o.NotFiles["error.log"].Exists == nil || *o.NotFiles["error.log"].Exists != false {
-		t.Errorf("expected error.log.exists = false")
-	}
+	assert.False(t, len(o.Stdout.Patterns) != 1 || o.Stdout.Patterns[0] != "hello")
+
+	assert.False(t, len(o.Stderr.Patterns) != 1 || o.Stderr.Patterns[0] != "error")
+
+	assert.False(t, len(o.NotStdout.Patterns) != 1 || o.NotStdout.Patterns[0] != "bad")
+
+	assert.False(t, len(o.NotStderr.Patterns) != 1 || o.NotStderr.Patterns[0] != "warning")
+
+	_, ok := o.Files["binary"]
+	assert.True(t, ok)
+
+	assert.False(t, o.Files["binary"].Exists == nil || *o.Files["binary"].Exists != true)
+
+	assert.False(t, len(o.Files["binary"].Match) != 1 || o.Files["binary"].Match[0] != "ELF")
+
+	assert.False(t, len(o.Files["binary"].NotMatch) != 1 || o.Files["binary"].NotMatch[0] != "corrupted")
+
+	_, ok = o.NotFiles["error.log"]
+	assert.True(t, ok)
+
+	assert.False(t, o.NotFiles["error.log"].Exists == nil || *o.NotFiles["error.log"].Exists != false)
+
 }
 
 func TestTestFile_UnmarshalYAML(t *testing.T) {
@@ -191,20 +170,14 @@ tests:
 `
 	var tf TestFile
 	err := yaml.Unmarshal([]byte(input), &tf)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.Nil(t, err)
 
-	if len(tf.Tests) != 2 {
-		t.Fatalf("expected 2 tests, got %d", len(tf.Tests))
-	}
-	if tf.Tests[0].Desc != "test one" {
-		t.Errorf("expected desc 'test one', got %q", tf.Tests[0].Desc)
-	}
-	if tf.Tests[0].Exit.Value != 0 {
-		t.Errorf("expected exit 0, got %d", tf.Tests[0].Exit.Value)
-	}
-	if tf.Tests[1].Exit.Variable != "EXIT_FAILURE" {
-		t.Errorf("expected exit EXIT_FAILURE, got %q", tf.Tests[1].Exit.Variable)
-	}
+	require.Equal(t, 2, len(tf.Tests))
+
+	assert.Equal(t, "test one", tf.Tests[0].Desc)
+
+	assert.Equal(t, 0, tf.Tests[0].Exit.Value)
+
+	assert.Equal(t, "EXIT_FAILURE", tf.Tests[1].Exit.Variable)
+
 }
