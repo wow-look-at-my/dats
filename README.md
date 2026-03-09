@@ -12,15 +12,40 @@ just install        # Symlink binary to ~/.local/bin/dats
 ## Usage
 
 ```bash
-# Run a test file
+# Run test files (positional args or via 'test' subcommand)
 dats tests.dats
+dats test tests.dats
+
+# Run all .dats files in the current directory tree
+dats test
 
 # Verbose mode (shows command details, full output on failure)
-dats -v tests.dats
+dats -v test tests.dats
 
 # Keep temp directory for debugging
-dats --keep-temp tests.dats
+dats test --keep-temp tests.dats
+
+# Validate .dats file syntax without running tests
+dats syntax tests.dats
+
+# Validate all .dats files in current directory tree
+dats syntax
 ```
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `test` | Run tests from `.dats` files (default when no subcommand given) |
+| `syntax` | Validate `.dats` file syntax without executing tests |
+
+### Flags
+
+| Flag | Scope | Description |
+|------|-------|-------------|
+| `-v, --verbose` | Global | Show verbose output |
+| `--keep-temp` | `test` | Keep temp directory for debugging |
+| `--coverdir` | `test` | Set GOCOVERDIR on executed commands to collect coverage data |
 
 ## DATS File Format
 
