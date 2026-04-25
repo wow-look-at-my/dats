@@ -12,16 +12,12 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - run: go vet ./...
-
-      - run: go test ./...
+      - uses: wow-look-at-my/go-toolchain@v1
 
   build:
     needs: [test]
@@ -31,7 +27,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: ${{ github.ref == 'refs/heads/master' }}
