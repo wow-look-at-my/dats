@@ -2,47 +2,36 @@ name: CI
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
-    inputs:
-      release:
-        description: Create a release
-        type: boolean
-        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: wow-look-at-my/go-toolchain@v1
-
-      - name: Remove symlinks from build output
-        run: find build -type l -delete
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-go@v5
         with:
-          name: binaries
-          path: build/dats_*
+          go-version-file: go.mod
 
-  release:
-    if: github.ref == 'refs/heads/master' || inputs.release
-    needs: [build]
+      - run: go vet ./...
+
+      - run: go test ./...
+
+  build:
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
+      - uses: actions/checkout@v4
 
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="v$(date +%Y%m%d.%H%M%S)"
-          gh release create "$tag" artifacts/* \
-            --repo "${{ github.repository }}" \
-            --title "$tag" \
-            --notes "Automated release from commit ${{ github.sha }}"
+      - uses: wow-look-at-my/go-toolchain@v1
+        with:
+          autorelease: ${{ github.ref == 'refs/heads/master' }}
+          upload-artifacts: true
