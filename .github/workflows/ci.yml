@@ -29,5 +29,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/go-toolchain@v1
         with:
-          autorelease: ${{ github.ref == 'refs/heads/master' }}
+          autorelease: true
           upload-artifacts: true
