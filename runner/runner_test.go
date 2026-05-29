@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/wow-look-at-my/dats/schema"
 	"github.com/wow-look-at-my/testify/assert"
@@ -311,6 +312,62 @@ func TestRunTestNotFilesExists(t *testing.T) {
 	}
 	result := r.RunTest(test, tmp, 0)
 	assert.True(t, result.Passed)
+}
+
+func TestRunTestNotFilesMatch(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	boolTrue := true
+	test := &schema.Test{
+		Cmd: "printf data > {outputs.out.txt}",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"out.txt": {
+					Exists:   &boolTrue,
+					Match:    []string{"data"},
+					NotMatch: []string{"error"},
+				},
+			},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed)
+}
+
+func TestRunTestNotFilesMatchFails(t *testing.T) {
+	// Regression: match under !files used to be silently ignored, so this test
+	// would wrongly pass. The file contains "hello" but match expects "goodbye".
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "printf hello > {outputs.out.txt}",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"out.txt": {Match: []string{"goodbye"}},
+			},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.False(t, result.Passed)
+}
+
+func TestRunTestTimeout(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd:     "sleep 1",
+		Timeout: schema.Duration{Value: 50 * time.Millisecond},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.False(t, result.Passed)
+	require.True(t, len(result.Failures) > 0)
+	assert.Contains(t, result.Failures[0], "timed out after")
 }
 
 func TestRunFile(t *testing.T) {

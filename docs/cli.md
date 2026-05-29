@@ -3,100 +3,70 @@
 ## Synopsis
 
 ```
-dats <file.dats> [output_dir] [--runtime-dir=<path>]
+dats [test] [files...] [flags]
+dats syntax [files...] [flags]
 ```
 
-## Arguments
+`dats` runs tests directly; there is no separate build/generate step. If no files are given,
+it recursively discovers all `.dats` files in the current directory tree.
 
-### `file.dats` (required)
+## Commands
 
-Path to the `.dats` input file. Must have `.dats` extension.
+| Command | Description |
+|---------|-------------|
+| `test` | Run tests from the given `.dats` files. This is the default action, so `dats file.dats` and `dats test file.dats` are equivalent. |
+| `syntax` | Parse and validate `.dats` files without executing any tests. |
 
-### `output_dir` (optional)
+## Flags
 
-Directory where generated files are written. Defaults to the same directory as the input file.
-
-Generated files:
-- `<basename>.gen.bats` - The BATS test file
-- `<basename>.gen.bats.d` - Make dependency file
-- `fixtures/<basename>/` - Input fixture files (if tests define inputs)
-
-### `--runtime-dir=<path>` (optional)
-
-Path to the runtime directory containing `test_helper.bash`.
-
-The runtime directory is discovered in this order:
-1. Explicit `--runtime-dir` argument
-2. `./runtime` relative to current working directory
-3. Alongside the dats binary
-4. One level up from the binary (for `bin/dats` layouts)
+| Flag | Description |
+|------|-------------|
+| `-v, --verbose` | Show command details, durations, and full output on failure |
+| `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
+| `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands to collect coverage data |
 
 ## Examples
 
-### Basic Usage
-
 ```bash
-# Generate test.gen.bats in same directory as test.dats
+# Run a specific file (positional, or via the test subcommand)
 dats test.dats
+dats test test.dats
 
-# Generate in a specific output directory
-dats test.dats ./generated/
+# Run every .dats file under the current directory
+dats test
 
-# Specify runtime directory explicitly
-dats test.dats ./generated/ --runtime-dir=/path/to/runtime
-```
+# Verbose output
+dats -v test.dats
 
-### Help
+# Keep the temp directory to inspect fixtures/outputs
+dats --keep-temp test.dats
 
-```bash
+# Validate syntax without running
+dats syntax test.dats
+dats syntax            # validate all .dats files in the tree
+
+# Help
 dats -h
-dats --help
+dats <command> -h
 ```
 
-## Output Structure
+## Output
 
-Given `examples/example.dats`:
+Results are printed in a TAP-like format:
 
 ```
-examples/
-  example.dats              # input
-  example.gen.bats          # generated BATS file
-  example.gen.bats.d        # Make dependency file
-  fixtures/
-    example/
-      1/
-        inputs/
-          input.txt         # fixture from test index 1
-      3/
-        inputs/
-          a.txt             # fixtures from test index 3
-          b.txt
+Running test.dats (3 tests)
+
+ok 1 - echo test
+not ok 2 - line matching
+  # stdout: line 0: expected to match "^line0$", got "wrong"
+ok 3 - exit code test
+
+2/3 passed, 1 failed
 ```
 
-### Dependency File
-
-The `.gen.bats.d` file lists all dependencies for Make-based build systems:
-
-```makefile
-/path/to/example.gen.bats: /path/to/example.dats /path/to/fixtures/example/1/inputs/input.txt ...
-```
-
-This enables incremental rebuilds when source files change.
-
-## Integration with BATS
-
-After generating, run tests with BATS:
-
-```bash
-# Run a single test file
-bats example.gen.bats
-
-# Run all generated tests
-bats *.gen.bats
-
-# Run with verbose output
-bats --verbose-run example.gen.bats
-```
+The process exits `0` when all tests pass and `1` when any test fails. When multiple files are
+run, a combined total is printed at the end.
 
 ## Build System Integration
 
@@ -104,15 +74,12 @@ bats --verbose-run example.gen.bats
 
 ```just
 test:
-    dats tests/suite.dats tests/
-    bats tests/suite.gen.bats
+    dats test tests/
 ```
 
 ### Make
 
 ```makefile
-%.gen.bats: %.dats
-    dats $< $(dir $<)
-
--include $(wildcard *.gen.bats.d)
+test:
+	dats test tests/
 ```

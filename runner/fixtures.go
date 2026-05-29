@@ -9,6 +9,12 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
+// Placeholder patterns are compiled once and reused across expansions.
+var (
+	inputPlaceholderRe  = regexp.MustCompile(`\{inputs\.([^}]+)\}`)
+	outputPlaceholderRe = regexp.MustCompile(`\{outputs\.([^}]+)\}`)
+)
+
 // TestContext holds the paths and context for a single test execution
 type TestContext struct {
 	BaseDir     string            // Temp directory for this test file
@@ -48,14 +54,18 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 		}
 	}
 
-	// Set up output file paths (create directories but not files)
-	if len(test.Outputs.Files) > 0 {
+	// Set up output file paths (create the outputs dir but not the files).
+	// Covers both `files` and `!files` so their paths resolve consistently.
+	if len(test.Outputs.Files) > 0 || len(test.Outputs.NotFiles) > 0 {
 		outputDir := filepath.Join(testDir, "outputs")
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return nil, fmt.Errorf("creating output dir: %w", err)
 		}
 
 		for name := range test.Outputs.Files {
+			ctx.OutputPaths[name] = filepath.Join(outputDir, name)
+		}
+		for name := range test.Outputs.NotFiles {
 			ctx.OutputPaths[name] = filepath.Join(outputDir, name)
 		}
 	}
@@ -66,9 +76,8 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 // ExpandPlaceholders replaces {inputs.X} and {outputs.X} with actual paths
 func ExpandPlaceholders(cmd string, ctx *TestContext) string {
 	// Replace {inputs.X}
-	inputRe := regexp.MustCompile(`\{inputs\.([^}]+)\}`)
-	cmd = inputRe.ReplaceAllStringFunc(cmd, func(match string) string {
-		name := inputRe.FindStringSubmatch(match)[1]
+	cmd = inputPlaceholderRe.ReplaceAllStringFunc(cmd, func(match string) string {
+		name := inputPlaceholderRe.FindStringSubmatch(match)[1]
 		if path, ok := ctx.InputPaths[name]; ok {
 			return path
 		}
@@ -76,9 +85,8 @@ func ExpandPlaceholders(cmd string, ctx *TestContext) string {
 	})
 
 	// Replace {outputs.X}
-	outputRe := regexp.MustCompile(`\{outputs\.([^}]+)\}`)
-	cmd = outputRe.ReplaceAllStringFunc(cmd, func(match string) string {
-		name := outputRe.FindStringSubmatch(match)[1]
+	cmd = outputPlaceholderRe.ReplaceAllStringFunc(cmd, func(match string) string {
+		name := outputPlaceholderRe.FindStringSubmatch(match)[1]
 		if path, ok := ctx.OutputPaths[name]; ok {
 			return path
 		}

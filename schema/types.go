@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,6 +21,7 @@ type Test struct {
 	Desc    string      `yaml:"desc,omitempty"`
 	Exit    ExitCode    `yaml:"exit"`
 	Cmd     string      `yaml:"cmd"`
+	Timeout Duration    `yaml:"timeout,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
 }
@@ -40,6 +42,9 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 	// Try int first
 	var intVal int
 	if err := node.Decode(&intVal); err == nil {
+		if intVal < 0 || intVal > 255 {
+			return fmt.Errorf("exit code %d must be in range 0-255", intVal)
+		}
 		e.Value = intVal
 		return nil
 	}
@@ -55,12 +60,37 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 	return fmt.Errorf("exit must be an integer or EXIT_* variable name")
 }
 
-// String returns the exit code as a string for BATS assertions
-func (e ExitCode) String() string {
-	if e.Variable != "" {
-		return "$" + e.Variable
+// Duration is a per-test timeout. It accepts either a bare integer number of
+// seconds (e.g. 5) or a Go duration string (e.g. "500ms", "2s", "1m30s").
+// A zero value means no timeout.
+type Duration struct {
+	Value time.Duration
+}
+
+func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	// Bare integer = seconds
+	var intVal int
+	if err := node.Decode(&intVal); err == nil {
+		if intVal < 0 {
+			return fmt.Errorf("timeout %d must not be negative", intVal)
+		}
+		d.Value = time.Duration(intVal) * time.Second
+		return nil
 	}
-	return strconv.Itoa(e.Value)
+	// String = Go duration
+	var strVal string
+	if err := node.Decode(&strVal); err == nil {
+		parsed, err := time.ParseDuration(strVal)
+		if err != nil {
+			return fmt.Errorf("invalid timeout %q: %w", strVal, err)
+		}
+		if parsed < 0 {
+			return fmt.Errorf("timeout %q must not be negative", strVal)
+		}
+		d.Value = parsed
+		return nil
+	}
+	return fmt.Errorf("timeout must be an integer (seconds) or duration string")
 }
 
 // OutputBlock contains all output validations

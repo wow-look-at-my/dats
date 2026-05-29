@@ -2,6 +2,7 @@ package schema
 
 import (
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 	"github.com/wow-look-at-my/testify/assert"
@@ -44,22 +45,40 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 	}
 }
 
-func TestExitCode_String(t *testing.T) {
+func TestExitCode_UnmarshalYAML_OutOfRange(t *testing.T) {
+	for _, code := range []string{"-1", "256", "1000"} {
+		var e ExitCode
+		err := yaml.Unmarshal([]byte(code), &e)
+		assert.NotNil(t, err)
+	}
+}
+
+func TestDuration_UnmarshalYAML(t *testing.T) {
 	tests := []struct {
-		name		string
-		exitCode	ExitCode
-		want		string
+		name  string
+		input string
+		want  time.Duration
 	}{
-		{"int zero", ExitCode{Value: 0}, "0"},
-		{"int nonzero", ExitCode{Value: 127}, "127"},
-		{"variable", ExitCode{Variable: "EXIT_FAILURE"}, "$EXIT_FAILURE"},
+		{"bare seconds", "5", 5 * time.Second},
+		{"zero", "0", 0},
+		{"millis string", "500ms", 500 * time.Millisecond},
+		{"compound string", "1m30s", 90 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := tt.exitCode.String()
-			assert.Equal(t, tt.want, got)
-
+			var d Duration
+			err := yaml.Unmarshal([]byte(tt.input), &d)
+			require.Nil(t, err)
+			assert.Equal(t, tt.want, d.Value)
 		})
+	}
+}
+
+func TestDuration_UnmarshalYAML_Invalid(t *testing.T) {
+	for _, input := range []string{"-1", "5x", "abc", "-2s"} {
+		var d Duration
+		err := yaml.Unmarshal([]byte(input), &d)
+		assert.NotNil(t, err)
 	}
 }
 

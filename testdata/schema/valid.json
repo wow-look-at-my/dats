@@ -1,0 +1,68 @@
+{
+  "tests": [
+    {
+      "desc": "simple stdout patterns",
+      "cmd": "echo Hello World",
+      "exit": 0,
+      "outputs": {
+        "stdout": ["Hello World"]
+      }
+    },
+    {
+      "desc": "inputs (stdin + files) and negated output",
+      "cmd": "cat {inputs.input.txt}",
+      "inputs": {
+        "stdin": "piped to stdin",
+        "files": {
+          "input.txt": "Hello, world!",
+          "sub/dir/nested.txt": "nested content"
+        }
+      },
+      "outputs": {
+        "stdout": ["Hello, world!"],
+        "stderr": [],
+        "!stdout": ["error", "fail"],
+        "!stderr": ["panic"]
+      }
+    },
+    {
+      "desc": "line-specific regex checks",
+      "cmd": "printf line0",
+      "outputs": {
+        "stdout": {
+          "0": "^line0$",
+          "2": "^line2$"
+        }
+      }
+    },
+    {
+      "desc": "output files and negated files",
+      "cmd": "echo data",
+      "outputs": {
+        "files": {
+          "out.txt": {
+            "exists": true,
+            "match": ["data"],
+            "notMatch": ["error"]
+          }
+        },
+        "!files": {
+          "missing.txt": {
+            "exists": false
+          }
+        }
+      }
+    },
+    {
+      "desc": "exit variable and integer timeout",
+      "cmd": "true",
+      "exit": "EXIT_SUCCESS",
+      "timeout": 5
+    },
+    {
+      "desc": "duration-string timeout",
+      "cmd": "true",
+      "timeout": "500ms"
+    }
+  ]
+}

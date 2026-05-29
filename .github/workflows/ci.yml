@@ -20,3 +20,14 @@ jobs:
         with:
           autorelease: true
           upload-artifacts: true
+
+  schema:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/json-validator@master
+        with:
+          schema: schema.json
+          files: testdata/schema/*.json
