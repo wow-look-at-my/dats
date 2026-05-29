@@ -115,7 +115,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Execute the command
-	execResult, err := Execute(cmd, test.Inputs.Stdin, env)
+	execResult, err := Execute(cmd, test.Inputs.Stdin, env, test.Timeout.Value)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)
@@ -125,8 +125,10 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Stdout = execResult.Stdout
 	result.Stderr = execResult.Stderr
 
-	// Check exit code
-	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
+	// Check exit code (skipped on timeout, where the exit code is meaningless)
+	if execResult.TimedOut {
+		result.Failures = append(result.Failures, fmt.Sprintf("command timed out after %s", test.Timeout.Value))
+	} else if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
 		result.Failures = append(result.Failures, err.Error())
 	}
 
@@ -180,62 +182,56 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		}
 	}
 
-	// Check output files
+	// Check output files and negated output files (!files). Both honor
+	// exists/match/notMatch; the only difference is the failure label.
 	for name, check := range test.Outputs.Files {
-		path := ctx.OutputPaths[name]
-		if path == "" {
-			// File wasn't in the outputs map, construct path
-			path = fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, name)
-		}
-
-		if check.Exists != nil {
-			if *check.Exists {
-				if err := AssertFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", name, err))
-				}
-			} else {
-				if err := RefuteFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", name, err))
-				}
-			}
-		}
-
-		if len(check.Match) > 0 {
-			errs := AssertFileContains(path, check.Match)
-			for _, err := range errs {
-				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", name, err))
-			}
-		}
-
-		if len(check.NotMatch) > 0 {
-			errs := RefuteFileContains(path, check.NotMatch)
-			for _, err := range errs {
-				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", name, err))
-			}
-		}
+		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), check)...)
 	}
-
-	// Check negated output files (!files)
 	for name, check := range test.Outputs.NotFiles {
-		path := fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, name)
-
-		if check.Exists != nil {
-			if *check.Exists {
-				if err := AssertFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("!file %s: %v", name, err))
-				}
-			} else {
-				if err := RefuteFileExists(path); err != nil {
-					result.Failures = append(result.Failures, fmt.Sprintf("!file %s: %v", name, err))
-				}
-			}
-		}
+		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), check)...)
 	}
 
 	result.Passed = len(result.Failures) == 0
 	result.Duration = time.Since(start)
 
 	return result
+}
+
+// outputPath resolves the on-disk path for a named output file, falling back to
+// the conventional location when the name was not pre-registered in the context.
+func outputPath(ctx *TestContext, baseDir string, index int, name string) string {
+	if path := ctx.OutputPaths[name]; path != "" {
+		return path
+	}
+	return fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, name)
+}
+
+// checkFile applies a FileCheck (exists/match/notMatch) at path and returns
+// failure messages prefixed with label (e.g. "file out.txt" or "!file out.txt").
+func checkFile(label, path string, check schema.FileCheck) []string {
+	var failures []string
+	if check.Exists != nil {
+		if *check.Exists {
+			if err := AssertFileExists(path); err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", label, err))
+			}
+		} else {
+			if err := RefuteFileExists(path); err != nil {
+				failures = append(failures, fmt.Sprintf("%s: %v", label, err))
+			}
+		}
+	}
+	if len(check.Match) > 0 {
+		for _, err := range AssertFileContains(path, check.Match) {
+			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
+		}
+	}
+	if len(check.NotMatch) > 0 {
+		for _, err := range RefuteFileContains(path, check.NotMatch) {
+			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
+		}
+	}
+	return failures
 }
 
 // sortedKeys returns sorted keys from an int map

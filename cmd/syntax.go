@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/wow-look-at-my/dats/schema"
@@ -19,29 +20,32 @@ in the current directory tree.`,
 		if err != nil {
 			return err
 		}
-
-		hasErrors := false
-		for _, path := range files {
-			testFile, err := schema.ParseFile(path)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "FAIL %s: %v\n", path, err)
-				hasErrors = true
-				continue
-			}
-
-			if verbose {
-				fmt.Printf("ok   %s (%d tests)\n", path, len(testFile.Tests))
-			} else {
-				fmt.Printf("ok   %s\n", path)
-			}
-		}
-
-		if hasErrors {
+		if !runSyntax(files, os.Stdout, os.Stderr) {
 			os.Exit(1)
 		}
-
 		return nil
 	},
+}
+
+// runSyntax parses each file, writing "ok" lines to out and "FAIL" lines to
+// errw. It returns false if any file failed to parse.
+func runSyntax(files []string, out, errw io.Writer) bool {
+	ok := true
+	for _, path := range files {
+		testFile, err := schema.ParseFile(path)
+		if err != nil {
+			fmt.Fprintf(errw, "FAIL %s: %v\n", path, err)
+			ok = false
+			continue
+		}
+
+		if verbose {
+			fmt.Fprintf(out, "ok   %s (%d tests)\n", path, len(testFile.Tests))
+		} else {
+			fmt.Fprintf(out, "ok   %s\n", path)
+		}
+	}
+	return ok
 }
 
 func init() {

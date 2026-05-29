@@ -2,9 +2,12 @@ package runner
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // ExecResult contains the result of executing a command
@@ -14,12 +17,21 @@ type ExecResult struct {
 	StdoutLines []string
 	Stderr      string
 	StderrLines []string
+	TimedOut    bool // true if the command was killed because timeout elapsed
 }
 
-// Execute runs a command and captures its output
-func Execute(cmd string, stdin string, env []string) (*ExecResult, error) {
+// Execute runs a command and captures its output. If timeout > 0, the command
+// is killed when the deadline elapses and the result's TimedOut flag is set.
+func Execute(cmd string, stdin string, env []string, timeout time.Duration) (*ExecResult, error) {
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
 	// Use bash -c to run the command
-	command := exec.Command("bash", "-c", cmd)
+	command := exec.CommandContext(ctx, "bash", "-c", cmd)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	command.Stdout = &stdoutBuf
@@ -41,6 +53,7 @@ func Execute(cmd string, stdin string, env []string) (*ExecResult, error) {
 		Stderr:      stderrBuf.String(),
 		StdoutLines: splitLines(stdoutBuf.String()),
 		StderrLines: splitLines(stderrBuf.String()),
+		TimedOut:    timeout > 0 && errors.Is(ctx.Err(), context.DeadlineExceeded),
 	}
 
 	// Extract exit code from error
@@ -49,8 +62,8 @@ func Execute(cmd string, stdin string, env []string) (*ExecResult, error) {
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 				result.ExitCode = status.ExitStatus()
 			}
-		} else {
-			// Command failed to start
+		} else if !result.TimedOut {
+			// Command failed to start (and not because we killed it on timeout)
 			return nil, err
 		}
 	}

@@ -59,7 +59,7 @@ func runTests(args []string) error {
 }
 
 func init() {
-	testCmd.Flags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
-	testCmd.Flags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
+	// --keep-temp and --coverdir are registered as persistent flags on rootCmd
+	// (see root.go) and inherited here.
 	rootCmd.AddCommand(testCmd)
 }

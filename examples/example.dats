@@ -73,3 +73,44 @@ tests:
   - desc: exit code variable
     exit: EXIT_SUCCESS
     cmd: true
+
+  # Stderr assertions (cmd is quoted because it contains a colon)
+  - desc: writes to stderr
+    exit: 0
+    cmd: 'echo "warning: be careful" >&2'
+    outputs:
+      stderr:
+        - "warning"
+      "!stderr":
+        - "panic"
+
+  # Output file validation
+  - desc: writes an output file
+    exit: 0
+    cmd: echo "result data" > {outputs.result.txt}
+    outputs:
+      files:
+        result.txt:
+          exists: true
+          match:
+            - "result data"
+          notMatch:
+            - "error"
+
+  # Negated output file: a stray file must NOT be created
+  - desc: does not create a stray file
+    exit: 0
+    cmd: echo nothing
+    outputs:
+      "!files":
+        unexpected.txt:
+          exists: false
+
+  # Per-test timeout (command completes well within the limit)
+  - desc: finishes within timeout
+    exit: 0
+    cmd: echo fast
+    timeout: 5s
+    outputs:
+      stdout:
+        - "fast"

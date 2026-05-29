@@ -25,8 +25,9 @@ func Execute() {
 }
 
 func init() {
+	// Persistent flags are inherited by subcommands, so `dats --keep-temp f.dats`
+	// and `dats test --keep-temp f.dats` both work with a single registration.
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
-	// Add test-specific flags to root too so `dats --keep-temp file.dats` works
-	rootCmd.Flags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
-	rootCmd.Flags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
+	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
+	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
 }
