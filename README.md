@@ -44,8 +44,8 @@ dats syntax
 | Flag | Scope | Description |
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
-| `--keep-temp` | `test` | Keep temp directory for debugging |
-| `--coverdir` | `test` | Set GOCOVERDIR on executed commands to collect coverage data |
+| `--keep-temp` | Global | Keep temp directory for debugging |
+| `--coverdir` | Global | Set GOCOVERDIR on executed commands to collect coverage data |
 
 ## DATS File Format
 
@@ -115,6 +115,22 @@ tests:
           notMatch:
             - "error"
 
+  # Negated output file (must NOT exist)
+  - desc: no stray file
+    cmd: echo nothing
+    outputs:
+      "!files":
+        unexpected.txt:
+          exists: false
+
+  # Per-test timeout (integer seconds or a Go duration string)
+  - desc: must finish quickly
+    cmd: echo fast
+    timeout: 2s
+    outputs:
+      stdout:
+        - "fast"
+
   # Exit code variables
   - desc: exit code variable
     exit: EXIT_SUCCESS
@@ -127,7 +143,8 @@ tests:
 |----------|----------|-------------|
 | `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
 | `desc` | No | Description for the test (used in output) |
-| `exit` | No | Expected exit code (default: 0). Int or `EXIT_SUCCESS`/`EXIT_FAILURE` |
+| `exit` | No | Expected exit code (default: 0). Int (0-255) or `EXIT_SUCCESS`/`EXIT_FAILURE` |
+| `timeout` | No | Per-test timeout: integer seconds or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
 | `outputs.stdout` | No | Patterns to match in stdout |
@@ -135,12 +152,13 @@ tests:
 | `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation |
+| `outputs.!files` | No | Map of filename → FileCheck for negated output file validation |
 
 ### Output Assertions
 
 - `stdout` / `stderr` - List of patterns to match (substring), or map of line numbers (0-indexed) to regex patterns
 - `!stdout` / `!stderr` - Patterns that must NOT appear in output
-- `files` - Map of output filename to FileCheck with `exists`, `match`, and `notMatch` properties
+- `files` / `!files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match)
 
 ### Placeholder System
 

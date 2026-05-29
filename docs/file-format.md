@@ -19,6 +19,7 @@ Each test has these fields:
 | `cmd` | string | Yes | - | Command to execute |
 | `desc` | string | No | Value of `cmd` | Test description/name |
 | `exit` | int or string | No | `0` | Expected exit code |
+| `timeout` | int or string | No | none | Per-test timeout (seconds or duration string) |
 | `inputs` | object | No | - | Stdin and input files |
 | `outputs` | object | No | - | Output validations |
 
@@ -35,6 +36,7 @@ tests:
 tests:
   - desc: comprehensive example
     exit: 0
+    timeout: 5s
     cmd: process {inputs.data.txt} -o {outputs.result.txt}
     inputs:
       stdin: "optional stdin content"
@@ -58,11 +60,13 @@ tests:
 
 ## Command Field (`cmd`)
 
-The command supports placeholders for input and output files:
+The command is run with `bash -c` in a fresh per-run temp directory. It supports placeholders
+for input and output files:
 
 ### Input Placeholders
 
-`{inputs.<filename>}` expands to the path of an input fixture file.
+`{inputs.<filename>}` expands to the absolute path of an input fixture file, e.g.
+`/tmp/dats-xxxxxx/test-<index>/inputs/<filename>`.
 
 ```yaml
 inputs:
@@ -71,11 +75,11 @@ inputs:
 cmd: cat {inputs.data.txt}
 ```
 
-Generates: `cat "$BATS_TEST_DIRNAME/fixtures/<basename>/<index>/inputs/data.txt"`
-
 ### Output Placeholders
 
-`{outputs.<filename>}` expands to a path where the command should write output.
+`{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the
+command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path
+is provided; the command is responsible for creating the file.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -84,8 +88,6 @@ outputs:
     result.bin:
       exists: true
 ```
-
-Generates: `process -o "$BATS_TEST_DIRNAME/fixtures/<basename>/<index>/outputs/result.bin"`
 
 ### Multiple Placeholders
 
@@ -107,18 +109,29 @@ exit: 127    # command not found
 
 ### Variable Names
 
-Must match pattern `^EXIT_[A-Z_]+$`:
+Must match pattern `^EXIT_[A-Z_]+$`. The runner recognizes:
 
-```yaml
-exit: EXIT_SUCCESS   # expands to $EXIT_SUCCESS
-exit: EXIT_FAILURE   # expands to $EXIT_FAILURE
-```
-
-Built-in variables defined in `runtime/test_helper.bash`:
 - `EXIT_SUCCESS` = 0
 - `EXIT_FAILURE` = 1
 
-You can define additional variables in your own helper file.
+```yaml
+exit: EXIT_SUCCESS
+exit: EXIT_FAILURE
+```
+
+---
+
+## Timeout Field (`timeout`)
+
+Bounds how long the command may run. When the deadline elapses the command is killed and the
+test fails with a "command timed out" message. Accepts either a bare integer number of seconds
+or a Go duration string. `0` or an omitted field means no timeout.
+
+```yaml
+timeout: 5       # 5 seconds
+timeout: 500ms   # 500 milliseconds
+timeout: 1m30s   # 90 seconds
+```
 
 ---
 
@@ -136,7 +149,7 @@ inputs:
 
 ### `stdin`
 
-Content piped to the command via bash here-string (`<<<`):
+Content piped to the command's standard input.
 
 ```yaml
 inputs:
@@ -144,11 +157,10 @@ inputs:
 cmd: grep hello
 ```
 
-Generates: `run bash -c "grep hello" <<< $'hello world'`
-
 ### `files`
 
-Map of filename to content. Creates fixture files before test runs:
+Map of filename to content. Each file is created before the test runs; reference it in the
+command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported.
 
 ```yaml
 inputs:
@@ -158,36 +170,29 @@ inputs:
     data.csv: "a,b,c"
 ```
 
-Reference these files in the command with `{inputs.<filename>}`.
-
 ---
 
 ## Outputs Block
 
 ```yaml
 outputs:
-  stdout:        # patterns that MUST appear
-  stderr:        # patterns that MUST appear
+  stdout:        # patterns that MUST appear (or line-number map)
+  stderr:        # patterns that MUST appear (or line-number map)
   "!stdout":     # patterns that must NOT appear
   "!stderr":     # patterns that must NOT appear
   files:         # output file checks
+  "!files":      # negated output file checks
 ```
 
 ### Pattern Lists
 
-Match patterns anywhere in output:
+A list of substring patterns matched anywhere in the output:
 
 ```yaml
 outputs:
   stdout:
     - "expected text"
     - "another pattern"
-```
-
-Generates:
-```bash
-assert_output --partial $'expected text'
-assert_output --partial $'another pattern'
 ```
 
 ### Line-Specific Checks
@@ -202,18 +207,12 @@ outputs:
     5: "pattern on line 6"
 ```
 
-Generates:
-```bash
-assert_line --index 0 --regexp $'^first line$'
-assert_line --index 2 --regexp $'^third line$'
-assert_line --index 5 --regexp $'pattern on line 6'
-```
-
-**Note**: You cannot mix pattern lists and line-specific checks in the same block. Use one format or the other.
+**Note**: You cannot mix pattern lists and line-specific checks in the same block. Use one
+format or the other.
 
 ### Negated Output Checks
 
-`!stdout` and `!stderr` assert patterns do NOT appear:
+`!stdout` and `!stderr` assert substring patterns do NOT appear:
 
 ```yaml
 outputs:
@@ -222,12 +221,6 @@ outputs:
     - "failed"
   "!stderr":
     - "warning"
-```
-
-Generates:
-```bash
-refute_output --partial $'error'
-refute_output --partial $'failed'
 ```
 
 ---
@@ -253,12 +246,13 @@ outputs:
 | Field | Type | Description |
 |-------|------|-------------|
 | `exists` | boolean | Whether the file should exist |
-| `match` | string[] | Regex patterns that must appear (uses `grep -qE`) |
-| `notMatch` | string[] | Regex patterns that must NOT appear |
+| `match` | string[] | Regex patterns that must match the file's contents |
+| `notMatch` | string[] | Regex patterns that must NOT match the file's contents |
 
-### Negative File Checks
+### Negated File Checks (`!files`)
 
-Use `!files` to assert files do NOT exist:
+`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`. It is commonly used to
+assert that a file must NOT exist:
 
 ```yaml
 outputs:
@@ -275,6 +269,7 @@ outputs:
 tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0
+    timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
     cmd: string            # required
     inputs:
       stdin: string        # optional
@@ -293,4 +288,6 @@ tests:
       "!files":
         <name>:
           exists: bool
+          match: []
+          notMatch: []
 ```

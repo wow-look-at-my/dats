@@ -35,6 +35,21 @@ tests:
     cmd: false
 ```
 
+### Bounding Run Time
+
+`timeout` accepts an integer number of seconds or a Go duration string. A command that exceeds
+the timeout is killed and the test fails.
+
+```yaml
+tests:
+  - desc: must finish quickly
+    cmd: ./fast-tool
+    timeout: 2s
+    outputs:
+      stdout:
+        - "done"
+```
+
 ---
 
 ## Input Handling
@@ -295,7 +310,7 @@ tests:
   # Output file generation
   - desc: generates binary output
     exit: 0
-    cmd: mycompiler {inputs.source.lang} -o {outputs/binary}
+    cmd: mycompiler {inputs.source.lang} -o {outputs.binary}
     inputs:
       files:
         source.lang: "print(42)"
@@ -310,7 +325,7 @@ tests:
     cmd: mycompiler --help
     outputs:
       stdout:
-        0: "^Usage: mycompiler"
+        - "Usage: mycompiler"
         - "--help"
         - "--version"
         - "--output"
