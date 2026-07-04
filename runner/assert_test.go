@@ -32,6 +32,22 @@ func TestAssertLineRegex(t *testing.T) {
 	assert.NotNil(t, AssertLineRegex(lines, 0, "[invalid"))
 }
 
+func TestRefuteLineRegex(t *testing.T) {
+	lines := []string{"first line", "second line", "third line"}
+
+	// Line exists and regex does not match: pass
+	assert.Nil(t, RefuteLineRegex(lines, 0, "^second"))
+	// Line exists and regex matches (unanchored search): fail
+	assert.NotNil(t, RefuteLineRegex(lines, 0, "^first"))
+	assert.NotNil(t, RefuteLineRegex(lines, 1, "second"))
+	// Nonexistent line: pass (nothing there to match)
+	assert.Nil(t, RefuteLineRegex(lines, 5, "anything"))
+	assert.Nil(t, RefuteLineRegex(lines, -1, "anything"))
+	// Invalid regex always fails, even on a nonexistent line
+	assert.NotNil(t, RefuteLineRegex(lines, 0, "[invalid"))
+	assert.NotNil(t, RefuteLineRegex(lines, 5, "[invalid"))
+}
+
 func TestAssertExitCode(t *testing.T) {
 	assert.Nil(t, AssertExitCode(0, schema.ExitCode{Value: 0}))
 	assert.NotNil(t, AssertExitCode(1, schema.ExitCode{Value: 0}))

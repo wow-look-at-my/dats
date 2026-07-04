@@ -157,6 +157,17 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		}
 	}
 
+	// Check negated stdout line-specific assertions
+	if len(test.Outputs.NotStdout.LineChecks) > 0 {
+		lines := sortedKeys(test.Outputs.NotStdout.LineChecks)
+		for _, lineNum := range lines {
+			pattern := test.Outputs.NotStdout.LineChecks[lineNum]
+			if err := RefuteLineRegex(execResult.StdoutLines, lineNum, pattern); err != nil {
+				result.Failures = append(result.Failures, fmt.Sprintf("!stdout: %v", err))
+			}
+		}
+	}
+
 	// Check stderr patterns
 	for _, pattern := range test.Outputs.Stderr.Patterns {
 		if err := AssertContains(execResult.Stderr, pattern); err != nil {
@@ -179,6 +190,17 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	for _, pattern := range test.Outputs.NotStderr.Patterns {
 		if err := RefuteContains(execResult.Stderr, pattern); err != nil {
 			result.Failures = append(result.Failures, fmt.Sprintf("!stderr: %v", err))
+		}
+	}
+
+	// Check negated stderr line-specific assertions
+	if len(test.Outputs.NotStderr.LineChecks) > 0 {
+		lines := sortedKeys(test.Outputs.NotStderr.LineChecks)
+		for _, lineNum := range lines {
+			pattern := test.Outputs.NotStderr.LineChecks[lineNum]
+			if err := RefuteLineRegex(execResult.StderrLines, lineNum, pattern); err != nil {
+				result.Failures = append(result.Failures, fmt.Sprintf("!stderr: %v", err))
+			}
 		}
 	}
 

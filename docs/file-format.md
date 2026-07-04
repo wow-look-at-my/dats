@@ -247,6 +247,17 @@ outputs:
     - "warning"
 ```
 
+Like the positive checks, negated checks also accept the line-specific map form. Each regex
+must NOT match (unanchored search) within the given 0-indexed line. A line that does not
+exist passes — there is nothing there to match:
+
+```yaml
+outputs:
+  "!stdout":
+    0: "error"        # line 0 must not contain "error"
+    2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
+```
+
 ---
 
 ## File Checks

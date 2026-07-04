@@ -167,6 +167,71 @@ func TestRunTestLineChecks(t *testing.T) {
 	assert.True(t, result.Passed)
 }
 
+func TestRunTestNegativeLineChecks(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	// Line exists and the regex matches: fail
+	test := &schema.Test{
+		Cmd: "printf 'ok\\nerror: boom\\n'",
+		Outputs: schema.OutputBlock{
+			NotStdout: schema.OutputCheck{LineChecks: map[int]string{1: "error"}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.False(t, result.Passed)
+	require.NotEmpty(t, result.Failures)
+	assert.Contains(t, result.Failures[0], "!stdout")
+	assert.Contains(t, result.Failures[0], "NOT match")
+
+	// Line exists but the regex does not match: pass
+	test2 := &schema.Test{
+		Cmd: "printf 'ok\\nall good\\n'",
+		Outputs: schema.OutputBlock{
+			NotStdout: schema.OutputCheck{LineChecks: map[int]string{1: "error"}},
+		},
+	}
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.True(t, result2.Passed, "failures: %v", result2.Failures)
+
+	// Line does not exist: pass (nothing there to match)
+	test3 := &schema.Test{
+		Cmd: "printf 'only one line\\n'",
+		Outputs: schema.OutputBlock{
+			NotStdout: schema.OutputCheck{LineChecks: map[int]string{7: "error"}},
+		},
+	}
+	result3 := r.RunTest(test3, tmp, 2)
+	assert.True(t, result3.Passed, "failures: %v", result3.Failures)
+}
+
+func TestRunTestNegativeStderrLineChecks(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "printf 'warning: careful\\n' >&2",
+		Outputs: schema.OutputBlock{
+			NotStderr: schema.OutputCheck{LineChecks: map[int]string{0: "^warning"}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.False(t, result.Passed)
+	require.NotEmpty(t, result.Failures)
+	assert.Contains(t, result.Failures[0], "!stderr")
+
+	test2 := &schema.Test{
+		Cmd: "printf 'note: fine\\n' >&2",
+		Outputs: schema.OutputBlock{
+			NotStderr: schema.OutputCheck{LineChecks: map[int]string{0: "^warning"}},
+		},
+	}
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.True(t, result2.Passed, "failures: %v", result2.Failures)
+}
+
 func TestRunTestStderrLineChecks(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

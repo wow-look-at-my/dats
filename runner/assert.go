@@ -42,6 +42,25 @@ func AssertLineRegex(lines []string, lineNum int, pattern string) error {
 	return nil
 }
 
+// RefuteLineRegex checks that the given regex does NOT match within line
+// lineNum. A line that does not exist passes: there is nothing there to
+// match. An invalid regex is always an error, even for a nonexistent line.
+func RefuteLineRegex(lines []string, lineNum int, pattern string) error {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid regex %q: %w", pattern, err)
+	}
+
+	if lineNum < 0 || lineNum >= len(lines) {
+		return nil
+	}
+
+	if re.MatchString(lines[lineNum]) {
+		return fmt.Errorf("line %d: expected to NOT match %q, got %q", lineNum, pattern, lines[lineNum])
+	}
+	return nil
+}
+
 // AssertExitCode checks if the actual exit code matches expected
 func AssertExitCode(actual int, expected schema.ExitCode) error {
 	// If using a variable, we need to resolve it

@@ -102,11 +102,11 @@
         },
         "!stdout": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns that must NOT appear in stdout"
+          "description": "Negated stdout checks. Array form: literal substrings that must NOT appear anywhere in stdout. Map form: 0-indexed line number to regex that must NOT match (unanchored search) within that line; a nonexistent line passes."
         },
         "!stderr": {
           "$ref": "#/definitions/outputCheck",
-          "description": "Patterns that must NOT appear in stderr"
+          "description": "Negated stderr checks. Array form: literal substrings that must NOT appear anywhere in stderr. Map form: 0-indexed line number to regex that must NOT match (unanchored search) within that line; a nonexistent line passes."
         },
         "files": {
           "type": "object",

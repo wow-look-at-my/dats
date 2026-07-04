@@ -91,7 +91,7 @@ tests:
       stdout:                 # Or use line-specific regex (0-indexed)
         0: "^first line$"
         2: "^third line$"
-      "!stdout":              # Patterns that must NOT appear
+      "!stdout":              # Patterns that must NOT appear (also accepts the line-number map form)
         - "error"
       stderr:
         - "warning"
