@@ -64,7 +64,7 @@ go test -cover ./...
 - **ExitCode** - Can be int (0-255) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`
 - **Duration** - Per-test timeout; int (seconds) or Go duration string (e.g. `500ms`, `2s`, `1m30s`)
 - **OutputCheck** - Either `[]string` (patterns) or `map[int]string` (line-specific regex, 0-indexed)
-- **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, files, and !files checks
+- **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, files, !files, and json_output checks
 - **FileCheck** - Validates output files with `exists`, `match`, and `notMatch` properties
 - **InputBlock** - Contains `stdin` (string) and `files` (map of filename to content)
 
@@ -123,6 +123,7 @@ tests:
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation |
 | `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist) |
+| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive, numbers by value) |
 
 ## CI/CD
 

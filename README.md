@@ -153,6 +153,7 @@ tests:
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation |
 | `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist) |
+| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
 ### Output Assertions
 
@@ -160,6 +161,7 @@ tests:
 - `!stdout` / `!stderr` - Patterns that must NOT appear in output
 - `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match)
 - `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match
+- `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
 ### Placeholder System
 

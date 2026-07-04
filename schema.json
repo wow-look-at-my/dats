@@ -121,6 +121,9 @@
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
+        },
+        "json_output": {
+          "description": "Expected JSON value of the whole stdout. Stdout must parse as a single JSON value that deep-equals this value: object keys are order-insensitive, array elements are order-sensitive, numbers compare by value (2 == 2.0). Any JSON value is allowed here, including null (which asserts stdout is exactly the JSON null)."
         }
       }
     },

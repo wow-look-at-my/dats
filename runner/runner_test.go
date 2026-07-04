@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/dats/schema"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNewRunner(t *testing.T) {
@@ -519,6 +520,55 @@ func TestRunTestNotFilesNotMatch(t *testing.T) {
 	}
 	result2 := r.RunTest(test2, tmp, 1)
 	assert.False(t, result2.Passed)
+}
+
+func TestRunTestJSONOutput(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := parseTestYAML(t, `
+cmd: echo '{"count":2,"name":"dats"}'
+outputs:
+  json_output:
+    name: dats
+    count: 2
+`)
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+
+	test2 := parseTestYAML(t, `
+cmd: echo '{"count":3,"name":"dats"}'
+outputs:
+  json_output:
+    name: dats
+    count: 2
+`)
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.False(t, result2.Passed)
+	require.NotEmpty(t, result2.Failures)
+	assert.Contains(t, result2.Failures[0], "json_output")
+	assert.Contains(t, result2.Failures[0], "at $.count: expected 2, got 3")
+
+	test3 := parseTestYAML(t, `
+cmd: echo not-json
+outputs:
+  json_output:
+    name: dats
+`)
+	result3 := r.RunTest(test3, tmp, 2)
+	assert.False(t, result3.Passed)
+	require.NotEmpty(t, result3.Failures)
+	assert.Contains(t, result3.Failures[0], "stdout is not valid JSON")
+}
+
+// parseTestYAML unmarshals a single test definition, exercising the same
+// schema path as a real .dats file.
+func parseTestYAML(t *testing.T, text string) *schema.Test {
+	t.Helper()
+	var test schema.Test
+	require.Nil(t, yaml.Unmarshal([]byte(text), &test))
+	return &test
 }
 
 func TestRunTestTimeout(t *testing.T) {

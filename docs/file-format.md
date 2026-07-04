@@ -202,10 +202,11 @@ inputs:
 outputs:
   stdout:        # patterns that MUST appear (or line-number map)
   stderr:        # patterns that MUST appear (or line-number map)
-  "!stdout":     # patterns that must NOT appear
-  "!stderr":     # patterns that must NOT appear
+  "!stdout":     # patterns that must NOT appear (or line-number map)
+  "!stderr":     # patterns that must NOT appear (or line-number map)
   files:         # output file checks
   "!files":      # negated output file checks
+  json_output:   # expected JSON value of the whole stdout
 ```
 
 ### Pattern Lists
@@ -310,6 +311,40 @@ outputs:
 
 ---
 
+## JSON Output (`json_output`)
+
+`json_output` asserts that the whole stdout is a single JSON value that deep-equals the given
+value:
+
+```yaml
+tests:
+  - desc: emits the expected JSON document
+    cmd: mytool --json
+    outputs:
+      json_output:
+        name: dats
+        count: 2
+        tags: [a, b]
+```
+
+Comparison rules:
+
+- Object keys are **order-insensitive**; arrays are **order-sensitive**.
+- Numbers compare by value (`2` equals `2.0`).
+- The expected value may be any JSON value — object, array, string, number, bool, or `null`
+  (`json_output: null` asserts stdout is exactly the JSON `null`).
+- Stdout must contain exactly one JSON value (trailing whitespace is fine, trailing data is
+  not). Non-JSON stdout fails the assertion.
+
+On mismatch the failure lists each difference with its JSONPath-style location:
+
+```
+# json_output: at $.tokens[3].kind: expected "Ident", got "Keyword"
+# json_output: at $: missing key "eof" (expected true)
+```
+
+---
+
 ## Complete Field Reference
 
 ```yaml
@@ -337,4 +372,5 @@ tests:
           exists: bool
           match: []
           notMatch: []
+      json_output: any     # expected JSON value of the whole stdout
 ```

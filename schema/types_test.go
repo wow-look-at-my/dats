@@ -174,6 +174,35 @@ files:
 
 }
 
+func TestOutputBlock_JSONOutput(t *testing.T) {
+	// Present: an object value
+	var o OutputBlock
+	err := yaml.Unmarshal([]byte("json_output:\n  name: dats\n  count: 2\n"), &o)
+	require.Nil(t, err)
+	require.True(t, o.HasJSONOutput())
+	v, err := o.JSONOutputValue()
+	require.Nil(t, err)
+	m, ok := v.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "dats", m["name"])
+	assert.Equal(t, 2, m["count"])
+
+	// Present: an explicit null expectation is still "specified"
+	var oNull OutputBlock
+	err = yaml.Unmarshal([]byte("json_output: null\n"), &oNull)
+	require.Nil(t, err)
+	require.True(t, oNull.HasJSONOutput())
+	v, err = oNull.JSONOutputValue()
+	require.Nil(t, err)
+	assert.Nil(t, v)
+
+	// Absent: no json_output key
+	var oAbsent OutputBlock
+	err = yaml.Unmarshal([]byte("stdout:\n  - hi\n"), &oAbsent)
+	require.Nil(t, err)
+	assert.False(t, oAbsent.HasJSONOutput())
+}
+
 func TestTestFile_UnmarshalYAML(t *testing.T) {
 	input := `
 tests:

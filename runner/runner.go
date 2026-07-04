@@ -204,6 +204,17 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		}
 	}
 
+	// Check the expected JSON value of stdout
+	if test.Outputs.HasJSONOutput() {
+		if expected, err := test.Outputs.JSONOutputValue(); err != nil {
+			result.Failures = append(result.Failures, fmt.Sprintf("json_output: %v", err))
+		} else {
+			for _, err := range AssertJSONOutput(execResult.Stdout, expected) {
+				result.Failures = append(result.Failures, err.Error())
+			}
+		}
+	}
+
 	// Check output files (files) and negated output files (!files). A !files
 	// entry asserts the negation of each of its checks.
 	for name, check := range test.Outputs.Files {

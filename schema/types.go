@@ -101,6 +101,25 @@ type OutputBlock struct {
 	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
 	Files     map[string]FileCheck `yaml:"files,omitempty"`
 	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
+	// JSONOutput is the expected JSON value of the whole stdout (json_output
+	// key). Stored as a yaml.Node so an explicit null expectation is
+	// distinguishable from an omitted key (zero node Kind).
+	JSONOutput yaml.Node `yaml:"json_output,omitempty"`
+}
+
+// HasJSONOutput reports whether a json_output expectation was specified.
+func (o *OutputBlock) HasJSONOutput() bool {
+	return o.JSONOutput.Kind != 0
+}
+
+// JSONOutputValue decodes the json_output expectation into plain Go values
+// (map[string]any, []any, string, bool, numbers, nil).
+func (o *OutputBlock) JSONOutputValue() (any, error) {
+	var v any
+	if err := o.JSONOutput.Decode(&v); err != nil {
+		return nil, fmt.Errorf("decoding json_output: %w", err)
+	}
+	return v, nil
 }
 
 // OutputCheck represents either:
