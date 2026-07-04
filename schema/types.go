@@ -17,7 +17,10 @@ var exitCodeNames = map[string]bool{
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
-	Tests []Test `yaml:"tests"`
+	// Schema optionally references the JSON Schema for IDE validation; the
+	// runner ignores its value.
+	Schema string `yaml:"$schema,omitempty"`
+	Tests  []Test `yaml:"tests"`
 }
 
 // Test represents a single test case
