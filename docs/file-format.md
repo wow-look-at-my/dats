@@ -60,8 +60,9 @@ tests:
 
 ## Command Field (`cmd`)
 
-The command is run with `bash -c` in a fresh per-run temp directory. It supports placeholders
-for input and output files:
+The command is run with `bash -c` in the working directory of the `dats` invocation (the
+runner does not change directory). Fixture files live in a fresh per-run temp directory and
+are addressed by absolute path through placeholders:
 
 ### Input Placeholders
 
