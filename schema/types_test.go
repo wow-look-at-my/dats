@@ -27,6 +27,11 @@ func TestExitCode_UnmarshalYAML_String(t *testing.T) {
 
 	assert.Equal(t, "EXIT_SUCCESS", e.Variable)
 
+	var f ExitCode
+	err = yaml.Unmarshal([]byte("EXIT_FAILURE"), &f)
+	require.Nil(t, err)
+
+	assert.Equal(t, "EXIT_FAILURE", f.Variable)
 }
 
 func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
@@ -36,6 +41,10 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 		"EXIT",
 		"exit_success",
 		"123abc",
+		// Well-formed EXIT_* names the runner cannot resolve are rejected at
+		// parse time: they could never pass a run.
+		"EXIT_BOGUS",
+		"EXIT_USAGE",
 	}
 	for _, code := range invalidCodes {
 		var e ExitCode

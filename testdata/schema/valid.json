@@ -76,6 +76,32 @@
       "desc": "duration-string timeout",
       "cmd": "true",
       "timeout": "500ms"
+    },
+    {
+      "desc": "line-keyed negated checks and json_output",
+      "cmd": "mytool --json",
+      "exit": "EXIT_FAILURE",
+      "outputs": {
+        "!stdout": {
+          "0": "error",
+          "2": "^warning"
+        },
+        "!stderr": [
+          "panic"
+        ],
+        "json_output": {
+          "name": "dats",
+          "count": 2,
+          "tags": [
+            "a",
+            "b"
+          ],
+          "nested": {
+            "ok": true,
+            "note": null
+          }
+        }
+      }
     }
   ]
 }

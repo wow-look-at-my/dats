@@ -131,7 +131,8 @@ exit: 127    # command not found
 
 ### Variable Names
 
-Must match pattern `^EXIT_[A-Z_]+$`. The runner recognizes:
+Exactly two names are recognized (any other `EXIT_*` name is rejected at parse time, since the
+runner could never resolve it):
 
 - `EXIT_SUCCESS` = 0
 - `EXIT_FAILURE` = 1
@@ -211,7 +212,8 @@ outputs:
 
 ### Pattern Lists
 
-A list of substring patterns matched anywhere in the output:
+A list of **literal substrings**, each of which must appear somewhere in the output. They are
+not regexes — metacharacters have no special meaning:
 
 ```yaml
 outputs:
@@ -222,7 +224,9 @@ outputs:
 
 ### Line-Specific Checks
 
-Use integer keys (0-indexed) with regex patterns:
+Use integer keys (0-indexed) with Go/RE2 regex values. Each regex is searched **unanchored**
+within its line — use `^...$` to pin the whole line. Addressing a line the output does not
+have fails the test (empty output has zero lines):
 
 ```yaml
 outputs:

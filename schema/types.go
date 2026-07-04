@@ -2,14 +2,18 @@ package schema
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
+// exitCodeNames are the symbolic exit code names the runner can resolve.
+// Only these parse; any other name could never pass a run.
+var exitCodeNames = map[string]bool{
+	"EXIT_SUCCESS": true, // 0
+	"EXIT_FAILURE": true, // 1
+}
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
@@ -48,16 +52,16 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 		e.Value = intVal
 		return nil
 	}
-	// Try string - must match EXIT_* pattern
+	// Try string - must be a name the runner can resolve
 	var strVal string
 	if err := node.Decode(&strVal); err == nil {
-		if !exitVarPattern.MatchString(strVal) {
-			return fmt.Errorf("exit %q must be an integer (0-255) or EXIT_* variable name", strVal)
+		if !exitCodeNames[strVal] {
+			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", strVal)
 		}
 		e.Variable = strVal
 		return nil
 	}
-	return fmt.Errorf("exit must be an integer or EXIT_* variable name")
+	return fmt.Errorf("exit must be an integer (0-255) or EXIT_SUCCESS/EXIT_FAILURE")
 }
 
 // Duration is a per-test timeout. It accepts either a bare integer number of
