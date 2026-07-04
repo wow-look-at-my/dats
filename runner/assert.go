@@ -125,9 +125,14 @@ func AssertFileContains(path string, patterns []string) []error {
 // RefuteFileContains checks that file does NOT contain any of the given patterns
 func RefuteFileContains(path string, patterns []string) []error {
 	content, err := os.ReadFile(path)
-	if err != nil {
-		// File doesn't exist - that's fine for refute
+	if os.IsNotExist(err) {
+		// File doesn't exist - nothing can match, so the refutation holds
 		return nil
+	}
+	if err != nil {
+		// Any other read error (a directory, permissions, ...) is a real
+		// failure, not a vacuous pass
+		return []error{fmt.Errorf("could not read file %q: %w", path, err)}
 	}
 
 	text := string(content)

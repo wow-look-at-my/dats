@@ -110,4 +110,10 @@ func TestRefuteFileContains(t *testing.T) {
 
 	errs = RefuteFileContains(f, []string{"[invalid"})
 	assert.Len(t, errs, 1)
+
+	// A path that exists but cannot be read as a file (here: a directory) is
+	// a real failure, not a vacuous pass
+	errs = RefuteFileContains(tmp, []string{"hello"})
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0].Error(), "could not read file")
 }
