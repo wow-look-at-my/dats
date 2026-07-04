@@ -115,13 +115,13 @@ tests:
           notMatch:
             - "error"
 
-  # Negated output file (must NOT exist)
+  # Negated output file (each check inverted: exists true = must NOT exist)
   - desc: no stray file
     cmd: echo nothing
     outputs:
       "!files":
         unexpected.txt:
-          exists: false
+          exists: true
 
   # Per-test timeout (integer seconds or a Go duration string)
   - desc: must finish quickly
@@ -152,19 +152,24 @@ tests:
 | `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation |
-| `outputs.!files` | No | Map of filename → FileCheck for negated output file validation |
+| `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist) |
+| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
 ### Output Assertions
 
 - `stdout` / `stderr` - List of patterns to match (substring), or map of line numbers (0-indexed) to regex patterns
-- `!stdout` / `!stderr` - Patterns that must NOT appear in output
-- `files` / `!files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match)
+- `!stdout` / `!stderr` - Patterns that must NOT appear in output (list of substrings, or map of 0-indexed line numbers to regexes that must not match within that line)
+- `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match)
+- `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match
+- `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
 ### Placeholder System
 
-Commands use `{inputs.X}` and `{outputs.X}` which expand to absolute paths in a temp directory:
+Commands and `inputs.files` contents use `{inputs.X}` and `{outputs.X}`, which expand to absolute paths in a temp directory:
 - `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt`
-- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt`
+- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (always resolves; no `files` check required)
+
+Commands run with `bash -c` in the working directory of the `dats` invocation; only fixture files live in the temp directory.
 
 ## JSON Schema
 

@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/wow-look-at-my/dats/schema"
 	"github.com/spf13/cobra"
+	"github.com/wow-look-at-my/dats/schema"
 )
 
 var syntaxCmd = &cobra.Command{

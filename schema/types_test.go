@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestExitCode_UnmarshalYAML_Int(t *testing.T) {
@@ -27,6 +27,11 @@ func TestExitCode_UnmarshalYAML_String(t *testing.T) {
 
 	assert.Equal(t, "EXIT_SUCCESS", e.Variable)
 
+	var f ExitCode
+	err = yaml.Unmarshal([]byte("EXIT_FAILURE"), &f)
+	require.Nil(t, err)
+
+	assert.Equal(t, "EXIT_FAILURE", f.Variable)
 }
 
 func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
@@ -36,6 +41,10 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 		"EXIT",
 		"exit_success",
 		"123abc",
+		// Well-formed EXIT_* names the runner cannot resolve are rejected at
+		// parse time: they could never pass a run.
+		"EXIT_BOGUS",
+		"EXIT_USAGE",
 	}
 	for _, code := range invalidCodes {
 		var e ExitCode
@@ -108,9 +117,9 @@ func TestOutputCheck_UnmarshalYAML_LineChecks(t *testing.T) {
 
 func TestOutputCheck_IsEmpty(t *testing.T) {
 	tests := []struct {
-		name	string
-		check	OutputCheck
-		want	bool
+		name  string
+		check OutputCheck
+		want  bool
 	}{
 		{"empty", OutputCheck{}, true},
 		{"with patterns", OutputCheck{Patterns: []string{"a"}}, false},
@@ -172,6 +181,35 @@ files:
 
 	assert.False(t, o.NotFiles["error.log"].Exists == nil || *o.NotFiles["error.log"].Exists != false)
 
+}
+
+func TestOutputBlock_JSONOutput(t *testing.T) {
+	// Present: an object value
+	var o OutputBlock
+	err := yaml.Unmarshal([]byte("json_output:\n  name: dats\n  count: 2\n"), &o)
+	require.Nil(t, err)
+	require.True(t, o.HasJSONOutput())
+	v, err := o.JSONOutputValue()
+	require.Nil(t, err)
+	m, ok := v.(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "dats", m["name"])
+	assert.Equal(t, 2, m["count"])
+
+	// Present: an explicit null expectation is still "specified"
+	var oNull OutputBlock
+	err = yaml.Unmarshal([]byte("json_output: null\n"), &oNull)
+	require.Nil(t, err)
+	require.True(t, oNull.HasJSONOutput())
+	v, err = oNull.JSONOutputValue()
+	require.Nil(t, err)
+	assert.Nil(t, v)
+
+	// Absent: no json_output key
+	var oAbsent OutputBlock
+	err = yaml.Unmarshal([]byte("stdout:\n  - hi\n"), &oAbsent)
+	require.Nil(t, err)
+	assert.False(t, oAbsent.HasJSONOutput())
 }
 
 func TestTestFile_UnmarshalYAML(t *testing.T) {

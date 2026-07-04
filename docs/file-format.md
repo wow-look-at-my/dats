@@ -60,8 +60,9 @@ tests:
 
 ## Command Field (`cmd`)
 
-The command is run with `bash -c` in a fresh per-run temp directory. It supports placeholders
-for input and output files:
+The command is run with `bash -c` in the working directory of the `dats` invocation (the
+runner does not change directory). Fixture files live in a fresh per-run temp directory and
+are addressed by absolute path through placeholders:
 
 ### Input Placeholders
 
@@ -79,7 +80,8 @@ cmd: cat {inputs.data.txt}
 
 `{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the
 command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path
-is provided; the command is responsible for creating the file.
+is provided; the command is responsible for creating the file. Every `{outputs.<filename>}`
+resolves — the name does not need to appear under `outputs.files`.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -95,6 +97,27 @@ outputs:
 cmd: diff {inputs.a.txt} {inputs.b.txt} > {outputs.diff.txt}
 ```
 
+### Placeholders in Input File Contents
+
+The same expansion is applied to the contents of `inputs.files`, so a fixture (e.g. a script
+or program the command runs) can reference other input paths and output paths:
+
+```yaml
+inputs:
+  files:
+    script.sh: 'cp {inputs.data.txt} {outputs.copy.txt}'
+    data.txt: "content"
+cmd: bash {inputs.script.sh}
+outputs:
+  files:
+    copy.txt:
+      match:
+        - "content"
+```
+
+`{inputs.<name>}` for a name not declared under `inputs.files` is left untouched (in both the
+command and file contents), as is any other brace construct.
+
 ---
 
 ## Exit Code Field (`exit`)
@@ -109,7 +132,8 @@ exit: 127    # command not found
 
 ### Variable Names
 
-Must match pattern `^EXIT_[A-Z_]+$`. The runner recognizes:
+Exactly two names are recognized (any other `EXIT_*` name is rejected at parse time, since the
+runner could never resolve it):
 
 - `EXIT_SUCCESS` = 0
 - `EXIT_FAILURE` = 1
@@ -161,6 +185,8 @@ cmd: grep hello
 
 Map of filename to content. Each file is created before the test runs; reference it in the
 command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported.
+Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see
+[Placeholders in Input File Contents](#placeholders-in-input-file-contents).
 
 ```yaml
 inputs:
@@ -178,15 +204,17 @@ inputs:
 outputs:
   stdout:        # patterns that MUST appear (or line-number map)
   stderr:        # patterns that MUST appear (or line-number map)
-  "!stdout":     # patterns that must NOT appear
-  "!stderr":     # patterns that must NOT appear
+  "!stdout":     # patterns that must NOT appear (or line-number map)
+  "!stderr":     # patterns that must NOT appear (or line-number map)
   files:         # output file checks
   "!files":      # negated output file checks
+  json_output:   # expected JSON value of the whole stdout
 ```
 
 ### Pattern Lists
 
-A list of substring patterns matched anywhere in the output:
+A list of **literal substrings**, each of which must appear somewhere in the output. They are
+not regexes — metacharacters have no special meaning:
 
 ```yaml
 outputs:
@@ -197,7 +225,9 @@ outputs:
 
 ### Line-Specific Checks
 
-Use integer keys (0-indexed) with regex patterns:
+Use integer keys (0-indexed) with Go/RE2 regex values. Each regex is searched **unanchored**
+within its line — use `^...$` to pin the whole line. Addressing a line the output does not
+have fails the test (empty output has zero lines):
 
 ```yaml
 outputs:
@@ -221,6 +251,17 @@ outputs:
     - "failed"
   "!stderr":
     - "warning"
+```
+
+Like the positive checks, negated checks also accept the line-specific map form. Each regex
+must NOT match (unanchored search) within the given 0-indexed line. A line that does not
+exist passes — there is nothing there to match:
+
+```yaml
+outputs:
+  "!stdout":
+    0: "error"        # line 0 must not contain "error"
+    2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
 ```
 
 ---
@@ -251,14 +292,60 @@ outputs:
 
 ### Negated File Checks (`!files`)
 
-`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`. It is commonly used to
-assert that a file must NOT exist:
+`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`, but asserts the
+NEGATION of each check:
+
+| Field | `files` meaning | `!files` meaning |
+|-------|-----------------|------------------|
+| `exists: true` | file must exist | file must NOT exist |
+| `exists: false` | file must NOT exist | file must exist |
+| `match: [p]` | contents must match `p` | contents must NOT match `p` (a missing file passes) |
+| `notMatch: [p]` | contents must NOT match `p` (a missing file passes) | contents must match `p` (a missing file fails) |
+
+The common use is asserting that a file must NOT exist or must NOT contain something:
 
 ```yaml
 outputs:
   "!files":
     error.log:
-      exists: false
+      exists: true        # error.log must NOT exist
+    report.txt:
+      match:
+        - "FAILED"        # report.txt must NOT contain FAILED
+```
+
+---
+
+## JSON Output (`json_output`)
+
+`json_output` asserts that the whole stdout is a single JSON value that deep-equals the given
+value:
+
+```yaml
+tests:
+  - desc: emits the expected JSON document
+    cmd: mytool --json
+    outputs:
+      json_output:
+        name: dats
+        count: 2
+        tags: [a, b]
+```
+
+Comparison rules:
+
+- Object keys are **order-insensitive**; arrays are **order-sensitive**.
+- Numbers compare by value (`2` equals `2.0`).
+- The expected value may be any JSON value — object, array, string, number, bool, or `null`
+  (`json_output: null` asserts stdout is exactly the JSON `null`).
+- Stdout must contain exactly one JSON value (trailing whitespace is fine, trailing data is
+  not). Non-JSON stdout fails the assertion.
+
+On mismatch the failure lists each difference with its JSONPath-style location:
+
+```
+# json_output: at $.tokens[3].kind: expected "Ident", got "Keyword"
+# json_output: at $: missing key "eof" (expected true)
 ```
 
 ---
@@ -290,4 +377,5 @@ tests:
           exists: bool
           match: []
           notMatch: []
+      json_output: any     # expected JSON value of the whole stdout
 ```

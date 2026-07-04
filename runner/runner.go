@@ -157,6 +157,17 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		}
 	}
 
+	// Check negated stdout line-specific assertions
+	if len(test.Outputs.NotStdout.LineChecks) > 0 {
+		lines := sortedKeys(test.Outputs.NotStdout.LineChecks)
+		for _, lineNum := range lines {
+			pattern := test.Outputs.NotStdout.LineChecks[lineNum]
+			if err := RefuteLineRegex(execResult.StdoutLines, lineNum, pattern); err != nil {
+				result.Failures = append(result.Failures, fmt.Sprintf("!stdout: %v", err))
+			}
+		}
+	}
+
 	// Check stderr patterns
 	for _, pattern := range test.Outputs.Stderr.Patterns {
 		if err := AssertContains(execResult.Stderr, pattern); err != nil {
@@ -182,13 +193,35 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		}
 	}
 
-	// Check output files and negated output files (!files). Both honor
-	// exists/match/notMatch; the only difference is the failure label.
+	// Check negated stderr line-specific assertions
+	if len(test.Outputs.NotStderr.LineChecks) > 0 {
+		lines := sortedKeys(test.Outputs.NotStderr.LineChecks)
+		for _, lineNum := range lines {
+			pattern := test.Outputs.NotStderr.LineChecks[lineNum]
+			if err := RefuteLineRegex(execResult.StderrLines, lineNum, pattern); err != nil {
+				result.Failures = append(result.Failures, fmt.Sprintf("!stderr: %v", err))
+			}
+		}
+	}
+
+	// Check the expected JSON value of stdout
+	if test.Outputs.HasJSONOutput() {
+		if expected, err := test.Outputs.JSONOutputValue(); err != nil {
+			result.Failures = append(result.Failures, fmt.Sprintf("json_output: %v", err))
+		} else {
+			for _, err := range AssertJSONOutput(execResult.Stdout, expected) {
+				result.Failures = append(result.Failures, err.Error())
+			}
+		}
+	}
+
+	// Check output files (files) and negated output files (!files). A !files
+	// entry asserts the negation of each of its checks.
 	for name, check := range test.Outputs.Files {
-		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), check)...)
+		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), check, false)...)
 	}
 	for name, check := range test.Outputs.NotFiles {
-		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), check)...)
+		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), check, true)...)
 	}
 
 	result.Passed = len(result.Failures) == 0
@@ -208,10 +241,12 @@ func outputPath(ctx *TestContext, baseDir string, index int, name string) string
 
 // checkFile applies a FileCheck (exists/match/notMatch) at path and returns
 // failure messages prefixed with label (e.g. "file out.txt" or "!file out.txt").
-func checkFile(label, path string, check schema.FileCheck) []string {
+// With negate set (the !files form), every check is inverted: exists is
+// flipped, match patterns must NOT match, and notMatch patterns must match.
+func checkFile(label, path string, check schema.FileCheck, negate bool) []string {
 	var failures []string
 	if check.Exists != nil {
-		if *check.Exists {
+		if *check.Exists != negate {
 			if err := AssertFileExists(path); err != nil {
 				failures = append(failures, fmt.Sprintf("%s: %v", label, err))
 			}
@@ -221,13 +256,17 @@ func checkFile(label, path string, check schema.FileCheck) []string {
 			}
 		}
 	}
+	assertContains, refuteContains := AssertFileContains, RefuteFileContains
+	if negate {
+		assertContains, refuteContains = RefuteFileContains, AssertFileContains
+	}
 	if len(check.Match) > 0 {
-		for _, err := range AssertFileContains(path, check.Match) {
+		for _, err := range assertContains(path, check.Match) {
 			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
 		}
 	}
 	if len(check.NotMatch) > 0 {
-		for _, err := range RefuteFileContains(path, check.NotMatch) {
+		for _, err := range refuteContains(path, check.NotMatch) {
 			failures = append(failures, fmt.Sprintf("%s: %v", label, err))
 		}
 	}

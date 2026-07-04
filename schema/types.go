@@ -2,18 +2,25 @@ package schema
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
+// exitCodeNames are the symbolic exit code names the runner can resolve.
+// Only these parse; any other name could never pass a run.
+var exitCodeNames = map[string]bool{
+	"EXIT_SUCCESS": true, // 0
+	"EXIT_FAILURE": true, // 1
+}
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
-	Tests []Test `yaml:"tests"`
+	// Schema optionally references the JSON Schema for IDE validation; the
+	// runner ignores its value.
+	Schema string `yaml:"$schema,omitempty"`
+	Tests  []Test `yaml:"tests"`
 }
 
 // Test represents a single test case
@@ -48,16 +55,16 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 		e.Value = intVal
 		return nil
 	}
-	// Try string - must match EXIT_* pattern
+	// Try string - must be a name the runner can resolve
 	var strVal string
 	if err := node.Decode(&strVal); err == nil {
-		if !exitVarPattern.MatchString(strVal) {
-			return fmt.Errorf("exit %q must be an integer (0-255) or EXIT_* variable name", strVal)
+		if !exitCodeNames[strVal] {
+			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", strVal)
 		}
 		e.Variable = strVal
 		return nil
 	}
-	return fmt.Errorf("exit must be an integer or EXIT_* variable name")
+	return fmt.Errorf("exit must be an integer (0-255) or EXIT_SUCCESS/EXIT_FAILURE")
 }
 
 // Duration is a per-test timeout. It accepts either a bare integer number of
@@ -101,6 +108,25 @@ type OutputBlock struct {
 	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
 	Files     map[string]FileCheck `yaml:"files,omitempty"`
 	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
+	// JSONOutput is the expected JSON value of the whole stdout (json_output
+	// key). Stored as a yaml.Node so an explicit null expectation is
+	// distinguishable from an omitted key (zero node Kind).
+	JSONOutput yaml.Node `yaml:"json_output,omitempty"`
+}
+
+// HasJSONOutput reports whether a json_output expectation was specified.
+func (o *OutputBlock) HasJSONOutput() bool {
+	return o.JSONOutput.Kind != 0
+}
+
+// JSONOutputValue decodes the json_output expectation into plain Go values
+// (map[string]any, []any, string, bool, numbers, nil).
+func (o *OutputBlock) JSONOutputValue() (any, error) {
+	var v any
+	if err := o.JSONOutput.Decode(&v); err != nil {
+		return nil, fmt.Errorf("decoding json_output: %w", err)
+	}
+	return v, nil
 }
 
 // OutputCheck represents either:

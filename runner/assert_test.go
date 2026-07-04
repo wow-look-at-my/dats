@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/dats/schema"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestAssertContains(t *testing.T) {
@@ -30,6 +30,22 @@ func TestAssertLineRegex(t *testing.T) {
 	assert.NotNil(t, AssertLineRegex(lines, 5, "anything"))
 	assert.NotNil(t, AssertLineRegex(lines, -1, "anything"))
 	assert.NotNil(t, AssertLineRegex(lines, 0, "[invalid"))
+}
+
+func TestRefuteLineRegex(t *testing.T) {
+	lines := []string{"first line", "second line", "third line"}
+
+	// Line exists and regex does not match: pass
+	assert.Nil(t, RefuteLineRegex(lines, 0, "^second"))
+	// Line exists and regex matches (unanchored search): fail
+	assert.NotNil(t, RefuteLineRegex(lines, 0, "^first"))
+	assert.NotNil(t, RefuteLineRegex(lines, 1, "second"))
+	// Nonexistent line: pass (nothing there to match)
+	assert.Nil(t, RefuteLineRegex(lines, 5, "anything"))
+	assert.Nil(t, RefuteLineRegex(lines, -1, "anything"))
+	// Invalid regex always fails, even on a nonexistent line
+	assert.NotNil(t, RefuteLineRegex(lines, 0, "[invalid"))
+	assert.NotNil(t, RefuteLineRegex(lines, 5, "[invalid"))
 }
 
 func TestAssertExitCode(t *testing.T) {
@@ -94,4 +110,10 @@ func TestRefuteFileContains(t *testing.T) {
 
 	errs = RefuteFileContains(f, []string{"[invalid"})
 	assert.Len(t, errs, 1)
+
+	// A path that exists but cannot be read as a file (here: a directory) is
+	// a real failure, not a vacuous pass
+	errs = RefuteFileContains(tmp, []string{"hello"})
+	require.Len(t, errs, 1)
+	assert.Contains(t, errs[0].Error(), "could not read file")
 }

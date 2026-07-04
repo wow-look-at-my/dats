@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func writeTempDats(t *testing.T, content string) string {
@@ -56,4 +56,67 @@ func TestParseFile_EmptyTests(t *testing.T) {
 func TestParseFile_MissingFile(t *testing.T) {
 	_, err := ParseFile("/nonexistent/path/to/file.dats")
 	assert.NotNil(t, err)
+}
+
+func TestParseFile_UnknownKeysRejected(t *testing.T) {
+	cases := map[string]string{
+		"top level": `
+tests:
+  - cmd: echo hi
+bogus: true
+`,
+		"test level": `
+tests:
+  - cmd: echo hi
+    stdotu:
+      - "typo of stdout at the wrong level"
+`,
+		"outputs level": `
+tests:
+  - cmd: echo hi
+    outputs:
+      stdotu:
+        - "typo of stdout"
+`,
+		"inputs level": `
+tests:
+  - cmd: echo hi
+    inputs:
+      file:
+        a.txt: "typo of files"
+`,
+		"file check level": `
+tests:
+  - cmd: echo hi
+    outputs:
+      files:
+        out.txt:
+          matches:
+            - "typo of match"
+`,
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), "not found")
+		})
+	}
+}
+
+func TestParseFile_SchemaKeyAllowed(t *testing.T) {
+	path := writeTempDats(t, `
+"$schema": https://github.com/wow-look-at-my/dats/schema.json
+tests:
+  - cmd: echo hi
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	assert.Equal(t, 1, len(tf.Tests))
+}
+
+func TestParseFile_EmptyFile(t *testing.T) {
+	_, err := ParseFile(writeTempDats(t, ""))
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "no tests defined")
 }

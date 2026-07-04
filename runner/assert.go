@@ -42,6 +42,25 @@ func AssertLineRegex(lines []string, lineNum int, pattern string) error {
 	return nil
 }
 
+// RefuteLineRegex checks that the given regex does NOT match within line
+// lineNum. A line that does not exist passes: there is nothing there to
+// match. An invalid regex is always an error, even for a nonexistent line.
+func RefuteLineRegex(lines []string, lineNum int, pattern string) error {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid regex %q: %w", pattern, err)
+	}
+
+	if lineNum < 0 || lineNum >= len(lines) {
+		return nil
+	}
+
+	if re.MatchString(lines[lineNum]) {
+		return fmt.Errorf("line %d: expected to NOT match %q, got %q", lineNum, pattern, lines[lineNum])
+	}
+	return nil
+}
+
 // AssertExitCode checks if the actual exit code matches expected
 func AssertExitCode(actual int, expected schema.ExitCode) error {
 	// If using a variable, we need to resolve it
@@ -106,9 +125,14 @@ func AssertFileContains(path string, patterns []string) []error {
 // RefuteFileContains checks that file does NOT contain any of the given patterns
 func RefuteFileContains(path string, patterns []string) []error {
 	content, err := os.ReadFile(path)
-	if err != nil {
-		// File doesn't exist - that's fine for refute
+	if os.IsNotExist(err) {
+		// File doesn't exist - nothing can match, so the refutation holds
 		return nil
+	}
+	if err != nil {
+		// Any other read error (a directory, permissions, ...) is a real
+		// failure, not a vacuous pass
+		return []error{fmt.Errorf("could not read file %q: %w", path, err)}
 	}
 
 	text := string(content)

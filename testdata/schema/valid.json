@@ -5,7 +5,9 @@
       "cmd": "echo Hello World",
       "exit": 0,
       "outputs": {
-        "stdout": ["Hello World"]
+        "stdout": [
+          "Hello World"
+        ]
       }
     },
     {
@@ -19,10 +21,17 @@
         }
       },
       "outputs": {
-        "stdout": ["Hello, world!"],
+        "stdout": [
+          "Hello, world!"
+        ],
         "stderr": [],
-        "!stdout": ["error", "fail"],
-        "!stderr": ["panic"]
+        "!stdout": [
+          "error",
+          "fail"
+        ],
+        "!stderr": [
+          "panic"
+        ]
       }
     },
     {
@@ -36,19 +45,23 @@
       }
     },
     {
-      "desc": "output files and negated files",
+      "desc": "output files and negated files (!files inverts: exists true = must NOT exist)",
       "cmd": "echo data",
       "outputs": {
         "files": {
           "out.txt": {
             "exists": true,
-            "match": ["data"],
-            "notMatch": ["error"]
+            "match": [
+              "data"
+            ],
+            "notMatch": [
+              "error"
+            ]
           }
         },
         "!files": {
           "missing.txt": {
-            "exists": false
+            "exists": true
           }
         }
       }
@@ -63,6 +76,32 @@
       "desc": "duration-string timeout",
       "cmd": "true",
       "timeout": "500ms"
+    },
+    {
+      "desc": "line-keyed negated checks and json_output",
+      "cmd": "mytool --json",
+      "exit": "EXIT_FAILURE",
+      "outputs": {
+        "!stdout": {
+          "0": "error",
+          "2": "^warning"
+        },
+        "!stderr": [
+          "panic"
+        ],
+        "json_output": {
+          "name": "dats",
+          "count": 2,
+          "tags": [
+            "a",
+            "b"
+          ],
+          "nested": {
+            "ok": true,
+            "note": null
+          }
+        }
+      }
     }
   ]
 }
