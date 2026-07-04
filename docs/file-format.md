@@ -79,7 +79,8 @@ cmd: cat {inputs.data.txt}
 
 `{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the
 command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path
-is provided; the command is responsible for creating the file.
+is provided; the command is responsible for creating the file. Every `{outputs.<filename>}`
+resolves — the name does not need to appear under `outputs.files`.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -94,6 +95,27 @@ outputs:
 ```yaml
 cmd: diff {inputs.a.txt} {inputs.b.txt} > {outputs.diff.txt}
 ```
+
+### Placeholders in Input File Contents
+
+The same expansion is applied to the contents of `inputs.files`, so a fixture (e.g. a script
+or program the command runs) can reference other input paths and output paths:
+
+```yaml
+inputs:
+  files:
+    script.sh: 'cp {inputs.data.txt} {outputs.copy.txt}'
+    data.txt: "content"
+cmd: bash {inputs.script.sh}
+outputs:
+  files:
+    copy.txt:
+      match:
+        - "content"
+```
+
+`{inputs.<name>}` for a name not declared under `inputs.files` is left untouched (in both the
+command and file contents), as is any other brace construct.
 
 ---
 
@@ -161,6 +183,8 @@ cmd: grep hello
 
 Map of filename to content. Each file is created before the test runs; reference it in the
 command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported.
+Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see
+[Placeholders in Input File Contents](#placeholders-in-input-file-contents).
 
 ```yaml
 inputs:

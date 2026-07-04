@@ -31,7 +31,7 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute. Use {inputs.X} and {outputs.X} placeholders for file paths."
+          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required). The same expansion is applied to inputs.files contents."
         },
         "exit": {
           "description": "Expected exit code (0-255) or EXIT_* variable name (default 0)",
@@ -79,10 +79,10 @@
         },
         "files": {
           "type": "object",
-          "description": "Fixture files to create before running, mapping filename to content",
+          "description": "Fixture files to create before running, mapping filename to content. Contents go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
           "additionalProperties": {
             "type": "string",
-            "description": "File content"
+            "description": "File content ({inputs.X}/{outputs.X} placeholders are expanded)"
           }
         }
       }

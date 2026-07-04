@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestExitCode_UnmarshalYAML_Int(t *testing.T) {
@@ -108,9 +108,9 @@ func TestOutputCheck_UnmarshalYAML_LineChecks(t *testing.T) {
 
 func TestOutputCheck_IsEmpty(t *testing.T) {
 	tests := []struct {
-		name	string
-		check	OutputCheck
-		want	bool
+		name  string
+		check OutputCheck
+		want  bool
 	}{
 		{"empty", OutputCheck{}, true},
 		{"with patterns", OutputCheck{Patterns: []string{"a"}}, false},

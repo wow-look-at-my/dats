@@ -69,9 +69,9 @@ go test -cover ./...
 - **InputBlock** - Contains `stdin` (string) and `files` (map of filename to content)
 
 ### Placeholder System
-Commands use `{inputs.X}` and `{outputs.X}` which expand to absolute paths in the temp directory:
-- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt`
-- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt`
+Commands and `inputs.files` contents use `{inputs.X}` and `{outputs.X}`, which expand to absolute paths in the temp directory:
+- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
+- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (always resolves; no `outputs.files` check required)
 
 ## DATS File Format
 

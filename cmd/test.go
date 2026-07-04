@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/wow-look-at-my/dats/runner"
 	"github.com/spf13/cobra"
+	"github.com/wow-look-at-my/dats/runner"
 )
 
 var (

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/dats/schema"
-	"github.com/wow-look-at-my/testify/assert"
-	"github.com/wow-look-at-my/testify/require"
 )
 
 func TestNewRunner(t *testing.T) {
@@ -236,6 +236,55 @@ func TestRunTestOutputFileExists(t *testing.T) {
 	}
 	result := r.RunTest(test, tmp, 0)
 	assert.True(t, result.Passed)
+}
+
+func TestRunTestPlaceholderInInputContents(t *testing.T) {
+	// An input file's contents can reference {outputs.X}; the command reads
+	// the expanded path from the file and writes there, and the files check
+	// sees the result. Mirrors script-driven consumers (e.g. interpreters
+	// running a fixture program that writes an output file).
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	boolTrue := true
+	test := &schema.Test{
+		Cmd: "bash {inputs.script.sh}",
+		Inputs: schema.InputBlock{
+			Files: map[string]string{
+				"script.sh": `echo "from script" > "{outputs.out.txt}"`,
+			},
+		},
+		Outputs: schema.OutputBlock{
+			Files: map[string]schema.FileCheck{
+				"out.txt": {Exists: &boolTrue, Match: []string{"from script"}},
+			},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+}
+
+func TestRunTestOutputPlaceholderWithoutFilesCheck(t *testing.T) {
+	// {outputs.X} resolves to a real path in the outputs directory even when
+	// no files check references X, so commands never write stray files named
+	// after the literal placeholder.
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "echo data > {outputs.free.txt} && cat {outputs.free.txt}",
+		Outputs: schema.OutputBlock{
+			Stdout: schema.OutputCheck{Patterns: []string{"data"}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+
+	content, err := os.ReadFile(filepath.Join(tmp, "test-0", "outputs", "free.txt"))
+	require.Nil(t, err)
+	assert.Contains(t, string(content), "data")
 }
 
 func TestRunTestOutputFileNotExists(t *testing.T) {
