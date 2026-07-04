@@ -98,13 +98,14 @@ tests:
             - "error"
 
   # Negated output file: a stray file must NOT be created
+  # (!files inverts each check, so exists: true means "must NOT exist")
   - desc: does not create a stray file
     exit: 0
     cmd: echo nothing
     outputs:
       "!files":
         unexpected.txt:
-          exists: false
+          exists: true
 
   # Per-test timeout (command completes well within the limit)
   - desc: finishes within timeout

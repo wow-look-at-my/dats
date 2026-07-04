@@ -102,9 +102,9 @@ tests:
             - "expected content"
           notMatch:
             - "error"
-      "!files":               # Negated output file validation (same FileCheck shape)
+      "!files":               # Negated output file validation (each check inverted)
         unexpected.txt:
-          exists: false
+          exists: true        # must NOT exist
 ```
 
 ### Test Properties
@@ -122,7 +122,7 @@ tests:
 | `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation |
-| `outputs.!files` | No | Map of filename → FileCheck for negated output file validation |
+| `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist) |
 
 ## CI/CD
 

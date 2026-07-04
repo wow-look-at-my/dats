@@ -387,86 +387,138 @@ func TestRunTestOutputFileNotMatch(t *testing.T) {
 	assert.True(t, result.Passed)
 }
 
-func TestRunTestNotFiles(t *testing.T) {
+func TestRunTestNotFilesExists(t *testing.T) {
+	// !files with exists: true asserts the file must NOT exist.
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	boolTrue := true
+	test := &schema.Test{
+		Cmd: "echo hi",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"stray.txt": {Exists: &boolTrue},
+			},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+
+	// The same check fails when the command does create the file.
+	test2 := &schema.Test{
+		Cmd: "echo oops > {outputs.stray.txt}",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"stray.txt": {Exists: &boolTrue},
+			},
+		},
+	}
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.False(t, result2.Passed)
+	require.NotEmpty(t, result2.Failures)
+	assert.Contains(t, result2.Failures[0], "!file stray.txt")
+}
+
+func TestRunTestNotFilesExistsFalse(t *testing.T) {
+	// !files with exists: false is the double negation: the file must exist.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
 
 	boolFalse := false
 	test := &schema.Test{
-		Cmd: "echo hi",
+		Cmd: "echo data > {outputs.out.txt}",
 		Outputs: schema.OutputBlock{
 			NotFiles: map[string]schema.FileCheck{
-				"nonexistent.txt": {Exists: &boolFalse},
+				"out.txt": {Exists: &boolFalse},
 			},
 		},
 	}
 	result := r.RunTest(test, tmp, 0)
-	assert.True(t, result.Passed)
-}
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
-func TestRunTestNotFilesExists(t *testing.T) {
-	var buf bytes.Buffer
-	r := NewRunner(&buf, false, false, "")
-	tmp := t.TempDir()
-
-	// Create the file that !files expects to exist
-	outDir := filepath.Join(tmp, "test-0", "outputs")
-	require.Nil(t, os.MkdirAll(outDir, 0755))
-	require.Nil(t, os.WriteFile(filepath.Join(outDir, "exists.txt"), []byte("data"), 0644))
-
-	boolTrue := true
-	test := &schema.Test{
+	test2 := &schema.Test{
 		Cmd: "echo hi",
 		Outputs: schema.OutputBlock{
 			NotFiles: map[string]schema.FileCheck{
-				"exists.txt": {Exists: &boolTrue},
+				"missing.txt": {Exists: &boolFalse},
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
-	assert.True(t, result.Passed)
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.False(t, result2.Passed)
 }
 
 func TestRunTestNotFilesMatch(t *testing.T) {
+	// !files match patterns must NOT match the file's contents.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
 
-	boolTrue := true
 	test := &schema.Test{
-		Cmd: "printf data > {outputs.out.txt}",
+		Cmd: "printf 'all fine' > {outputs.out.txt}",
 		Outputs: schema.OutputBlock{
 			NotFiles: map[string]schema.FileCheck{
-				"out.txt": {
-					Exists:   &boolTrue,
-					Match:    []string{"data"},
-					NotMatch: []string{"error"},
-				},
+				"out.txt": {Match: []string{"error"}},
 			},
 		},
 	}
 	result := r.RunTest(test, tmp, 0)
-	assert.True(t, result.Passed)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+
+	// Fails when the pattern does match.
+	test2 := &schema.Test{
+		Cmd: "printf 'error: boom' > {outputs.out.txt}",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"out.txt": {Match: []string{"error"}},
+			},
+		},
+	}
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.False(t, result2.Passed)
+
+	// A missing file passes vacuously: it cannot match anything.
+	test3 := &schema.Test{
+		Cmd: "echo hi",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"missing.txt": {Match: []string{"error"}},
+			},
+		},
+	}
+	result3 := r.RunTest(test3, tmp, 2)
+	assert.True(t, result3.Passed, "failures: %v", result3.Failures)
 }
 
-func TestRunTestNotFilesMatchFails(t *testing.T) {
-	// Regression: match under !files used to be silently ignored, so this test
-	// would wrongly pass. The file contains "hello" but match expects "goodbye".
+func TestRunTestNotFilesNotMatch(t *testing.T) {
+	// !files notMatch patterns MUST match the file's contents (inversion).
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
 
 	test := &schema.Test{
-		Cmd: "printf hello > {outputs.out.txt}",
+		Cmd: "printf 'expected data' > {outputs.out.txt}",
 		Outputs: schema.OutputBlock{
 			NotFiles: map[string]schema.FileCheck{
-				"out.txt": {Match: []string{"goodbye"}},
+				"out.txt": {NotMatch: []string{"expected"}},
 			},
 		},
 	}
 	result := r.RunTest(test, tmp, 0)
-	assert.False(t, result.Passed)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+
+	test2 := &schema.Test{
+		Cmd: "printf 'other data' > {outputs.out.txt}",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{
+				"out.txt": {NotMatch: []string{"expected"}},
+			},
+		},
+	}
+	result2 := r.RunTest(test2, tmp, 1)
+	assert.False(t, result2.Passed)
 }
 
 func TestRunTestTimeout(t *testing.T) {

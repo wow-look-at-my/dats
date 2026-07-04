@@ -286,14 +286,26 @@ outputs:
 
 ### Negated File Checks (`!files`)
 
-`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`. It is commonly used to
-assert that a file must NOT exist:
+`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`, but asserts the
+NEGATION of each check:
+
+| Field | `files` meaning | `!files` meaning |
+|-------|-----------------|------------------|
+| `exists: true` | file must exist | file must NOT exist |
+| `exists: false` | file must NOT exist | file must exist |
+| `match: [p]` | contents must match `p` | contents must NOT match `p` (a missing file passes) |
+| `notMatch: [p]` | contents must NOT match `p` (a missing file passes) | contents must match `p` (a missing file fails) |
+
+The common use is asserting that a file must NOT exist or must NOT contain something:
 
 ```yaml
 outputs:
   "!files":
     error.log:
-      exists: false
+      exists: true        # error.log must NOT exist
+    report.txt:
+      match:
+        - "FAILED"        # report.txt must NOT contain FAILED
 ```
 
 ---

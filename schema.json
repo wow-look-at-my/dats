@@ -117,7 +117,7 @@
         },
         "!files": {
           "type": "object",
-          "description": "Negated output file validations, mapping filename to checks",
+          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails).",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }

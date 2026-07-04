@@ -191,7 +191,7 @@ tests:
     outputs:
       "!files":
         error.log:
-          exists: false
+          exists: true    # inverted: error.log must NOT exist
 ```
 
 ---
