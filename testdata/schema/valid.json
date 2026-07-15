@@ -78,6 +78,25 @@
       "timeout": "500ms"
     },
     {
+      "desc": "quoted integer exit code and quoted bare-integer timeout (seconds)",
+      "cmd": "exit 3",
+      "exit": "3",
+      "timeout": "5"
+    },
+    {
+      "desc": "empty file checks are implicit existence assertions (files: must exist, !files: must NOT exist); null is equivalent to {}",
+      "cmd": "echo data > {outputs.out.txt}",
+      "outputs": {
+        "files": {
+          "out.txt": {},
+          "out2.txt": null
+        },
+        "!files": {
+          "stray.txt": {}
+        }
+      }
+    },
+    {
       "desc": "line-keyed negated checks and json_output",
       "cmd": "mytool --json",
       "exit": "EXIT_FAILURE",
