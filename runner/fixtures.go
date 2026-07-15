@@ -35,6 +35,24 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 		OutputPaths: make(map[string]string),
 	}
 
+	// File names must stay inside the test directory: reject absolute paths
+	// and traversal (e.g. "../../evil") before creating anything.
+	for name := range test.Inputs.Files {
+		if !filepath.IsLocal(name) {
+			return nil, fmt.Errorf("input file name %q must be a relative path that stays inside the test directory", name)
+		}
+	}
+	for name := range test.Outputs.Files {
+		if !filepath.IsLocal(name) {
+			return nil, fmt.Errorf("output file name %q must be a relative path that stays inside the test directory", name)
+		}
+	}
+	for name := range test.Outputs.NotFiles {
+		if !filepath.IsLocal(name) {
+			return nil, fmt.Errorf("output file name %q must be a relative path that stays inside the test directory", name)
+		}
+	}
+
 	testDir := filepath.Join(baseDir, fmt.Sprintf("test-%d", testIndex))
 
 	// The outputs directory always exists so that every {outputs.X}
@@ -52,6 +70,14 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	}
 	for name := range test.Outputs.NotFiles {
 		ctx.OutputPaths[name] = filepath.Join(ctx.OutputsDir, name)
+	}
+
+	// Create parent directories of registered outputs (e.g. sub/out.txt) so
+	// commands can write nested output files directly.
+	for _, path := range ctx.OutputPaths {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return nil, fmt.Errorf("creating output subdir: %w", err)
+		}
 	}
 
 	// Register every input path before writing any file so that contents can
@@ -83,9 +109,10 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 
 // ExpandPlaceholders replaces {inputs.X} and {outputs.X} with actual paths.
 // It is applied to the command and to input file contents. {inputs.X} for an
-// undeclared input X is left untouched; {outputs.X} always resolves to a path
-// under the test's outputs directory. Text that is not a placeholder (any
-// other brace construct) passes through unchanged.
+// undeclared input X is left untouched; {outputs.X} resolves to a path under
+// the test's outputs directory as long as X stays inside it (non-local names
+// are left untouched). Text that is not a placeholder (any other brace
+// construct) passes through unchanged.
 func ExpandPlaceholders(s string, ctx *TestContext) string {
 	// Replace {inputs.X}
 	s = inputPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
@@ -102,10 +129,12 @@ func ExpandPlaceholders(s string, ctx *TestContext) string {
 		if path, ok := ctx.OutputPaths[name]; ok {
 			return path
 		}
-		if ctx.OutputsDir != "" {
+		// Unregistered names resolve into the outputs directory only when
+		// they stay inside it; traversal and absolute names stay verbatim.
+		if ctx.OutputsDir != "" && filepath.IsLocal(name) {
 			return filepath.Join(ctx.OutputsDir, name)
 		}
-		return match // No outputs directory known for this context
+		return match // No safe outputs path known for this placeholder
 	})
 
 	return s

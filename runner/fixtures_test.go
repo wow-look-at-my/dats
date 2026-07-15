@@ -185,6 +185,81 @@ func TestExpandPlaceholdersUnregisteredOutput(t *testing.T) {
 	assert.Equal(t, "touch {outputs.new.txt}", result)
 }
 
+func TestSetupFixturesRejectsTraversalInputName(t *testing.T) {
+	tmp := t.TempDir()
+	for _, name := range []string{"../../evil.txt", "/abs/evil.txt", ".."} {
+		test := &schema.Test{
+			Cmd:    "true",
+			Inputs: schema.InputBlock{Files: map[string]string{name: "pwned"}},
+		}
+		_, err := SetupFixtures(tmp, 0, test)
+		require.NotNil(t, err, "input name %q must be rejected", name)
+		assert.Contains(t, err.Error(), "input file name")
+		assert.Contains(t, err.Error(), "must be a relative path that stays inside the test directory")
+	}
+	// Nothing may be written at the escaped location.
+	_, statErr := os.Stat(filepath.Join(tmp, "evil.txt"))
+	assert.True(t, os.IsNotExist(statErr))
+}
+
+func TestSetupFixturesRejectsTraversalOutputName(t *testing.T) {
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "true",
+		Outputs: schema.OutputBlock{
+			Files: map[string]schema.FileCheck{"../../evil.txt": {}},
+		},
+	}
+	_, err := SetupFixtures(tmp, 0, test)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "output file name")
+	assert.Contains(t, err.Error(), "must be a relative path that stays inside the test directory")
+
+	// !files names are validated the same way.
+	test2 := &schema.Test{
+		Cmd: "true",
+		Outputs: schema.OutputBlock{
+			NotFiles: map[string]schema.FileCheck{"/etc/passwd": {}},
+		},
+	}
+	_, err = SetupFixtures(tmp, 1, test2)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "output file name")
+}
+
+func TestSetupFixturesCreatesNestedOutputParents(t *testing.T) {
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd: "true",
+		Outputs: schema.OutputBlock{
+			Files: map[string]schema.FileCheck{"sub/dir/out.txt": {}},
+		},
+	}
+
+	ctx, err := SetupFixtures(tmp, 0, test)
+	require.Nil(t, err)
+
+	// The registered output's parent directory exists so commands can write
+	// the file directly.
+	info, statErr := os.Stat(filepath.Dir(ctx.OutputPaths["sub/dir/out.txt"]))
+	require.Nil(t, statErr)
+	assert.True(t, info.IsDir())
+}
+
+func TestExpandPlaceholdersNonLocalOutputLeftVerbatim(t *testing.T) {
+	ctx := &TestContext{
+		InputPaths:  map[string]string{},
+		OutputsDir:  "/tmp/test/outputs",
+		OutputPaths: map[string]string{},
+	}
+
+	// Unregistered output names only resolve into the outputs directory when
+	// they stay inside it; traversal and absolute names are left verbatim.
+	assert.Equal(t, "cat {outputs.../../evil}", ExpandPlaceholders("cat {outputs.../../evil}", ctx))
+	assert.Equal(t, "cat {outputs./etc/passwd}", ExpandPlaceholders("cat {outputs./etc/passwd}", ctx))
+}
+
 func TestCleanup(t *testing.T) {
 	tmp := t.TempDir()
 	dir := filepath.Join(tmp, "cleanup-test")
