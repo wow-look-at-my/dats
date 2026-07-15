@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -125,11 +126,25 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Stdout = execResult.Stdout
 	result.Stderr = execResult.Stderr
 
-	// Check exit code (skipped on timeout, where the exit code is meaningless)
+	// On timeout, report only the timeout and skip every other assertion:
+	// checking the partial output or missing files would bury the real cause
+	// under misleading secondary failures. (Stdout/stderr stay captured
+	// above for verbose display.)
 	if execResult.TimedOut {
 		result.Failures = append(result.Failures, fmt.Sprintf("command timed out after %s", test.Timeout.Value))
-	} else if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
-		result.Failures = append(result.Failures, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	// Check exit code
+	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
+		msg := err.Error()
+		if execResult.Signal != "" {
+			// A signal death surfaces as exit code -1; name the signal so
+			// the failure is not baffling.
+			msg += fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
+		}
+		result.Failures = append(result.Failures, msg)
 	}
 
 	// Check stdout patterns
@@ -216,12 +231,13 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Check output files (files) and negated output files (!files). A !files
-	// entry asserts the negation of each of its checks.
-	for name, check := range test.Outputs.Files {
-		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), check, false)...)
+	// entry asserts the negation of each of its checks. Names are checked in
+	// sorted order so failures report deterministically.
+	for _, name := range sortedStringKeys(test.Outputs.Files) {
+		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.Files[name], false)...)
 	}
-	for name, check := range test.Outputs.NotFiles {
-		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), check, true)...)
+	for _, name := range sortedStringKeys(test.Outputs.NotFiles) {
+		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.NotFiles[name], true)...)
 	}
 
 	result.Passed = len(result.Failures) == 0
@@ -236,7 +252,7 @@ func outputPath(ctx *TestContext, baseDir string, index int, name string) string
 	if path := ctx.OutputPaths[name]; path != "" {
 		return path
 	}
-	return fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, name)
+	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), "outputs", name)
 }
 
 // checkFile applies a FileCheck (exists/match/notMatch) at path and returns
