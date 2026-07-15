@@ -55,9 +55,17 @@ func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
 		e.Value = intVal
 		return nil
 	}
-	// Try string - must be a name the runner can resolve
+	// Try string - a quoted integer (e.g. "0") counts as its numeric value;
+	// otherwise it must be a name the runner can resolve
 	var strVal string
 	if err := node.Decode(&strVal); err == nil {
+		if intVal, err := strconv.Atoi(strVal); err == nil {
+			if intVal < 0 || intVal > 255 {
+				return fmt.Errorf("exit code %d must be in range 0-255", intVal)
+			}
+			e.Value = intVal
+			return nil
+		}
 		if !exitCodeNames[strVal] {
 			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", strVal)
 		}
@@ -84,9 +92,17 @@ func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
 		d.Value = time.Duration(intVal) * time.Second
 		return nil
 	}
-	// String = Go duration
+	// String = Go duration; a quoted bare integer (e.g. "5") means seconds,
+	// matching the unquoted form
 	var strVal string
 	if err := node.Decode(&strVal); err == nil {
+		if intVal, err := strconv.Atoi(strVal); err == nil {
+			if intVal < 0 {
+				return fmt.Errorf("timeout %d must not be negative", intVal)
+			}
+			d.Value = time.Duration(intVal) * time.Second
+			return nil
+		}
 		parsed, err := time.ParseDuration(strVal)
 		if err != nil {
 			return fmt.Errorf("invalid timeout %q: %w", strVal, err)
@@ -160,6 +176,15 @@ func (o *OutputCheck) UnmarshalYAML(node *yaml.Node) error {
 			if err != nil {
 				return fmt.Errorf("line check key must be an integer, got %q", keyNode.Value)
 			}
+			if lineNum < 0 {
+				return fmt.Errorf("line number must be >= 0, got %d", lineNum)
+			}
+			// Iterating the mapping node directly bypasses yaml.v3's own
+			// duplicate-key detection, so detect collisions here instead of
+			// silently keeping the last entry.
+			if _, exists := o.LineChecks[lineNum]; exists {
+				return fmt.Errorf("duplicate line number %d in output check", lineNum)
+			}
 
 			var pattern string
 			if err := valueNode.Decode(&pattern); err != nil {
@@ -183,4 +208,12 @@ type FileCheck struct {
 	Exists   *bool    `yaml:"exists,omitempty"`
 	Match    []string `yaml:"match,omitempty"`
 	NotMatch []string `yaml:"notMatch,omitempty"`
+}
+
+// IsEmpty reports whether the check asserts nothing explicitly (no exists,
+// match, or notMatch). The runner treats an empty check as an implicit
+// existence assertion: under files the file must exist, under !files it must
+// not.
+func (f FileCheck) IsEmpty() bool {
+	return f.Exists == nil && len(f.Match) == 0 && len(f.NotMatch) == 0
 }

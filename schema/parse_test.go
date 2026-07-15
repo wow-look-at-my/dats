@@ -120,3 +120,96 @@ func TestParseFile_EmptyFile(t *testing.T) {
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "no tests defined")
 }
+
+func TestParseFile_MultiDocumentRejected(t *testing.T) {
+	// A second "---" document used to be silently ignored, dropping its tests.
+	path := writeTempDats(t, `
+tests:
+  - cmd: echo doc1
+---
+tests:
+  - cmd: echo doc2, silently dropped before this fix
+`)
+	_, err := ParseFile(path)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "multiple YAML documents are not supported")
+}
+
+func TestParseFile_TraversalFileNamesRejected(t *testing.T) {
+	// Non-local fixture names are rejected at parse time so `dats syntax`
+	// catches them, not just the runner at fixture-setup time.
+	cases := map[string]string{
+		"inputs.files": `
+tests:
+  - cmd: echo hi
+    inputs:
+      files:
+        ../evil.txt: pwned
+`,
+		"outputs.files": `
+tests:
+  - cmd: echo hi
+    outputs:
+      files:
+        ../../evil.txt:
+          exists: true
+`,
+		"outputs.!files": `
+tests:
+  - cmd: echo hi
+    outputs:
+      "!files":
+        ../evil.txt:
+          exists: true
+`,
+		"absolute path": `
+tests:
+  - cmd: echo hi
+    inputs:
+      files:
+        /etc/evil.txt: pwned
+`,
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), "must be a relative path that stays inside the test directory")
+		})
+	}
+}
+
+func TestParseFile_TraversalErrorNamesTestAndFile(t *testing.T) {
+	path := writeTempDats(t, `
+tests:
+  - cmd: echo hi
+  - cmd: echo hi
+    inputs:
+      files:
+        ../evil.txt: pwned
+`)
+	_, err := ParseFile(path)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), `test 2: input file name "../evil.txt"`)
+}
+
+func TestParseFile_NestedLocalFileNamesAllowed(t *testing.T) {
+	// Nested relative names like sub/file.txt are local and stay accepted.
+	path := writeTempDats(t, `
+tests:
+  - cmd: cat {inputs.sub/dir/nested.txt}
+    inputs:
+      files:
+        sub/dir/nested.txt: content
+    outputs:
+      files:
+        sub/out.txt:
+          exists: false
+      "!files":
+        other/missing.txt:
+          exists: true
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	assert.Equal(t, 1, len(tf.Tests))
+}
