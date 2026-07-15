@@ -1,8 +1,8 @@
 package schema
 
 // Regression tests for parsing fixes: duplicate and negative line-check keys,
-// quoted integer exit codes, quoted bare-integer timeouts, and empty file
-// checks.
+// quoted integer exit codes, quoted bare-integer timeouts, empty file checks,
+// and float exit/timeout rejection.
 
 import (
 	"testing"
@@ -132,6 +132,45 @@ func TestFileCheck_IsEmpty(t *testing.T) {
 			assert.Equal(t, tt.want, tt.check.IsEmpty())
 		})
 	}
+}
+
+func TestDuration_UnmarshalYAML_FloatRejected(t *testing.T) {
+	// yaml.v3 decodes a !!float scalar into an int by truncation, so without
+	// an explicit rejection timeout: 0.9 parsed as 0 seconds -- no timeout at
+	// all -- and timeout: 1.5 parsed as 1s. Even integral floats like 1.0 are
+	// rejected: schema.json types timeout as an integer.
+	for _, input := range []string{"0.9", "1.5", "1.0", "1e3"} {
+		t.Run(input, func(t *testing.T) {
+			var d Duration
+			err := yaml.Unmarshal([]byte(input), &d)
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), "got float "+input)
+			assert.Contains(t, err.Error(), "timeout must be an integer number of seconds or a duration string")
+		})
+	}
+}
+
+func TestExitCode_UnmarshalYAML_FloatRejected(t *testing.T) {
+	// Same truncation hazard as Duration: exit: 1.5 silently became exit: 1.
+	// Integral floats like 2.0 are rejected too (schema.json says integer).
+	for _, input := range []string{"1.5", "2.0"} {
+		t.Run(input, func(t *testing.T) {
+			var e ExitCode
+			err := yaml.Unmarshal([]byte(input), &e)
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), "exit code must be an integer in range 0-255, got float "+input)
+		})
+	}
+}
+
+func TestTestFile_FloatTimeoutDoesNotDisableTimeout(t *testing.T) {
+	// Before the float check, this document PARSED SUCCESSFULLY with
+	// Timeout.Value == 0, i.e. "timeout: 0.9" silently meant NO timeout and
+	// the command could run forever. It must now fail to parse.
+	var f TestFile
+	err := yaml.Unmarshal([]byte("tests:\n  - cmd: sleep 2\n    timeout: 0.9\n"), &f)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "got float 0.9")
 }
 
 func TestFileCheck_UnmarshalYAML_NullValueIsEmpty(t *testing.T) {

@@ -50,6 +50,12 @@ type ExitCode struct {
 }
 
 func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
+	// Reject floats explicitly (even integral ones like 2.0): yaml.v3 would
+	// otherwise silently truncate them in the int decode below, and
+	// schema.json types exit as an integer.
+	if node.Tag == "!!float" {
+		return fmt.Errorf("exit code must be an integer in range 0-255, got float %s", node.Value)
+	}
 	// Try int first
 	var intVal int
 	if err := node.Decode(&intVal); err == nil {
@@ -87,6 +93,13 @@ type Duration struct {
 }
 
 func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
+	// Reject floats explicitly (even integral ones like 1.0): yaml.v3 would
+	// otherwise silently truncate them in the int decode below, turning
+	// timeout: 0.9 into 0 seconds -- i.e. no timeout at all. Fractional
+	// seconds are expressed as a duration string instead.
+	if node.Tag == "!!float" {
+		return fmt.Errorf("timeout must be an integer number of seconds or a duration string (e.g. \"900ms\", \"1.5s\"), got float %s", node.Value)
+	}
 	// Bare integer = seconds
 	var intVal int
 	if err := node.Decode(&intVal); err == nil {

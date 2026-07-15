@@ -147,6 +147,9 @@ exit: 127    # command not found
 exit: "3"    # quoted integer, same as 3
 ```
 
+Floats are rejected at parse time (`exit: 1.5` is an error, as is an integral float like
+`2.0`) — an exit code is always an integer.
+
 ### Variable Names
 
 Exactly two names are recognized (any other `EXIT_*` name is rejected at parse time, since the
@@ -183,6 +186,9 @@ timeout: "5"     # quoted integer, also 5 seconds
 timeout: 500ms   # 500 milliseconds
 timeout: 1m30s   # 90 seconds
 ```
+
+Floats are rejected at parse time — `timeout: 0.9` is an error, not 0 seconds; write
+fractional seconds as a duration string like `900ms` or `1.5s`.
 
 When the deadline elapses, the command's **whole process group** is killed — background
 children included, not just the direct `bash` process. The test then fails with only a
