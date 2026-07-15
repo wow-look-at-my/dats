@@ -86,18 +86,29 @@ func AssertExitCode(actual int, expected schema.ExitCode) error {
 
 // AssertFileExists checks that a file exists
 func AssertFileExists(path string) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if os.IsNotExist(err) {
 		return fmt.Errorf("expected file %q to exist", path)
 	}
-	return nil
+	// Any other stat error (symlink loop, permissions, ...) is a real
+	// failure, not a silent pass
+	return fmt.Errorf("could not stat file %q: %v", path, err)
 }
 
 // RefuteFileExists checks that a file does NOT exist
 func RefuteFileExists(path string) error {
-	if _, err := os.Stat(path); err == nil {
+	_, err := os.Stat(path)
+	if err == nil {
 		return fmt.Errorf("expected file %q to NOT exist", path)
 	}
-	return nil
+	if os.IsNotExist(err) {
+		return nil
+	}
+	// Any other stat error means absence cannot be verified
+	return fmt.Errorf("could not stat file %q: %v", path, err)
 }
 
 // AssertFileContains checks if file contains all given patterns
