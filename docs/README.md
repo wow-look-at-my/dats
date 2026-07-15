@@ -38,5 +38,6 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
   paths inside a per-run temp directory
 - **Exit codes** can be integers (0-255) or variables like `EXIT_SUCCESS`
 - **Timeouts** (`timeout`) bound how long a command may run
+- **Environment variables** (`inputs.env`) are added to the command's inherited environment
 - **Output checks** match patterns or specific lines in stdout/stderr
 - **Negated checks** (`!stdout`, `!stderr`, `!files`) assert patterns/files do NOT appear

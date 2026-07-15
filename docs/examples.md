@@ -107,6 +107,28 @@ tests:
           {"mode": "test"}
 ```
 
+### Environment Variables
+
+`inputs.env` adds variables to the environment the command inherits. Values go through the
+same placeholder expansion as the command, so a variable can point at a fixture:
+
+```yaml
+tests:
+  - desc: tool reads config path from the environment
+    cmd: 'echo "$APP_MODE"; cat "$CONFIG_PATH"'
+    inputs:
+      files:
+        config.json: |
+          {"mode": "test"}
+      env:
+        APP_MODE: test
+        CONFIG_PATH: "{inputs.config.json}"
+    outputs:
+      stdout:
+        - "test"
+        - '"mode": "test"'
+```
+
 ---
 
 ## Output Validation
@@ -200,6 +222,9 @@ tests:
 
 ### Testing CLI Tools
 
+Pattern lists are literal substrings, so matching a version number takes the line-keyed regex
+form (list patterns like `v[0-9]+` would be searched for verbatim and never match):
+
 ```yaml
 tests:
   - desc: help flag works
@@ -215,7 +240,7 @@ tests:
     cmd: mytool --version
     outputs:
       stdout:
-        - "v[0-9]+\\.[0-9]+"
+        0: "v[0-9]+\\.[0-9]+"
 ```
 
 ### Testing Error Handling
@@ -335,5 +360,7 @@ tests:
     cmd: mycompiler --version
     outputs:
       stdout:
-        - "^mycompiler v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        # line-keyed regex form: list patterns are literal substrings and
+        # could never match a version pattern like this
+        0: "^mycompiler v[0-9]+\\.[0-9]+\\.[0-9]+$"
 ```
