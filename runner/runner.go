@@ -248,9 +248,14 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 
 // outputPath resolves the on-disk path for a named output file, falling back to
 // the conventional location when the name was not pre-registered in the context.
+// Non-local fallback names (traversal, absolute) are returned unchanged rather
+// than joined, so they can never address a path outside the test directory.
 func outputPath(ctx *TestContext, baseDir string, index int, name string) string {
 	if path := ctx.OutputPaths[name]; path != "" {
 		return path
+	}
+	if !filepath.IsLocal(name) {
+		return name
 	}
 	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), "outputs", name)
 }
@@ -259,8 +264,14 @@ func outputPath(ctx *TestContext, baseDir string, index int, name string) string
 // failure messages prefixed with label (e.g. "file out.txt" or "!file out.txt").
 // With negate set (the !files form), every check is inverted: exists is
 // flipped, match patterns must NOT match, and notMatch patterns must match.
+// An empty check ({} or null) is an implicit existence assertion rather than a
+// vacuous pass: under files the file must exist, under !files it must not.
 func checkFile(label, path string, check schema.FileCheck, negate bool) []string {
 	var failures []string
+	if check.IsEmpty() {
+		exists := true
+		check.Exists = &exists
+	}
 	if check.Exists != nil {
 		if *check.Exists != negate {
 			if err := AssertFileExists(path); err != nil {

@@ -118,6 +118,70 @@ func TestRunTestNestedOutputFile(t *testing.T) {
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
+func TestRunTestEmptyFileCheckIsImplicitExists(t *testing.T) {
+	// An empty FileCheck ({} or null) used to assert nothing and pass
+	// vacuously. It is now an implicit existence assertion: under files the
+	// file must exist.
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+
+	t.Run("missing file fails", func(t *testing.T) {
+		test := &schema.Test{
+			Cmd: "true",
+			Outputs: schema.OutputBlock{
+				Files: map[string]schema.FileCheck{"never-written.txt": {}},
+			},
+		}
+		result := r.RunTest(test, t.TempDir(), 0)
+		assert.False(t, result.Passed)
+		require.Len(t, result.Failures, 1, "failures: %v", result.Failures)
+		assert.Contains(t, result.Failures[0], "file never-written.txt")
+		assert.Contains(t, result.Failures[0], "to exist")
+	})
+
+	t.Run("present file passes", func(t *testing.T) {
+		test := &schema.Test{
+			Cmd: "echo data > {outputs.present.txt}",
+			Outputs: schema.OutputBlock{
+				Files: map[string]schema.FileCheck{"present.txt": {}},
+			},
+		}
+		result := r.RunTest(test, t.TempDir(), 0)
+		assert.True(t, result.Passed, "failures: %v", result.Failures)
+	})
+}
+
+func TestRunTestEmptyNotFileCheckIsImplicitNotExists(t *testing.T) {
+	// Under !files an empty FileCheck inverts to "must NOT exist".
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+
+	t.Run("missing file passes", func(t *testing.T) {
+		test := &schema.Test{
+			Cmd: "true",
+			Outputs: schema.OutputBlock{
+				NotFiles: map[string]schema.FileCheck{"never-written.txt": {}},
+			},
+		}
+		result := r.RunTest(test, t.TempDir(), 0)
+		assert.True(t, result.Passed, "failures: %v", result.Failures)
+	})
+
+	t.Run("present file fails", func(t *testing.T) {
+		test := &schema.Test{
+			Cmd: "echo data > {outputs.present.txt}",
+			Outputs: schema.OutputBlock{
+				NotFiles: map[string]schema.FileCheck{"present.txt": {}},
+			},
+		}
+		result := r.RunTest(test, t.TempDir(), 0)
+		assert.False(t, result.Passed)
+		require.Len(t, result.Failures, 1, "failures: %v", result.Failures)
+		assert.Contains(t, result.Failures[0], "!file present.txt")
+		assert.Contains(t, result.Failures[0], "to NOT exist")
+	})
+}
+
 func TestRunTestFileFailuresSortedByName(t *testing.T) {
 	// Failing file checks report in sorted-by-name order, not random map
 	// iteration order.
