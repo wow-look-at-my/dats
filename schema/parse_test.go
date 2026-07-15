@@ -115,6 +115,28 @@ tests:
 	assert.Equal(t, 1, len(tf.Tests))
 }
 
+func TestParseFile_InputEnvAccepted(t *testing.T) {
+	// inputs.env parses under KnownFields (unknown keys under inputs are still
+	// rejected -- see TestParseFile_UnknownKeysRejected).
+	path := writeTempDats(t, `
+tests:
+  - cmd: echo "$MY_VAR"
+    inputs:
+      env:
+        MY_VAR: hello
+        CONFIG_PATH: "{inputs.cfg.json}"
+      files:
+        cfg.json: "{}"
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	require.Equal(t, 1, len(tf.Tests))
+	assert.Equal(t, map[string]string{
+		"MY_VAR":      "hello",
+		"CONFIG_PATH": "{inputs.cfg.json}",
+	}, tf.Tests[0].Inputs.Env)
+}
+
 func TestParseFile_EmptyFile(t *testing.T) {
 	_, err := ParseFile(writeTempDats(t, ""))
 	require.NotNil(t, err)

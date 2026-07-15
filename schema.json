@@ -93,6 +93,14 @@
             "type": "string",
             "description": "File content ({inputs.X}/{outputs.X} placeholders are expanded)"
           }
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variables for the command, mapping name to value. The variables are ADDED to the inherited environment (appended in sorted key order; they do not replace it). Values go through the same {inputs.X}/{outputs.X} placeholder expansion as cmd.",
+          "additionalProperties": {
+            "type": "string",
+            "description": "Variable value ({inputs.X}/{outputs.X} placeholders are expanded)"
+          }
         }
       }
     },

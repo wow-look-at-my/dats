@@ -11,13 +11,17 @@
       }
     },
     {
-      "desc": "inputs (stdin + files) and negated output",
+      "desc": "inputs (stdin + files + env) and negated output",
       "cmd": "cat {inputs.input.txt}",
       "inputs": {
         "stdin": "piped to stdin",
         "files": {
           "input.txt": "Hello, world!",
           "sub/dir/nested.txt": "nested content"
+        },
+        "env": {
+          "MY_VAR": "hello",
+          "CONFIG_PATH": "{inputs.input.txt}"
         }
       },
       "outputs": {

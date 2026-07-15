@@ -182,6 +182,69 @@ func TestRunTestEmptyNotFileCheckIsImplicitNotExists(t *testing.T) {
 	})
 }
 
+func TestRunTestEnvVarVisibleToCommand(t *testing.T) {
+	// inputs.env entries are added to the inherited environment, so the
+	// command sees both the new variable and the ambient ones (PATH etc.,
+	// without which bash could not even find echo).
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "echo \"$MY_VAR\"",
+		Inputs: schema.InputBlock{
+			Env: map[string]string{"MY_VAR": "hello"},
+		},
+		Outputs: schema.OutputBlock{
+			Stdout: schema.OutputCheck{Patterns: []string{"hello"}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+}
+
+func TestRunTestEnvValueExpandsPlaceholders(t *testing.T) {
+	// Env values go through the same {inputs.X}/{outputs.X} expansion as the
+	// command, so a variable can carry a fixture's absolute path.
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "cat \"$CONFIG_PATH\"",
+		Inputs: schema.InputBlock{
+			Files: map[string]string{"cfg.json": `{"mode":"test"}`},
+			Env:   map[string]string{"CONFIG_PATH": "{inputs.cfg.json}"},
+		},
+		Outputs: schema.OutputBlock{
+			Stdout: schema.OutputCheck{Patterns: []string{`{"mode":"test"}`}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+}
+
+func TestRunTestEnvCombinesWithCoverDir(t *testing.T) {
+	// inputs.env and --coverdir compose: the test's variables and GOCOVERDIR
+	// are both present (GOCOVERDIR is appended last, so --coverdir wins).
+	var buf bytes.Buffer
+	coverDir := t.TempDir()
+	r := NewRunner(&buf, false, false, coverDir)
+	tmp := t.TempDir()
+
+	test := &schema.Test{
+		Cmd: "echo \"$MY_VAR $GOCOVERDIR\"",
+		Inputs: schema.InputBlock{
+			Env: map[string]string{"MY_VAR": "combo"},
+		},
+		Outputs: schema.OutputBlock{
+			Stdout: schema.OutputCheck{Patterns: []string{"combo " + coverDir}},
+		},
+	}
+	result := r.RunTest(test, tmp, 0)
+	assert.True(t, result.Passed, "failures: %v", result.Failures)
+}
+
 func TestRunTestFileFailuresSortedByName(t *testing.T) {
 	// Failing file checks report in sorted-by-name order, not random map
 	// iteration order.

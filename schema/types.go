@@ -33,10 +33,14 @@ type Test struct {
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
 }
 
-// InputBlock contains stdin and input files
+// InputBlock contains stdin, input files, and environment variables
 type InputBlock struct {
 	Stdin string            `yaml:"stdin,omitempty"`
 	Files map[string]string `yaml:"files,omitempty"`
+	// Env maps environment variable names to values. The variables are added
+	// to the inherited environment for the test's command; values go through
+	// the same placeholder expansion as the command.
+	Env map[string]string `yaml:"env,omitempty"`
 }
 
 // ExitCode can be an int or a string like "EXIT_SUCCESS"

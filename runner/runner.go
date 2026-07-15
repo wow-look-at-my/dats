@@ -109,10 +109,20 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	cmd := ExpandPlaceholders(test.Cmd, ctx)
 	result.Command = cmd
 
-	// Build environment for command execution
+	// Build environment for command execution. Execute replaces the child's
+	// environment entirely when given one, so always start from os.Environ().
+	// Test env entries are appended in sorted key order (deterministic), with
+	// values going through the same placeholder expansion as the command.
+	// GOCOVERDIR goes last so --coverdir wins even over a test's own entry.
 	var env []string
-	if r.CoverDir != "" {
-		env = append(os.Environ(), "GOCOVERDIR="+r.CoverDir)
+	if len(test.Inputs.Env) > 0 || r.CoverDir != "" {
+		env = os.Environ()
+		for _, key := range sortedStringKeys(test.Inputs.Env) {
+			env = append(env, key+"="+ExpandPlaceholders(test.Inputs.Env[key], ctx))
+		}
+		if r.CoverDir != "" {
+			env = append(env, "GOCOVERDIR="+r.CoverDir)
+		}
 	}
 
 	// Execute the command
