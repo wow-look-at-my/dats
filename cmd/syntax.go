@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +9,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/schema"
 )
+
+// errSyntaxFailed signals that at least one file failed validation. The FAIL
+// lines have already been printed, so Execute exits 1 without printing more.
+var errSyntaxFailed = errors.New("syntax validation failed")
 
 var syntaxCmd = &cobra.Command{
 	Use:   "syntax [files...]",
@@ -21,7 +26,7 @@ in the current directory tree.`,
 			return err
 		}
 		if !runSyntax(files, os.Stdout, os.Stderr) {
-			os.Exit(1)
+			return errSyntaxFailed
 		}
 		return nil
 	},

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -13,23 +15,27 @@ var (
 	coverDir string
 )
 
+// errTestsFailed signals that at least one test failed. The runner output has
+// already reported the failures, so Execute exits 1 without printing more.
+var errTestsFailed = errors.New("tests failed")
+
 var testCmd = &cobra.Command{
 	Use:   "test [files...]",
 	Short: "Run tests from .dats files",
 	Long: `Run tests defined in .dats files. If no files are specified,
 recursively finds and runs all .dats files in the current directory tree.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTests(args)
+		return runTests(args, os.Stdout)
 	},
 }
 
-func runTests(args []string) error {
+func runTests(args []string, out io.Writer) error {
 	files, err := resolveFiles(args)
 	if err != nil {
 		return err
 	}
 
-	r := runner.NewRunner(os.Stdout, verbose, keepTemp, coverDir)
+	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
 
 	totalPassed := 0
 	totalFailed := 0
@@ -44,15 +50,15 @@ func runTests(args []string) error {
 	}
 
 	if len(files) > 1 {
-		fmt.Printf("\nTotal: %d/%d passed", totalPassed, totalPassed+totalFailed)
+		fmt.Fprintf(out, "\nTotal: %d/%d passed", totalPassed, totalPassed+totalFailed)
 		if totalFailed > 0 {
-			fmt.Printf(", %d failed", totalFailed)
+			fmt.Fprintf(out, ", %d failed", totalFailed)
 		}
-		fmt.Println()
+		fmt.Fprintln(out)
 	}
 
 	if totalFailed > 0 {
-		os.Exit(1)
+		return errTestsFailed
 	}
 
 	return nil
