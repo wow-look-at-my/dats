@@ -105,6 +105,26 @@ func TestResolveFilesDirectoryArgEmpty(t *testing.T) {
 	assert.Contains(t, err.Error(), "no .dats files found in "+tmp)
 }
 
+func TestResolveFilesSymlinkedDirArg(t *testing.T) {
+	// A symlink to a directory stats as a directory, but filepath.WalkDir does
+	// not follow a symlink root; without resolving the root first the walk
+	// yields nothing and the arg errors with "no .dats files found".
+	tmp := t.TempDir()
+	realDir := filepath.Join(tmp, "real")
+	require.Nil(t, os.MkdirAll(realDir, 0755))
+	require.Nil(t, os.WriteFile(filepath.Join(realDir, "linked.dats"), []byte(""), 0644))
+
+	link := filepath.Join(tmp, "link")
+	if err := os.Symlink(realDir, link); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	files, err := resolveFiles([]string{link})
+	require.Nil(t, err)
+	require.Len(t, files, 1)
+	assert.Equal(t, "linked.dats", filepath.Base(files[0]))
+}
+
 func TestResolveFilesDedupe(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")

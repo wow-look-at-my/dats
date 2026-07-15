@@ -15,6 +15,15 @@ import (
 // directory. Paths that cannot be walked (e.g. unreadable directories) are
 // reported as a warning on warnw and skipped instead of aborting discovery.
 func findDatsFiles(root string, warnw io.Writer) ([]string, error) {
+	// filepath.WalkDir does not follow a symlink root (it lstats the root,
+	// sees a non-directory, and stops), so a symlinked directory arg would
+	// silently yield nothing. Resolve the root only; symlinks encountered
+	// during the walk are still not followed. On resolution failure keep the
+	// original root and let the walk report the problem.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
