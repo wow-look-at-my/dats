@@ -1,7 +1,10 @@
 package runner
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -117,6 +120,37 @@ func TestAssertJSONOutputUnrepresentableExpected(t *testing.T) {
 	errs := AssertJSONOutput("{}", map[any]any{1: "x"})
 	require.Equal(t, 1, len(errs))
 	assert.Contains(t, errs[0].Error(), "cannot be represented as JSON")
+}
+
+func TestJSONNumbersEqualPrecision(t *testing.T) {
+	// Distinct big integers beyond float64 precision must NOT compare equal.
+	assert.False(t, jsonNumbersEqual(json.Number("9007199254740993"), json.Number("9007199254740992")))
+	assert.True(t, jsonNumbersEqual(json.Number("9007199254740993"), json.Number("9007199254740993")))
+	// Numeric-value equality still holds across representations.
+	assert.True(t, jsonNumbersEqual(json.Number("2"), json.Number("2.0")))
+	assert.True(t, jsonNumbersEqual(json.Number("1e3"), json.Number("1000")))
+	assert.False(t, jsonNumbersEqual(json.Number("2"), json.Number("2.5")))
+}
+
+func TestAssertJSONOutputBigIntegerPrecision(t *testing.T) {
+	errs := AssertJSONOutput("9007199254740992", 9007199254740993)
+	require.Len(t, errs, 1, "big integers differing by 1 must be reported as a mismatch")
+	assert.Contains(t, errs[0].Error(), "expected 9007199254740993, got 9007199254740992")
+
+	// 2 vs 2.0 must still compare equal end-to-end.
+	assert.Empty(t, AssertJSONOutput("2.0", 2))
+}
+
+func TestRenderJSONTruncatesAtRuneBoundary(t *testing.T) {
+	// Multi-byte content around the truncation limit must not be split
+	// mid-rune: the rendered string stays valid UTF-8.
+	s := renderJSON(strings.Repeat("é", 60))
+	assert.True(t, strings.HasSuffix(s, "..."))
+	assert.True(t, utf8.ValidString(s), "truncated JSON rendering must remain valid UTF-8: %q", s)
+	assert.LessOrEqual(t, len(s), 63)
+
+	// Short values are untouched.
+	assert.Equal(t, `"ab"`, renderJSON("ab"))
 }
 
 func TestChildPath(t *testing.T) {

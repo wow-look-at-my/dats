@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // maxJSONDiffs bounds how many individual differences are reported for a
@@ -154,10 +156,19 @@ func compareJSON(path string, expected, actual any, diffs []string) []string {
 }
 
 // jsonNumbersEqual compares two JSON numbers by value: textual equality
-// first, then numeric equality (so 2 and 2.0 are equal).
+// first, then exact arbitrary-precision comparison (so 2 and 2.0 are equal,
+// while distinct big integers beyond float64 precision are not conflated).
+// If either text cannot be parsed exactly, that pair falls back to float64
+// comparison.
 func jsonNumbersEqual(a, b json.Number) bool {
 	if a.String() == b.String() {
 		return true
+	}
+	// big.Rat parses decimal and exponent forms (e.g. "2.0", "1e3") exactly.
+	ar, aok := new(big.Rat).SetString(a.String())
+	br, bok := new(big.Rat).SetString(b.String())
+	if aok && bok {
+		return ar.Cmp(br) == 0
 	}
 	af, errA := a.Float64()
 	bf, errB := b.Float64()
@@ -191,6 +202,7 @@ func jsonTypeName(v any) string {
 }
 
 // renderJSON renders a value as compact JSON, truncated for readability.
+// Truncation never splits a multi-byte UTF-8 rune.
 func renderJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -199,7 +211,11 @@ func renderJSON(v any) string {
 	const limit = 60
 	s := string(data)
 	if len(s) > limit {
-		s = s[:limit] + "..."
+		cut := limit
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = s[:cut] + "..."
 	}
 	return s
 }
@@ -215,8 +231,8 @@ func childPath(path, key string) string {
 }
 
 // sortedStringKeys returns the map's keys in sorted order for deterministic
-// diff output.
-func sortedStringKeys(m map[string]any) []string {
+// output (JSON diffs, file-check failures).
+func sortedStringKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
