@@ -115,3 +115,38 @@ tests:
     outputs:
       stdout:
         - "fast"
+
+  # Per-test environment variables, added to the inherited environment.
+  # Values go through the same placeholder expansion as the command.
+  - desc: environment variables are visible to the command
+    exit: 0
+    inputs:
+      files:
+        cfg.json: '{"mode": "test"}'
+      env:
+        GREETING: hello from env
+        CONFIG_PATH: "{inputs.cfg.json}"
+    cmd: echo "$GREETING"; cat "$CONFIG_PATH"
+    outputs:
+      stdout:
+        - "hello from env"
+        - '"mode": "test"'
+
+  # Nested output file: parent directories of outputs declared under
+  # files/!files are created before the command runs
+  - desc: writes a nested output file
+    exit: 0
+    cmd: echo "nested report" > {outputs.sub/report.txt}
+    outputs:
+      files:
+        sub/report.txt:
+          match:
+            - "nested report"
+
+  # An empty file check is an implicit existence assertion (must exist)
+  - desc: empty check means the file must exist
+    exit: 0
+    cmd: date > {outputs.stamp.txt}
+    outputs:
+      files:
+        stamp.txt: {}

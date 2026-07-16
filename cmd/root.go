@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -13,15 +15,29 @@ var rootCmd = &cobra.Command{
 	Short: "Declarative Automated Testing System",
 	Long:  "DATS runs tests defined in declarative YAML files (.dats).",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTests(args)
+		return runTests(args, os.Stdout)
 	},
 	Args: cobra.ArbitraryArgs,
+	// Errors are reported by Execute (or, for test/syntax failures, already
+	// reported by the runner output); cobra should not add usage dumps or a
+	// second error line.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
+// Execute runs the root command and exits non-zero on failure. Sentinel
+// failures (failing tests or syntax checks) have already been reported by
+// their command's output, so they exit silently; any other error is printed
+// exactly once.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
+	err := rootCmd.Execute()
+	if err == nil {
+		return
 	}
+	if !errors.Is(err, errTestsFailed) && !errors.Is(err, errSyntaxFailed) {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	}
+	os.Exit(1)
 }
 
 func init() {

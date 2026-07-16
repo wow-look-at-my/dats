@@ -75,6 +75,34 @@ func TestRefuteFileExists(t *testing.T) {
 	assert.NotNil(t, RefuteFileExists(existing))
 }
 
+// symlinkLoopPath creates a path whose os.Stat fails with ELOOP (an error
+// that is NOT ErrNotExist). Skips the test if symlinks cannot be created.
+func symlinkLoopPath(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	if err := os.Symlink("loop", filepath.Join(tmp, "loop")); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+	return filepath.Join(tmp, "loop", "x")
+}
+
+func TestAssertFileExistsStatError(t *testing.T) {
+	// A stat error other than not-exist must fail, not silently pass.
+	badPath := symlinkLoopPath(t)
+	err := AssertFileExists(badPath)
+	require.NotNil(t, err, "an un-statable path must not pass an existence assertion")
+	assert.Contains(t, err.Error(), "could not stat")
+}
+
+func TestRefuteFileExistsStatError(t *testing.T) {
+	// A stat error other than not-exist means absence cannot be verified;
+	// that is a failure, not a pass.
+	badPath := symlinkLoopPath(t)
+	err := RefuteFileExists(badPath)
+	require.NotNil(t, err, "an un-statable path must not pass a non-existence assertion")
+	assert.Contains(t, err.Error(), "could not stat")
+}
+
 func TestAssertFileContains(t *testing.T) {
 	tmp := t.TempDir()
 	f := filepath.Join(tmp, "test.txt")

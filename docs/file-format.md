@@ -10,6 +10,11 @@ tests:
   - # test 2
 ```
 
+A file must contain exactly one YAML document. A second `---` document is a parse error
+(`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys
+anywhere in the file are also parse errors, so a misspelled field cannot silently disable its
+assertion.
+
 ## Test Object
 
 Each test has these fields:
@@ -20,7 +25,7 @@ Each test has these fields:
 | `desc` | string | No | Value of `cmd` | Test description/name |
 | `exit` | int or string | No | `0` | Expected exit code |
 | `timeout` | int or string | No | none | Per-test timeout (seconds or duration string) |
-| `inputs` | object | No | - | Stdin and input files |
+| `inputs` | object | No | - | Stdin, input files, and environment variables |
 | `outputs` | object | No | - | Output validations |
 
 ### Minimal Test
@@ -42,6 +47,8 @@ tests:
       stdin: "optional stdin content"
       files:
         data.txt: "input file content"
+      env:
+        PROCESS_MODE: strict
     outputs:
       stdout:
         - "pattern to match"
@@ -80,8 +87,15 @@ cmd: cat {inputs.data.txt}
 
 `{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the
 command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path
-is provided; the command is responsible for creating the file. Every `{outputs.<filename>}`
-resolves — the name does not need to appear under `outputs.files`.
+is provided; the command is responsible for creating the file. The name does not need to
+appear under `outputs.files` — any **local relative** name resolves. A non-local name (one
+containing `..` or an absolute path, e.g. `{outputs.../escape}`) is left verbatim, so a
+placeholder can never address a path outside the test directory.
+
+Names that DO appear under `files`/`!files` get their parent directories created before the
+command runs, so a command can write a declared nested output like
+`{outputs.sub/report.txt}` directly. For undeclared nested names, the command must create the
+intermediate directories itself.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -124,11 +138,17 @@ command and file contents), as is any other brace construct.
 
 ### Integer Values (0-255)
 
+Bare and quoted integers are equivalent; the 0-255 range is enforced either way:
+
 ```yaml
 exit: 0      # success
 exit: 1      # generic failure
 exit: 127    # command not found
+exit: "3"    # quoted integer, same as 3
 ```
+
+Floats are rejected at parse time (`exit: 1.5` is an error, as is an integral float like
+`2.0`) — an exit code is always an integer.
 
 ### Variable Names
 
@@ -143,19 +163,43 @@ exit: EXIT_SUCCESS
 exit: EXIT_FAILURE
 ```
 
+### Signal Deaths
+
+A command terminated by a signal has no normal exit code; it surfaces as `-1` with the signal
+named in the failure message:
+
+```
+# expected exit code 0, got -1 (killed by signal: killed)
+```
+
 ---
 
 ## Timeout Field (`timeout`)
 
-Bounds how long the command may run. When the deadline elapses the command is killed and the
-test fails with a "command timed out" message. Accepts either a bare integer number of seconds
-or a Go duration string. `0` or an omitted field means no timeout.
+Bounds how long the command may run. Accepts an integer number of seconds (bare or quoted — a
+quoted bare integer like `"5"` also means seconds) or a Go duration string. `0` or an omitted
+field means no timeout.
 
 ```yaml
 timeout: 5       # 5 seconds
+timeout: "5"     # quoted integer, also 5 seconds
 timeout: 500ms   # 500 milliseconds
 timeout: 1m30s   # 90 seconds
 ```
+
+Floats are rejected at parse time — `timeout: 0.9` is an error, not 0 seconds; write
+fractional seconds as a duration string like `900ms` or `1.5s`.
+
+When the deadline elapses, the command's **whole process group** is killed — background
+children included, not just the direct `bash` process. The test then fails with only a
+`command timed out after <duration>` message; every other assertion is skipped, since checking
+partial output or missing files would bury the real cause under secondary failures. The
+stdout/stderr captured before the kill are still shown in verbose mode.
+
+A command that leaves orphaned background processes holding its stdout/stderr open cannot
+block the runner indefinitely: the pipes are force-closed about 1 second after the main
+process exits (timeout or not). Output written by such stragglers after that point is not
+captured.
 
 ---
 
@@ -169,6 +213,8 @@ inputs:
     another.txt: |
       multi-line
       content
+  env:
+    MY_VAR: "value"
 ```
 
 ### `stdin`
@@ -188,6 +234,11 @@ command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are s
 Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see
 [Placeholders in Input File Contents](#placeholders-in-input-file-contents).
 
+File names must be relative paths that stay inside the test directory — `..` traversal and
+absolute paths are rejected at parse time (so `dats syntax` catches them) and again at
+fixture-setup time. The same rule applies to the names under `outputs.files` and
+`outputs.!files`.
+
 ```yaml
 inputs:
   files:
@@ -195,6 +246,26 @@ inputs:
       {"key": "value"}
     data.csv: "a,b,c"
 ```
+
+### `env`
+
+Map of environment variable name to value. The variables are **added** to the environment the
+command inherits from `dats` (they do not replace it), appended in sorted key order so runs
+are deterministic. Values go through the same `{inputs.X}`/`{outputs.X}` placeholder expansion
+as the command, so a variable can carry a fixture's absolute path:
+
+```yaml
+inputs:
+  files:
+    cfg.json: '{"mode": "test"}'
+  env:
+    MY_VAR: hello
+    CONFIG_PATH: "{inputs.cfg.json}"
+cmd: 'echo "$MY_VAR"; cat "$CONFIG_PATH"'
+```
+
+With `--coverdir`, `GOCOVERDIR` is appended after the test's variables, so the flag wins even
+over a test's own `GOCOVERDIR` entry.
 
 ---
 
@@ -236,6 +307,9 @@ outputs:
     2: "^third line$"
     5: "pattern on line 6"
 ```
+
+Line keys must be unique, non-negative integers: a duplicate line number (including different
+spellings such as `0` and `00`) and a negative line number are both parse errors.
 
 **Note**: You cannot mix pattern lists and line-specific checks in the same block. Use one
 format or the other.
@@ -282,6 +356,11 @@ outputs:
         - "should not contain"
 ```
 
+File names must be relative paths that stay inside the test directory (`..` and absolute
+paths are rejected at parse time). Nested names like `sub/report.txt` are allowed; parent
+directories of every file declared under `files`/`!files` are created before the command
+runs. When several file checks fail, the failures are reported in sorted-by-name order.
+
 ### Fields
 
 | Field | Type | Description |
@@ -289,6 +368,20 @@ outputs:
 | `exists` | boolean | Whether the file should exist |
 | `match` | string[] | Regex patterns that must match the file's contents |
 | `notMatch` | string[] | Regex patterns that must NOT match the file's contents |
+
+### Empty Checks Are Implicit Existence Assertions
+
+A check with none of the three fields — written `{}` or left null — asserts existence rather
+than passing vacuously. Under `files` the file must exist; under `!files` it must NOT exist:
+
+```yaml
+outputs:
+  files:
+    out.txt: {}       # out.txt must exist
+    log.txt:          # null value, same meaning: log.txt must exist
+  "!files":
+    stray.txt: {}     # stray.txt must NOT exist
+```
 
 ### Negated File Checks (`!files`)
 
@@ -362,18 +455,20 @@ tests:
       stdin: string        # optional
       files:               # optional
         <name>: string     # filename: content
+      env:                 # optional
+        <name>: string     # env var: value (placeholders expanded)
     outputs:
       stdout: []|{}        # pattern list or line checks
       stderr: []|{}        # pattern list or line checks
       "!stdout": []|{}     # negated patterns
       "!stderr": []|{}     # negated patterns
       files:
-        <name>:
+        <name>:            # empty check ({}/null) = must exist
           exists: bool
           match: []
           notMatch: []
       "!files":
-        <name>:
+        <name>:            # empty check ({}/null) = must NOT exist
           exists: bool
           match: []
           notMatch: []

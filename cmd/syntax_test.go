@@ -31,3 +31,19 @@ func TestRunSyntax_Invalid(t *testing.T) {
 	assert.False(t, ok)
 	assert.Contains(t, errw.String(), "FAIL")
 }
+
+func TestSyntaxCmd_FailureReturnsSentinel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.dats")
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - desc: no command\n"), 0644))
+
+	err := syntaxCmd.RunE(syntaxCmd, []string{path})
+	assert.ErrorIs(t, err, errSyntaxFailed)
+}
+
+func TestSyntaxCmd_ValidReturnsNil(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ok.dats")
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - cmd: echo hi\n"), 0644))
+
+	err := syntaxCmd.RunE(syntaxCmd, []string{path})
+	assert.Nil(t, err)
+}

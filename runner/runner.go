@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -108,10 +109,20 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	cmd := ExpandPlaceholders(test.Cmd, ctx)
 	result.Command = cmd
 
-	// Build environment for command execution
+	// Build environment for command execution. Execute replaces the child's
+	// environment entirely when given one, so always start from os.Environ().
+	// Test env entries are appended in sorted key order (deterministic), with
+	// values going through the same placeholder expansion as the command.
+	// GOCOVERDIR goes last so --coverdir wins even over a test's own entry.
 	var env []string
-	if r.CoverDir != "" {
-		env = append(os.Environ(), "GOCOVERDIR="+r.CoverDir)
+	if len(test.Inputs.Env) > 0 || r.CoverDir != "" {
+		env = os.Environ()
+		for _, key := range sortedStringKeys(test.Inputs.Env) {
+			env = append(env, key+"="+ExpandPlaceholders(test.Inputs.Env[key], ctx))
+		}
+		if r.CoverDir != "" {
+			env = append(env, "GOCOVERDIR="+r.CoverDir)
+		}
 	}
 
 	// Execute the command
@@ -125,11 +136,25 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Stdout = execResult.Stdout
 	result.Stderr = execResult.Stderr
 
-	// Check exit code (skipped on timeout, where the exit code is meaningless)
+	// On timeout, report only the timeout and skip every other assertion:
+	// checking the partial output or missing files would bury the real cause
+	// under misleading secondary failures. (Stdout/stderr stay captured
+	// above for verbose display.)
 	if execResult.TimedOut {
 		result.Failures = append(result.Failures, fmt.Sprintf("command timed out after %s", test.Timeout.Value))
-	} else if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
-		result.Failures = append(result.Failures, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	// Check exit code
+	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
+		msg := err.Error()
+		if execResult.Signal != "" {
+			// A signal death surfaces as exit code -1; name the signal so
+			// the failure is not baffling.
+			msg += fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
+		}
+		result.Failures = append(result.Failures, msg)
 	}
 
 	// Check stdout patterns
@@ -216,12 +241,13 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Check output files (files) and negated output files (!files). A !files
-	// entry asserts the negation of each of its checks.
-	for name, check := range test.Outputs.Files {
-		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), check, false)...)
+	// entry asserts the negation of each of its checks. Names are checked in
+	// sorted order so failures report deterministically.
+	for _, name := range sortedStringKeys(test.Outputs.Files) {
+		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.Files[name], false)...)
 	}
-	for name, check := range test.Outputs.NotFiles {
-		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), check, true)...)
+	for _, name := range sortedStringKeys(test.Outputs.NotFiles) {
+		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.NotFiles[name], true)...)
 	}
 
 	result.Passed = len(result.Failures) == 0
@@ -232,19 +258,30 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 
 // outputPath resolves the on-disk path for a named output file, falling back to
 // the conventional location when the name was not pre-registered in the context.
+// Non-local fallback names (traversal, absolute) are returned unchanged rather
+// than joined, so they can never address a path outside the test directory.
 func outputPath(ctx *TestContext, baseDir string, index int, name string) string {
 	if path := ctx.OutputPaths[name]; path != "" {
 		return path
 	}
-	return fmt.Sprintf("%s/test-%d/outputs/%s", baseDir, index, name)
+	if !filepath.IsLocal(name) {
+		return name
+	}
+	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), "outputs", name)
 }
 
 // checkFile applies a FileCheck (exists/match/notMatch) at path and returns
 // failure messages prefixed with label (e.g. "file out.txt" or "!file out.txt").
 // With negate set (the !files form), every check is inverted: exists is
 // flipped, match patterns must NOT match, and notMatch patterns must match.
+// An empty check ({} or null) is an implicit existence assertion rather than a
+// vacuous pass: under files the file must exist, under !files it must not.
 func checkFile(label, path string, check schema.FileCheck, negate bool) []string {
 	var failures []string
+	if check.IsEmpty() {
+		exists := true
+		check.Exists = &exists
+	}
 	if check.Exists != nil {
 		if *check.Exists != negate {
 			if err := AssertFileExists(path); err != nil {
