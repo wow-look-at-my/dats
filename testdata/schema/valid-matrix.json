@@ -1,0 +1,42 @@
+{
+  "tests": [
+    {
+      "desc": "greets",
+      "cmd": "echo \"{matrix.greeting}, {matrix.name}!\"",
+      "matrix": {
+        "greeting": ["hello", "howdy"],
+        "name": ["alice", "bob"]
+      },
+      "outputs": {
+        "stdout": [
+          "{matrix.greeting}, {matrix.name}!"
+        ]
+      }
+    },
+    {
+      "desc": "scalar value types: strings, numbers, and booleans",
+      "cmd": "echo {matrix.n} {matrix.flag}",
+      "matrix": {
+        "n": [1, 2.5],
+        "flag": [true, false]
+      },
+      "inputs": {
+        "stdin": "n={matrix.n}",
+        "files": {
+          "data.txt": "flag is {matrix.flag}"
+        },
+        "env": {
+          "N_VALUE": "{matrix.n}"
+        }
+      }
+    },
+    {
+      "desc": "single-variable matrix",
+      "cmd": "cat {matrix.path}",
+      "matrix": {
+        "path": ["{shared.config.json}"]
+      },
+      "exit": 0
+    }
+  ]
+}

@@ -37,12 +37,13 @@ go test -cover ./...
 
 ### Core Flow
 1. `.dats` YAML file is parsed using `gopkg.in/yaml.v3`
-2. Per file: a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test in the file — reported as failures, never "skipped" — but teardown still runs)
-3. For each test, fixtures are set up in a temp directory
-4. Command is executed via `bash -c` with placeholder expansion
-5. Exit code, stdout, stderr, and output files are validated against assertions
-6. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
-7. Results are printed in TAP-like format
+2. Every test is expanded up front into its matrix instances (`schema.ExpandMatrix`; non-matrix tests = one instance) — the header count, instance numbering, temp dirs, summary counts, and setup-failure reporting all operate on the expanded list; every instance always runs (no test filtering/selection by design)
+3. Per file: a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test instance in the file — reported as failures, never "skipped" — but teardown still runs)
+4. For each test instance, fixtures are set up in a temp directory
+5. Command is executed via `bash -c` with placeholder expansion
+6. Exit code, stdout, stderr, and output files are validated against assertions
+7. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
+8. Results are printed in TAP-like format
 
 ### Go Package Structure
 - `main.go` - Minimal entry point; calls `cmd.Execute()`
@@ -54,7 +55,8 @@ go test -cover ./...
   - `find.go` - Resolves file/directory args (dirs recurse; symlinked dir roots followed) or discovers `.dats` files in the tree; skips hidden dirs/files, dedupes by absolute path
 - `schema/` - YAML schema types + parser (public, importable by external modules)
   - `types.go` - Schema types with custom unmarshalers
-  - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, and non-local fixture names)
+  - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, non-local fixture names, undeclared `{matrix.X}` references, and matrix placeholders in setup/teardown/shared)
+  - `matrix.go` - `Matrix` (declaration-ordered variables, strict value validation), `ExpandMatrix` (cartesian instance expansion, deep copies, single-pass `{matrix.X}` substitution), and the single definition of the matrix substitution scope shared by validation and expansion
 - `runner/` - Native test runner (public, importable by external modules)
   - `runner.go` - Orchestrates test execution (RunFile, RunTest); RunFile also writes shared fixtures, runs setup (stops at first failure; then every test is reported failed with reason "file setup failed"), and always runs all teardown commands (runHookCommand executes one setup/teardown command via the same bash path, {shared.X}-only expansion)
   - `exec.go` - Command execution via bash; per-test timeouts kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced
@@ -72,6 +74,7 @@ go test -cover ./...
 - **InputBlock** - Contains `stdin` (string), `files` (map of filename to content), and `env` (map of env var name to value, added to the inherited environment in sorted key order)
 - **CommandList / SetupCommands / TeardownCommands** - File-level `setup`/`teardown` values: a single command string or a sequence of command strings ([]string underneath); the two wrapper types exist so parse errors name their key. Empty lists, blank commands, and non-string entries are parse errors
 - **Shared** - File-level `shared` block with `Files map[string]string`; must declare at least one file, names get the same locality validation as `inputs.files` (nil pointer on TestFile when absent)
+- **Matrix / TestInstance** - Per-test `matrix` block: ordered `[]MatrixVariable` (declaration order is semantic — label order and expansion order, last variable fastest); values are the literal scalar text (`1.50` stays `"1.50"`). `ExpandMatrix` yields `TestInstance`s (deep-copied substituted Test + `[k=v, ...]` label + assignments). Bad names, empty/non-sequence value lists, non-scalar or duplicate values, and undeclared references are parse errors; `matrix:` with explicit null = absent
 
 ### Placeholder System
 Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in the temp directory:
@@ -80,6 +83,8 @@ Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{o
 - `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide directory shared by all tests; no declaration required, same locality rule as `{outputs.X}`)
 
 Setup commands, teardown commands, and `shared.files` contents expand ONLY `{shared.X}`; `{inputs.X}`/`{outputs.X}` stay verbatim there. `inputs.stdin` is never expanded.
+
+`{matrix.X}` is a separate, earlier layer: single-pass text substitution at instance-expansion time (before any runtime expansion), also reaching `desc`, `inputs.stdin`, output patterns, and json_output strings. Matrix values may contain other placeholders (expanded at runtime as usual); substituted text is never re-scanned. Matrix placeholders in setup/teardown/shared are parse errors (`not available outside tests`); fixture file NAMES and env var NAMES are never substituted.
 
 Fixture names (`inputs.files`, `outputs.files`, `outputs.!files`, `shared.files`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup). Nested names like `sub/file.txt` are allowed; parent directories of declared output files and of shared files are auto-created.
 
@@ -98,6 +103,8 @@ tests:
     cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
     exit: 0                   # Optional, default 0 (or EXIT_SUCCESS/EXIT_FAILURE)
     timeout: 2s               # Optional, int seconds or Go duration string; 0/omitted = no timeout
+    matrix:                   # Optional; expands the test into one instance per combination
+      greeting: [hello, howdy]  # values referenced as {matrix.greeting}
     inputs:
       stdin: "input text"     # Optional, piped to cmd
       files:                  # Optional, creates fixture files
@@ -142,6 +149,7 @@ tests:
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats rejected at parse time |
 | `timeout` | No | Per-test timeout: int seconds (bare or quoted, e.g. `"5"`) or Go duration string (e.g. `500ms`, `2s`). 0/omitted = no timeout; floats rejected (write `1.5s`, not `1.5`) |
+| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). `{matrix.X}` substitutes in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs, reported as `desc [k=v, ...]` |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
 | `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |

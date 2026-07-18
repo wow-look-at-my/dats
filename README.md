@@ -178,6 +178,17 @@ tests:
   - desc: exit code variable
     exit: EXIT_SUCCESS
     cmd: true
+
+  # Matrix (parameterized) test: one instance per combination (this one runs
+  # 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
+  - desc: greets
+    cmd: echo "{matrix.greeting}, {matrix.name}!"
+    matrix:
+      greeting: [hello, howdy]
+      name: [alice, bob]
+    outputs:
+      stdout:
+        - "{matrix.greeting}, {matrix.name}!"
 ```
 
 ### File-Level Properties
@@ -202,6 +213,7 @@ mode — do not assume exclusive access to global resources.
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats are rejected at parse time |
 | `timeout` | No | Per-test timeout: integer seconds (bare or quoted, e.g. `"5"`) or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout; floats are rejected (write `1.5s`, not `1.5`) |
+| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). Reference values as `{matrix.X}` in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs and reports as `desc [k=v, ...]` |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
 | `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
@@ -254,6 +266,8 @@ Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{o
 - `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide, same locality rule as `{outputs.X}`)
 
 Setup commands, teardown commands, and `shared.files` contents expand only `{shared.X}`; the per-test `{inputs.X}`/`{outputs.X}` namespaces stay verbatim there. `inputs.stdin` is never expanded.
+
+`{matrix.X}` is a separate, earlier layer: it is text substitution (not a path), applied once per instance at expansion time — before any runtime expansion, and also in `desc`, `inputs.stdin`, and output patterns. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`, which then expand as usual at runtime; substituted text is never re-scanned for `{matrix.Y}`. Matrix placeholders are rejected at parse time in setup/teardown commands and `shared.files` contents (`not available outside tests`).
 
 Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs, so it can write nested outputs directly; the same goes for nested `shared.files` names.
 
