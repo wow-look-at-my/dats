@@ -57,7 +57,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
 | `--keep-temp` | Global | Keep temp directory for debugging |
-| `--coverdir` | Global | Set GOCOVERDIR on executed commands to collect coverage data |
+| `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
 
 ## DATS File Format

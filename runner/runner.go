@@ -162,12 +162,13 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 
 // runHookCommand executes one file-level setup or teardown command through
 // the same bash path as test commands (same working directory convention,
-// inherited environment, no stdin, no timeout), expanding only {shared.X}
+// inherited environment -- including GOCOVERDIR under --coverdir, exactly
+// like test commands -- no stdin, no timeout), expanding only {shared.X}
 // placeholders. It returns nil on success (exit 0) or the failure otherwise.
 func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure {
 	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	execResult, err := Execute(cmd, "", nil, 0)
+	execResult, err := Execute(cmd, "", r.commandEnv(), 0)
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
 	}
@@ -180,6 +181,24 @@ func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure 
 		}
 	}
 	return nil
+}
+
+// commandEnv builds the child environment for an executed command -- the one
+// env-construction path shared by test commands and file-level setup/teardown
+// commands. Execute replaces the child's environment entirely when given one,
+// so a non-nil result always starts from os.Environ(); nil (no extra entries
+// and no --coverdir) means plain inheritance. The extra entries are appended
+// first and GOCOVERDIR last, so --coverdir wins even over an extra entry's
+// own GOCOVERDIR value.
+func (r *Runner) commandEnv(extra ...string) []string {
+	if len(extra) == 0 && r.CoverDir == "" {
+		return nil
+	}
+	env := append(os.Environ(), extra...)
+	if r.CoverDir != "" {
+		env = append(env, "GOCOVERDIR="+r.CoverDir)
+	}
+	return env
 }
 
 // signalSuffix names the signal that killed the command, e.g.
@@ -235,21 +254,14 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	cmd := ExpandPlaceholders(test.Cmd, ctx)
 	result.Command = cmd
 
-	// Build environment for command execution. Execute replaces the child's
-	// environment entirely when given one, so always start from os.Environ().
-	// Test env entries are appended in sorted key order (deterministic), with
-	// values going through the same placeholder expansion as the command.
-	// GOCOVERDIR goes last so --coverdir wins even over a test's own entry.
-	var env []string
-	if len(test.Inputs.Env) > 0 || r.CoverDir != "" {
-		env = os.Environ()
-		for _, key := range sortedStringKeys(test.Inputs.Env) {
-			env = append(env, key+"="+ExpandPlaceholders(test.Inputs.Env[key], ctx))
-		}
-		if r.CoverDir != "" {
-			env = append(env, "GOCOVERDIR="+r.CoverDir)
-		}
+	// Build environment for command execution: test env entries are appended
+	// in sorted key order (deterministic), with values going through the same
+	// placeholder expansion as the command.
+	var extra []string
+	for _, key := range sortedStringKeys(test.Inputs.Env) {
+		extra = append(extra, key+"="+ExpandPlaceholders(test.Inputs.Env[key], ctx))
 	}
+	env := r.commandEnv(extra...)
 
 	// Execute the command
 	execResult, err := Execute(cmd, test.Inputs.Stdin, env, test.Timeout.Value)

@@ -71,7 +71,9 @@ Per file, the runner:
 2. Writes the `shared.files` fixtures into it.
 3. Runs the `setup` commands in declared order — through the same `bash -c` path as test
    commands, in the working directory of the `dats` invocation, with the inherited
-   environment, no stdin, and no timeout, capturing stdout and stderr.
+   environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, so
+   coverage captures hook invocations of an instrumented binary too), no stdin, and no
+   timeout, capturing stdout and stderr. Teardown commands run the same way.
 4. Runs the tests.
 5. Always runs **all** `teardown` commands in declared order — after the tests, after test
    failures, and even when setup failed. One failing teardown command does not stop the

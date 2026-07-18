@@ -289,6 +289,56 @@ tests:
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 }
 
+func TestRunFileHooksReceiveCoverDir(t *testing.T) {
+	// Under --coverdir, file-level setup and teardown commands receive
+	// GOCOVERDIR exactly like test commands do (one shared env-construction
+	// path), so coverage captures every invocation of an instrumented binary.
+	dir := t.TempDir()
+	setupMarker := filepath.Join(dir, "setup-cover.txt")
+	teardownMarker := filepath.Join(dir, "teardown-cover.txt")
+	path := writeRunnerDats(t, `
+setup: echo "$GOCOVERDIR" > `+setupMarker+`
+teardown: echo "$GOCOVERDIR" > `+teardownMarker+`
+tests:
+  - cmd: echo hi
+`)
+	coverDir := filepath.Join(t.TempDir(), "coverage")
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, coverDir)
+	result, err := r.RunFile(path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+
+	setupSeen, err := os.ReadFile(setupMarker)
+	require.Nil(t, err)
+	assert.Equal(t, coverDir+"\n", string(setupSeen), "setup must observe GOCOVERDIR")
+	teardownSeen, err := os.ReadFile(teardownMarker)
+	require.Nil(t, err)
+	assert.Equal(t, coverDir+"\n", string(teardownSeen), "teardown must observe GOCOVERDIR")
+}
+
+func TestRunFileHooksWithoutCoverDirInheritPlainEnv(t *testing.T) {
+	// Without --coverdir, hooks run with plain inheritance: they see the
+	// parent's own GOCOVERDIR exactly as-is and are never handed a value
+	// they didn't inherit.
+	t.Setenv("GOCOVERDIR", "from-parent")
+	marker := filepath.Join(t.TempDir(), "cover.txt")
+	path := writeRunnerDats(t, `
+setup: echo "cover=$GOCOVERDIR" > `+marker+`
+tests:
+  - cmd: echo hi
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+
+	seen, err := os.ReadFile(marker)
+	require.Nil(t, err)
+	assert.Equal(t, "cover=from-parent\n", string(seen))
+}
+
 func TestRunFileVerboseShowsHookCommands(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup: echo prepare
