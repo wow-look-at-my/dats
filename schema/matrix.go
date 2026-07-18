@@ -11,7 +11,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -210,10 +209,10 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 	test.Desc = f(test.Desc)
 	test.Cmd = f(test.Cmd)
 	test.Inputs.Stdin = f(test.Inputs.Stdin)
-	for _, name := range sortedKeysOf(test.Inputs.Files) {
+	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Files)) {
 		test.Inputs.Files[name] = f(test.Inputs.Files[name])
 	}
-	for _, name := range sortedKeysOf(test.Inputs.Env) {
+	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Env)) {
 		test.Inputs.Env[name] = f(test.Inputs.Env[name])
 	}
 	checks := []*OutputCheck{
@@ -224,19 +223,12 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 		for i := range check.Patterns {
 			check.Patterns[i] = f(check.Patterns[i])
 		}
-		lines := make([]int, 0, len(check.LineChecks))
-		for line := range check.LineChecks {
-			lines = append(lines, line)
-		}
-		sort.Ints(lines)
-		for _, line := range lines {
+		for _, line := range slices.Sorted(maps.Keys(check.LineChecks)) {
 			check.LineChecks[line] = f(check.LineChecks[line])
 		}
 	}
 	for _, files := range []map[string]FileCheck{test.Outputs.Files, test.Outputs.NotFiles} {
-		for _, name := range sortedKeysOf(files) {
-			// The struct copy shares its Match/NotMatch backing arrays with
-			// the map's entry, so mutating the elements mutates the entry.
+		for _, name := range slices.Sorted(maps.Keys(files)) {
 			check := files[name]
 			for i := range check.Match {
 				check.Match[i] = f(check.Match[i])
@@ -244,6 +236,7 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 			for i := range check.NotMatch {
 				check.NotMatch[i] = f(check.NotMatch[i])
 			}
+			files[name] = check
 		}
 	}
 	applyToNodeStrings(&test.Outputs.JSONOutput, f)
@@ -257,6 +250,9 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 // target reachable both directly and through aliases is substituted exactly
 // once -- the single-pass guarantee holds.
 func applyToNodeStrings(n *yaml.Node, f func(string) string) {
+	if n == nil || n.Kind == 0 {
+		return
+	}
 	visitNodeStrings(n, f, map[*yaml.Node]bool{})
 }
 
@@ -401,15 +397,4 @@ func copyNodeMapped(n *yaml.Node, seen map[*yaml.Node]*yaml.Node) *yaml.Node {
 		}
 	}
 	return &c
-}
-
-// sortedKeysOf returns m's keys in sorted order (schema-package counterpart
-// of the runner's sortedStringKeys).
-func sortedKeysOf[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }

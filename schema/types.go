@@ -74,14 +74,9 @@ func (td *TeardownCommands) UnmarshalYAML(node *yaml.Node) error {
 func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
 	switch node.Kind {
 	case yaml.ScalarNode:
-		// Only true strings are commands: yaml.v3 would happily coerce a
-		// bare 42 into "42", which could never be a meaningful command.
-		var cmd string
-		if node.Tag != "!!str" || node.Decode(&cmd) != nil {
-			return nil, fmt.Errorf("%s: command must be a string", key)
-		}
-		if strings.TrimSpace(cmd) == "" {
-			return nil, fmt.Errorf("%s: command must not be empty", key)
+		cmd, err := commandFromNode(node, key, "command")
+		if err != nil {
+			return nil, err
 		}
 		return CommandList{cmd}, nil
 	case yaml.SequenceNode:
@@ -90,18 +85,29 @@ func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
 		}
 		cmds := make(CommandList, 0, len(node.Content))
 		for i, item := range node.Content {
-			var cmd string
-			if item.Kind != yaml.ScalarNode || item.Tag != "!!str" || item.Decode(&cmd) != nil {
-				return nil, fmt.Errorf("%s: command %d must be a string", key, i+1)
-			}
-			if strings.TrimSpace(cmd) == "" {
-				return nil, fmt.Errorf("%s: command %d must not be empty", key, i+1)
+			cmd, err := commandFromNode(item, key, fmt.Sprintf("command %d", i+1))
+			if err != nil {
+				return nil, err
 			}
 			cmds = append(cmds, cmd)
 		}
 		return cmds, nil
 	}
 	return nil, fmt.Errorf("%s must be a command string or a list of command strings", key)
+}
+
+// commandFromNode validates one command scalar, naming key (setup or
+// teardown) and label ("command" or "command N") in every error. Only true
+// strings are commands: yaml.v3 would happily coerce a bare 42 into "42",
+// which could never be a meaningful command.
+func commandFromNode(node *yaml.Node, key, label string) (string, error) {
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return "", fmt.Errorf("%s: %s must be a string", key, label)
+	}
+	if strings.TrimSpace(node.Value) == "" {
+		return "", fmt.Errorf("%s: %s must not be empty", key, label)
+	}
+	return node.Value, nil
 }
 
 // Shared declares file-level fixture files, written once into the file's

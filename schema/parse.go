@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 )
@@ -56,18 +58,21 @@ func ParseFile(path string) (*TestFile, error) {
 	// {matrix.X} belongs to a single test instance; setup and teardown
 	// commands and shared file contents run once per file, where no instance
 	// exists, so a matrix placeholder there can never resolve.
-	for i, cmd := range testFile.Setup {
-		if name, found := findMatrixPlaceholder(cmd); found {
-			return nil, fmt.Errorf("setup command %d: {matrix.%s} is not available outside tests", i+1, name)
-		}
-	}
-	for i, cmd := range testFile.Teardown {
-		if name, found := findMatrixPlaceholder(cmd); found {
-			return nil, fmt.Errorf("teardown command %d: {matrix.%s} is not available outside tests", i+1, name)
+	for _, hook := range []struct {
+		kind string
+		cmds []string
+	}{
+		{"setup", testFile.Setup},
+		{"teardown", testFile.Teardown},
+	} {
+		for i, cmd := range hook.cmds {
+			if name, found := findMatrixPlaceholder(cmd); found {
+				return nil, fmt.Errorf("%s command %d: {matrix.%s} is not available outside tests", hook.kind, i+1, name)
+			}
 		}
 	}
 	if testFile.Shared != nil {
-		for _, name := range sortedKeysOf(testFile.Shared.Files) {
+		for _, name := range slices.Sorted(maps.Keys(testFile.Shared.Files)) {
 			if ref, found := findMatrixPlaceholder(testFile.Shared.Files[name]); found {
 				return nil, fmt.Errorf("shared file %q: {matrix.%s} is not available outside tests", name, ref)
 			}

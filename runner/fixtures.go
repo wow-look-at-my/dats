@@ -16,6 +16,11 @@ var (
 	sharedPlaceholderRe = regexp.MustCompile(`\{shared\.([^}]+)\}`)
 )
 
+// sharedDirName is the file-wide shared directory's name under the temp
+// directory: RunFile creates it there and {shared.X} placeholders resolve
+// into it, so the two must always agree.
+const sharedDirName = "shared"
+
 // TestContext holds the paths and context for a single test execution
 type TestContext struct {
 	BaseDir     string            // Temp directory for this test file
@@ -69,7 +74,7 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	// {shared.X} placeholders resolve into it. RunFile creates it before
 	// setup runs, but it is ensured here too so the placeholders resolve to a
 	// writable path even when RunTest is driven directly.
-	ctx.SharedDir = filepath.Join(baseDir, "shared")
+	ctx.SharedDir = filepath.Join(baseDir, sharedDirName)
 	if err := os.MkdirAll(ctx.SharedDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating shared dir: %w", err)
 	}

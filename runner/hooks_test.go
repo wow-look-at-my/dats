@@ -14,10 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeHooksDats writes content to a temp .dats file and returns its path.
-func writeHooksDats(t *testing.T, content string) string {
+// writeRunnerDats writes content to a temp .dats file and returns its path
+// (shared by the hooks and matrix RunFile-level tests).
+func writeRunnerDats(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "hooks.dats")
+	path := filepath.Join(t.TempDir(), "runner.dats")
 	require.Nil(t, os.WriteFile(path, []byte(content), 0644))
 	return path
 }
@@ -25,7 +26,7 @@ func writeHooksDats(t *testing.T, content string) string {
 func TestRunFileSharedPlaceholderInCmdContentsAndEnv(t *testing.T) {
 	// {shared.X} expands exactly where {inputs.X}/{outputs.X} already do:
 	// the command, inputs.files contents, and inputs.env values.
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 shared:
   files:
     config.json: '{"debug": true}'
@@ -57,7 +58,7 @@ tests:
 func TestRunFileStdinNotExpanded(t *testing.T) {
 	// inputs.stdin is passed to the command verbatim: no placeholder
 	// namespace, including {shared.X}, is expanded in it.
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 shared:
   files:
     config.json: content
@@ -77,7 +78,7 @@ tests:
 }
 
 func TestRunFileNonLocalSharedPlaceholderLeftVerbatim(t *testing.T) {
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 tests:
   - cmd: echo '{shared.../escape}'
     outputs:
@@ -93,7 +94,7 @@ tests:
 
 func TestRunFileSetupRunsBeforeTests(t *testing.T) {
 	// Setup output is observable from the tests, proving it ran first.
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 setup:
   - echo generated-by-setup > {shared.marker.txt}
 tests:
@@ -113,7 +114,7 @@ tests:
 func TestRunFileSetupFailureFailsEveryTestAndRunsTeardown(t *testing.T) {
 	teardownMarker := filepath.Join(t.TempDir(), "teardown-ran.txt")
 	neverMarker := filepath.Join(t.TempDir(), "never.txt")
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 setup:
   - echo before-failure
   - exit 3
@@ -161,7 +162,7 @@ tests:
 }
 
 func TestRunFileSetupFailureShowsCapturedOutput(t *testing.T) {
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 setup: 'echo partial output; echo boom >&2; exit 7'
 tests:
   - cmd: echo never runs
@@ -184,7 +185,7 @@ func TestRunFileSharedWriteFailureFailsEveryTest(t *testing.T) {
 	// earlier shared file cannot be written; the failure is treated exactly
 	// like a setup failure: every test fails, teardown still runs.
 	marker := filepath.Join(t.TempDir(), "teardown-ran.txt")
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 shared:
   files:
     sub/inner.txt: makes sub a directory
@@ -210,7 +211,7 @@ tests:
 }
 
 func TestRunFileTeardownFailureFailsFile(t *testing.T) {
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 teardown: exit 1
 tests:
   - cmd: echo ok
@@ -239,7 +240,7 @@ func TestRunFileTeardownRunsAfterTestFailuresAndContinuesPastFailures(t *testing
 	dir := t.TempDir()
 	first := filepath.Join(dir, "first.txt")
 	last := filepath.Join(dir, "last.txt")
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 teardown:
   - touch `+first+`
   - exit 7
@@ -264,7 +265,7 @@ tests:
 }
 
 func TestRunFileSharedNestedNamesAndContentExpansion(t *testing.T) {
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 shared:
   files:
     sub/dir/base.txt: base-content
@@ -289,7 +290,7 @@ tests:
 }
 
 func TestRunFileVerboseShowsHookCommands(t *testing.T) {
-	path := writeHooksDats(t, `
+	path := writeRunnerDats(t, `
 setup: echo prepare
 teardown: echo cleanup
 tests:

@@ -83,7 +83,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 	// The file's shared directory exists for the whole run (and is preserved
 	// by --keep-temp) so every {shared.X} placeholder resolves to a writable
 	// path, whether or not the file declares shared fixtures.
-	sharedDir := filepath.Join(tempDir, "shared")
+	sharedDir := filepath.Join(tempDir, sharedDirName)
 	if err := os.MkdirAll(sharedDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating shared dir: %w", err)
 	}
@@ -172,20 +172,25 @@ func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure 
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
 	}
 	if execResult.ExitCode != 0 {
-		detail := fmt.Sprintf("exit code %d", execResult.ExitCode)
-		if execResult.Signal != "" {
-			// A signal death surfaces as exit code -1; name the signal so
-			// the failure is not baffling.
-			detail += fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
-		}
 		return &CommandFailure{
 			Command: cmd,
-			Detail:  detail,
+			Detail:  fmt.Sprintf("exit code %d", execResult.ExitCode) + signalSuffix(execResult),
 			Stdout:  execResult.Stdout,
 			Stderr:  execResult.Stderr,
 		}
 	}
 	return nil
+}
+
+// signalSuffix names the signal that killed the command, e.g.
+// " (killed by signal: killed)"; empty for a normal exit. A signal death
+// surfaces as exit code -1, so without the name the failure would be
+// baffling.
+func signalSuffix(execResult *ExecResult) string {
+	if execResult.Signal == "" {
+		return ""
+	}
+	return fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
 }
 
 // testName returns the display name for a test: its desc, falling back to
@@ -269,13 +274,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 
 	// Check exit code
 	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {
-		msg := err.Error()
-		if execResult.Signal != "" {
-			// A signal death surfaces as exit code -1; name the signal so
-			// the failure is not baffling.
-			msg += fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
-		}
-		result.Failures = append(result.Failures, msg)
+		result.Failures = append(result.Failures, err.Error()+signalSuffix(execResult))
 	}
 
 	// Check stdout patterns
