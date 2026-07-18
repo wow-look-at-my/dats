@@ -247,3 +247,35 @@ tests:
 	// The source keeps its matrix: expansion does not consume it.
 	assert.Equal(t, Matrix{{Name: "x", Values: []string{"a", "b"}}}, source.Matrix)
 }
+
+func TestExpandMatrix_JSONOutputAliasSubstitutedPerInstance(t *testing.T) {
+	// A YAML alias inside json_output decodes its anchor target; the copy
+	// must remap the alias into the instance's own tree so the aliased
+	// occurrence sees that instance's substitution -- never the source
+	// test's (or a sibling's) unsubstituted node.
+	tf, err := ParseFile(writeTempDats(t, `
+tests:
+  - cmd: echo hi
+    matrix:
+      i: [7, 8]
+    outputs:
+      json_output: [&a "v{matrix.i}", *a]
+`))
+	require.Nil(t, err)
+	source := &tf.Tests[0]
+	instances := ExpandMatrix(source)
+	require.Len(t, instances, 2)
+
+	first, err := instances[0].Test.Outputs.JSONOutputValue()
+	require.Nil(t, err)
+	assert.Equal(t, []any{"v7", "v7"}, first)
+
+	second, err := instances[1].Test.Outputs.JSONOutputValue()
+	require.Nil(t, err)
+	assert.Equal(t, []any{"v8", "v8"}, second)
+
+	// The source test's tree is untouched by either instance's substitution.
+	original, err := source.Outputs.JSONOutputValue()
+	require.Nil(t, err)
+	assert.Equal(t, []any{"v{matrix.i}", "v{matrix.i}"}, original)
+}

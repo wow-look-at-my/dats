@@ -22,7 +22,8 @@ assertion.
 ## File-Level Setup, Teardown, and Shared Fixtures
 
 Three optional top-level keys run commands and materialize fixture files once per **file**
-(fully backwards compatible — files without them parse and behave identically):
+(backwards compatible for existing files — see
+[Backwards Compatibility](#backwards-compatibility) for the one caveat):
 
 ```yaml
 shared:
@@ -261,6 +262,26 @@ there must name a variable declared by **that** test's matrix. Setup and teardow
 commands and shared file contents run once per file, where no matrix instance exists,
 so matrix placeholders are rejected there even when some test declares the variable.
 `matrix:` with an explicit null value is treated as an absent key (like `shared:`).
+
+---
+
+## Backwards Compatibility
+
+Files that use none of the new keys (`shared`, `setup`, `teardown`, `matrix`) parse and
+behave identically, with one caveat: literal text shaped like the two new placeholder
+namespaces changes meaning.
+
+- `{shared.<name>}` with a local relative `<name>` previously passed through as literal
+  text; it now expands to a path under the file's `shared/` directory wherever
+  placeholders expand (`cmd`, `inputs.files` contents, `inputs.env` values).
+- `{matrix.<name>}` anywhere in the matrix substitution scope is now validated: in a
+  test without a `matrix` block it is a parse error (`test N: {matrix.<name>} is used
+  but the test declares no matrix`). Such a file previously ran with the text kept
+  literal.
+
+Text that only *resembles* a placeholder without being one — a non-local name like
+`{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`),
+or any other brace construct — still passes through verbatim.
 
 ---
 

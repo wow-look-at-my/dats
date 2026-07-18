@@ -252,20 +252,30 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 // applyToNodeStrings applies f to the Value of every string scalar in the
 // node tree, mapping keys included; non-string scalars (numbers, bools,
 // null) are untouched, so substitution inside json_output cannot change a
-// value's JSON type. Alias nodes are not followed: their anchor target is
-// visited where it appears in the tree.
+// value's JSON type. Alias nodes are followed to their anchor target (that
+// is the value they decode to), with each node visited at most once so a
+// target reachable both directly and through aliases is substituted exactly
+// once -- the single-pass guarantee holds.
 func applyToNodeStrings(n *yaml.Node, f func(string) string) {
-	if n == nil || n.Kind == 0 {
+	visitNodeStrings(n, f, map[*yaml.Node]bool{})
+}
+
+func visitNodeStrings(n *yaml.Node, f func(string) string, seen map[*yaml.Node]bool) {
+	if n == nil || n.Kind == 0 || seen[n] {
 		return
 	}
+	seen[n] = true
 	if n.Kind == yaml.ScalarNode {
 		if n.ShortTag() == "!!str" {
 			n.Value = f(n.Value)
 		}
 		return
 	}
+	if n.Alias != nil {
+		visitNodeStrings(n.Alias, f, seen)
+	}
 	for _, child := range n.Content {
-		applyToNodeStrings(child, f)
+		visitNodeStrings(child, f, seen)
 	}
 }
 
@@ -366,15 +376,28 @@ func copyFileChecks(m map[string]FileCheck) map[string]FileCheck {
 	return c
 }
 
-// copyNode deep-copies a yaml.Node tree (Content recursively; an Alias
-// pointer is kept as-is, consistent with applyToNodeStrings not following
-// aliases).
+// copyNode deep-copies a yaml.Node tree: Content recursively, and Alias
+// pointers remapped to the copied target so an alias inside json_output
+// decodes the instance's own (substituted) anchor value -- never a node of
+// the source test's tree, which substitution must not reach. The seen map
+// keeps shared targets shared within one copy.
 func copyNode(n *yaml.Node) *yaml.Node {
+	return copyNodeMapped(n, map[*yaml.Node]*yaml.Node{})
+}
+
+func copyNodeMapped(n *yaml.Node, seen map[*yaml.Node]*yaml.Node) *yaml.Node {
+	if c, ok := seen[n]; ok {
+		return c
+	}
 	c := *n
+	seen[n] = &c
+	if n.Alias != nil {
+		c.Alias = copyNodeMapped(n.Alias, seen)
+	}
 	if len(n.Content) > 0 {
 		c.Content = make([]*yaml.Node, len(n.Content))
 		for i, child := range n.Content {
-			c.Content[i] = copyNode(child)
+			c.Content[i] = copyNodeMapped(child, seen)
 		}
 	}
 	return &c
