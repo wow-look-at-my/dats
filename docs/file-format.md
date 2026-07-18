@@ -2,9 +2,13 @@
 
 ## Root Structure
 
-A `.dats` file contains a single `tests` array:
+A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`,
+`setup`, and `teardown` keys:
 
 ```yaml
+shared:      # optional file-level fixture files
+setup:       # optional command(s) run once before the tests
+teardown:    # optional command(s) always run once after the tests
 tests:
   - # test 1
   - # test 2
@@ -14,6 +18,81 @@ A file must contain exactly one YAML document. A second `---` document is a pars
 (`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys
 anywhere in the file are also parse errors, so a misspelled field cannot silently disable its
 assertion.
+
+## File-Level Setup, Teardown, and Shared Fixtures
+
+Three optional top-level keys run commands and materialize fixture files once per **file**
+(fully backwards compatible — files without them parse and behave identically):
+
+```yaml
+shared:
+  files:
+    config.json: |
+      {"debug": true}
+
+setup: cat {shared.config.json} > {shared.generated.txt}   # a single string...
+
+teardown:                                                  # ...or a list of strings
+  - first cleanup command
+  - second cleanup command
+
+tests:
+  - cmd: cat {shared.generated.txt}
+```
+
+`setup` and `teardown` each accept either a single command string or a sequence of command
+strings; blank commands, non-string entries, and empty lists are parse errors
+(`setup: must list at least one command`). `shared` must declare at least one file under
+`files` (`shared: must declare at least one file under files`); the file names follow the
+same locality rule as `inputs.files` names — relative paths that stay inside the shared
+directory, nested names like `sub/file.txt` allowed.
+
+### `{shared.X}` Placeholders
+
+`{shared.<filename>}` expands to a path under the file's `shared/` directory, e.g.
+`/tmp/dats-xxxxxx/shared/<filename>`. Like `{outputs.X}`, the name does not need to be
+declared — any **local relative** name resolves, and a non-local name (one containing `..` or
+an absolute path) is left verbatim, so a placeholder can never address a path outside the
+shared directory.
+
+`{shared.X}` expands everywhere `{inputs.X}`/`{outputs.X}` already expand: the command,
+`inputs.files` contents, and `inputs.env` values (`inputs.stdin` stays unexpanded, as
+always). It additionally expands — as the **only** namespace — in setup commands, teardown
+commands, and `shared.files` contents; `{inputs.X}` and `{outputs.X}` are per-test
+namespaces and pass through verbatim there.
+
+### Execution Order and Failure Semantics
+
+Per file, the runner:
+
+1. Creates the `shared/` directory (alongside the per-test directories; preserved by
+   `--keep-temp`).
+2. Writes the `shared.files` fixtures into it.
+3. Runs the `setup` commands in declared order — through the same `bash -c` path as test
+   commands, in the working directory of the `dats` invocation, with the inherited
+   environment, no stdin, and no timeout, capturing stdout and stderr.
+4. Runs the tests.
+5. Always runs **all** `teardown` commands in declared order — after the tests, after test
+   failures, and even when setup failed. One failing teardown command does not stop the
+   rest. (Teardown does not apply to files that fail to parse: nothing ran.)
+
+If a setup command fails (non-zero exit or signal death), the remaining setup commands are
+skipped, the file's tests do **not** run, and every test is reported as a normal failure
+with reason `file setup failed` — loudly, never as "skipped" — after a file-level diagnostic
+naming the failing command, its exit status, and its captured output. The run exits 1.
+
+If a teardown command fails, a file-level diagnostic is printed and the **file** is marked
+failed — the run exits 1 even when every test passed — with the summary line annotated
+`teardown failed`. Individual test lines stay as they ran.
+
+### Concurrency Contract
+
+Setup and teardown are per-file barriers: a future parallel mode (`-j`) may run tests
+concurrently within and across files, but no test in a file starts before that file's setup
+completes, and teardown starts only after the file's last test finishes. Tests should treat
+the shared directory as **read-only**; tests that mutate shared state are undefined under
+parallelism. Setup/teardown of different files may overlap in parallel mode — do not assume
+exclusive access to global resources.
 
 ## Test Object
 
@@ -104,6 +183,11 @@ outputs:
     result.bin:
       exists: true
 ```
+
+### Shared Placeholders
+
+`{shared.<filename>}` expands to a path under the file-wide `shared/` directory — see
+[File-Level Setup, Teardown, and Shared Fixtures](#file-level-setup-teardown-and-shared-fixtures).
 
 ### Multiple Placeholders
 
@@ -446,6 +530,11 @@ On mismatch the failure lists each difference with its JSONPath-style location:
 ## Complete Field Reference
 
 ```yaml
+shared:                    # optional file-level fixtures
+  files:
+    <name>: string         # filename: content ({shared.X} placeholders expanded)
+setup: string|[]           # optional; command(s) run once before the tests
+teardown: string|[]        # optional; command(s) always run once after the tests
 tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0

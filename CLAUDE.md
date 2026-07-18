@@ -37,10 +37,12 @@ go test -cover ./...
 
 ### Core Flow
 1. `.dats` YAML file is parsed using `gopkg.in/yaml.v3`
-2. For each test, fixtures are set up in a temp directory
-3. Command is executed via `bash -c` with placeholder expansion
-4. Exit code, stdout, stderr, and output files are validated against assertions
-5. Results are printed in TAP-like format
+2. Per file: a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test in the file — reported as failures, never "skipped" — but teardown still runs)
+3. For each test, fixtures are set up in a temp directory
+4. Command is executed via `bash -c` with placeholder expansion
+5. Exit code, stdout, stderr, and output files are validated against assertions
+6. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
+7. Results are printed in TAP-like format
 
 ### Go Package Structure
 - `main.go` - Minimal entry point; calls `cmd.Execute()`
@@ -54,11 +56,11 @@ go test -cover ./...
   - `types.go` - Schema types with custom unmarshalers
   - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, and non-local fixture names)
 - `runner/` - Native test runner (public, importable by external modules)
-  - `runner.go` - Orchestrates test execution (RunFile, RunTest)
+  - `runner.go` - Orchestrates test execution (RunFile, RunTest); RunFile also writes shared fixtures, runs setup (stops at first failure; then every test is reported failed with reason "file setup failed"), and always runs all teardown commands (runHookCommand executes one setup/teardown command via the same bash path, {shared.X}-only expansion)
   - `exec.go` - Command execution via bash; per-test timeouts kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced
-  - `fixtures.go` - Creates input files, validates fixture-name locality, creates parent dirs for nested declared outputs, expands `{inputs.X}` and `{outputs.X}` placeholders
+  - `fixtures.go` - Creates input files, validates fixture-name locality, creates parent dirs for nested declared outputs, expands `{inputs.X}`/`{outputs.X}`/`{shared.X}` placeholders; SetupSharedFixtures writes file-level shared files ({shared.X}-only expansion via ExpandSharedPlaceholders)
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
-  - `output.go` - Result types (TestResult, FileResult) and TAP-like formatting
+  - `output.go` - Result types (TestResult, FileResult with SetupFailure/TeardownFailures + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `teardown failed` summary annotation)
 - `docs/` - Additional prose documentation; `schema.json` - JSON Schema for IDE validation
 
 ### Key Types
@@ -68,17 +70,29 @@ go test -cover ./...
 - **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, files, !files, and json_output checks
 - **FileCheck** - Validates output files with `exists`, `match`, and `notMatch` properties; an empty check (`{}` or null) is an implicit existence assertion
 - **InputBlock** - Contains `stdin` (string), `files` (map of filename to content), and `env` (map of env var name to value, added to the inherited environment in sorted key order)
+- **CommandList / SetupCommands / TeardownCommands** - File-level `setup`/`teardown` values: a single command string or a sequence of command strings ([]string underneath); the two wrapper types exist so parse errors name their key. Empty lists, blank commands, and non-string entries are parse errors
+- **Shared** - File-level `shared` block with `Files map[string]string`; must declare at least one file, names get the same locality validation as `inputs.files` (nil pointer on TestFile when absent)
 
 ### Placeholder System
-Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}` and `{outputs.X}`, which expand to absolute paths in the temp directory:
+Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in the temp directory:
 - `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
 - `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `outputs.files` check required, as long as X is a local relative path; non-local names are left as-is)
+- `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide directory shared by all tests; no declaration required, same locality rule as `{outputs.X}`)
 
-Fixture names (`inputs.files`, `outputs.files`, `outputs.!files`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup). Nested names like `sub/file.txt` are allowed; parent directories of declared output files are auto-created.
+Setup commands, teardown commands, and `shared.files` contents expand ONLY `{shared.X}`; `{inputs.X}`/`{outputs.X}` stay verbatim there. `inputs.stdin` is never expanded.
+
+Fixture names (`inputs.files`, `outputs.files`, `outputs.!files`, `shared.files`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup). Nested names like `sub/file.txt` are allowed; parent directories of declared output files and of shared files are auto-created.
 
 ## DATS File Format
 
 ```yaml
+shared:                     # Optional file-level fixtures (once per file)
+  files:
+    config.json: content    # written into shared/, addressed as {shared.config.json}
+setup: single command       # Optional; or a list of command strings
+teardown:                   # Optional; ALWAYS runs (even after setup failure)
+  - first cleanup command
+  - second cleanup command
 tests:
   - desc: optional description
     cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
@@ -112,11 +126,19 @@ tests:
           exists: true        # must NOT exist
 ```
 
+### File-Level Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `shared.files` | No | Map of filename → content, written once per file into `shared/` before setup; contents expand `{shared.X}` only; names must be local relative paths |
+| `setup` | No | Command string or list, run once in order before the file's tests. Only `{shared.X}` expands. A failure skips remaining setup commands and reports EVERY test as failed (reason `file setup failed`, never "skipped"); teardown still runs |
+| `teardown` | No | Command string or list, always run once in order after the file's tests (after failures, even after setup failure; one failure does not stop the rest). Any failure marks the file failed (exit 1) even when all tests passed |
+
 ### Test Properties
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
+| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths |
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats rejected at parse time |
 | `timeout` | No | Per-test timeout: int seconds (bare or quoted, e.g. `"5"`) or Go duration string (e.g. `500ms`, `2s`). 0/omitted = no timeout; floats rejected (write `1.5s`, not `1.5`) |
