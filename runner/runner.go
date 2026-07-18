@@ -32,7 +32,12 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *
 	}
 }
 
-// RunFile runs all tests in a .dats file
+// RunFile runs all tests in a .dats file. Shared fixture files are written
+// and setup commands run first; then every test; then teardown commands,
+// which always run -- after test failures and even when setup failed. A
+// setup failure fails every test in the file (loudly; tests are never
+// reported as skipped), and a teardown failure marks the file failed even
+// when all tests passed.
 func (r *Runner) RunFile(path string) (*FileResult, error) {
 	testFile, err := schema.ParseFile(path)
 	if err != nil {
@@ -64,16 +69,76 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		Results: make([]TestResult, 0, len(testFile.Tests)),
 	}
 
-	// Run each test
-	for i, test := range testFile.Tests {
-		testResult := r.RunTest(&test, tempDir, i)
-		result.Results = append(result.Results, testResult)
-		r.Formatter.PrintResult(&testResult)
+	// The file's shared directory exists for the whole run (and is preserved
+	// by --keep-temp) so every {shared.X} placeholder resolves to a writable
+	// path, whether or not the file declares shared fixtures.
+	sharedDir := filepath.Join(tempDir, "shared")
+	if err := os.MkdirAll(sharedDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating shared dir: %w", err)
+	}
 
-		if testResult.Passed {
-			result.Passed++
-		} else {
+	// Write shared fixture files, then run setup commands in declared order,
+	// stopping at the first failure. A failure here fails every test in the
+	// file; teardown still runs.
+	if testFile.Shared != nil {
+		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files); err != nil {
+			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
+			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
+		}
+	}
+	if result.SetupFailure == nil {
+		for _, raw := range testFile.Setup {
+			if fail := r.runHookCommand("setup", raw, sharedDir); fail != nil {
+				result.SetupFailure = fail
+				r.Formatter.PrintHookFailure("setup", fail)
+				break // remaining setup commands are skipped; every test fails below
+			}
+		}
+	}
+
+	if result.SetupFailure != nil {
+		// Every test is reported as a normal failure -- loudly, never as
+		// "skipped" -- so the plan, the counts, and the exit code all stay
+		// consistent.
+		fmt.Fprintln(r.Formatter.Writer)
+		for i, test := range testFile.Tests {
+			testResult := TestResult{
+				Name:     testName(&test),
+				Index:    i,
+				Failures: []string{"file setup failed"},
+			}
+			result.Results = append(result.Results, testResult)
 			result.Failed++
+			r.Formatter.PrintResult(&testResult)
+		}
+	} else {
+		if r.Verbose && len(testFile.Setup) > 0 {
+			fmt.Fprintln(r.Formatter.Writer)
+		}
+		// Run each test
+		for i, test := range testFile.Tests {
+			testResult := r.RunTest(&test, tempDir, i)
+			result.Results = append(result.Results, testResult)
+			r.Formatter.PrintResult(&testResult)
+
+			if testResult.Passed {
+				result.Passed++
+			} else {
+				result.Failed++
+			}
+		}
+	}
+
+	// Teardown always runs: in declared order, after test failures, and even
+	// when setup failed. One failing command does not stop the rest; any
+	// failure marks the file failed.
+	if r.Verbose && len(testFile.Teardown) > 0 {
+		fmt.Fprintln(r.Formatter.Writer)
+	}
+	for _, raw := range testFile.Teardown {
+		if fail := r.runHookCommand("teardown", raw, sharedDir); fail != nil {
+			result.TeardownFailures = append(result.TeardownFailures, *fail)
+			r.Formatter.PrintHookFailure("teardown", fail)
 		}
 	}
 
@@ -82,18 +147,49 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 	return result, nil
 }
 
+// runHookCommand executes one file-level setup or teardown command through
+// the same bash path as test commands (same working directory convention,
+// inherited environment, no stdin, no timeout), expanding only {shared.X}
+// placeholders. It returns nil on success (exit 0) or the failure otherwise.
+func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure {
+	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
+	r.Formatter.PrintHookCommand(kind, cmd)
+	execResult, err := Execute(cmd, "", nil, 0)
+	if err != nil {
+		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
+	}
+	if execResult.ExitCode != 0 {
+		detail := fmt.Sprintf("exit code %d", execResult.ExitCode)
+		if execResult.Signal != "" {
+			// A signal death surfaces as exit code -1; name the signal so
+			// the failure is not baffling.
+			detail += fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
+		}
+		return &CommandFailure{
+			Command: cmd,
+			Detail:  detail,
+			Stdout:  execResult.Stdout,
+			Stderr:  execResult.Stderr,
+		}
+	}
+	return nil
+}
+
+// testName returns the display name for a test: its desc, falling back to
+// the command.
+func testName(test *schema.Test) string {
+	if test.Desc != "" {
+		return test.Desc
+	}
+	return test.Cmd
+}
+
 // RunTest runs a single test
 func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResult {
 	start := time.Now()
 
-	// Determine test name
-	name := test.Desc
-	if name == "" {
-		name = test.Cmd
-	}
-
 	result := TestResult{
-		Name:  name,
+		Name:  testName(test),
 		Index: index,
 	}
 

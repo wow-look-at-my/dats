@@ -39,6 +39,20 @@ func ParseFile(path string) (*TestFile, error) {
 		return nil, fmt.Errorf("no tests defined")
 	}
 
+	// A shared block must actually declare files, and their names must stay
+	// inside the shared directory (the same rule as inputs.files names). The
+	// runner enforces locality again when writing the files.
+	if testFile.Shared != nil {
+		if len(testFile.Shared.Files) == 0 {
+			return nil, fmt.Errorf("shared: must declare at least one file under files")
+		}
+		for name := range testFile.Shared.Files {
+			if !filepath.IsLocal(name) {
+				return nil, fmt.Errorf("shared file name %q must be a relative path that stays inside the shared directory", name)
+			}
+		}
+	}
+
 	for i, test := range testFile.Tests {
 		if test.Cmd == "" {
 			return nil, fmt.Errorf("test %d: missing required field 'cmd'", i+1)

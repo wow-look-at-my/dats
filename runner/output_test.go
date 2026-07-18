@@ -86,6 +86,58 @@ func TestFormatterPrintSummaryAllPassed(t *testing.T) {
 	assert.NotContains(t, buf.String(), "failed")
 }
 
+func TestFormatterPrintHookFailure(t *testing.T) {
+	var buf bytes.Buffer
+	f := &Formatter{Writer: &buf}
+	f.PrintHookFailure("setup", &CommandFailure{
+		Command: "./gen.sh",
+		Detail:  "exit code 3",
+		Stdout:  "partial output\n",
+		Stderr:  "boom\n",
+	})
+	assert.Equal(t,
+		"# setup command failed: ./gen.sh\n"+
+			"#   exit code 3\n"+
+			"#   stdout:\n"+
+			"#     partial output\n"+
+			"#   stderr:\n"+
+			"#     boom\n",
+		buf.String())
+}
+
+func TestFormatterPrintHookFailureWithoutCommand(t *testing.T) {
+	// Shared fixture write failures have no command to name.
+	var buf bytes.Buffer
+	f := &Formatter{Writer: &buf}
+	f.PrintHookFailure("setup", &CommandFailure{Detail: "shared fixtures: writing shared file x: disk full"})
+	assert.Equal(t, "# setup failed: shared fixtures: writing shared file x: disk full\n", buf.String())
+}
+
+func TestFormatterPrintHookCommandVerboseOnly(t *testing.T) {
+	var quiet bytes.Buffer
+	(&Formatter{Writer: &quiet}).PrintHookCommand("teardown", "echo done")
+	assert.Equal(t, "", quiet.String())
+
+	var verbose bytes.Buffer
+	(&Formatter{Writer: &verbose, Verbose: true}).PrintHookCommand("teardown", "echo done")
+	assert.Equal(t, "# teardown: echo done\n", verbose.String())
+}
+
+func TestFormatterPrintSummaryTeardownFailed(t *testing.T) {
+	var buf bytes.Buffer
+	f := &Formatter{Writer: &buf}
+	fr := &FileResult{Passed: 2, TeardownFailures: []CommandFailure{{Command: "x", Detail: "exit code 1"}}}
+	f.PrintSummary(fr)
+	assert.Equal(t, "\n2/2 passed, teardown failed\n", buf.String())
+}
+
+func TestFileResultOk(t *testing.T) {
+	assert.True(t, (&FileResult{Passed: 1}).Ok())
+	assert.False(t, (&FileResult{Failed: 1}).Ok())
+	assert.False(t, (&FileResult{SetupFailure: &CommandFailure{}}).Ok())
+	assert.False(t, (&FileResult{TeardownFailures: []CommandFailure{{}}}).Ok())
+}
+
 func TestFormatterPrintError(t *testing.T) {
 	var buf bytes.Buffer
 	f := &Formatter{Writer: &buf}

@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -20,7 +21,96 @@ type TestFile struct {
 	// Schema optionally references the JSON Schema for IDE validation; the
 	// runner ignores its value.
 	Schema string `yaml:"$schema,omitempty"`
-	Tests  []Test `yaml:"tests"`
+	// Setup commands run once, in declared order, before any of the file's
+	// tests (after shared files are written). If one fails, the remaining
+	// setup commands are skipped and every test in the file is reported as
+	// failed.
+	Setup SetupCommands `yaml:"setup,omitempty"`
+	// Teardown commands always run once, in declared order, after the file's
+	// tests -- after test failures and even when setup failed. A failing
+	// teardown command does not stop the rest, but marks the file failed.
+	Teardown TeardownCommands `yaml:"teardown,omitempty"`
+	// Shared declares fixture files written once per file into the shared
+	// directory; nil when the file has no shared block.
+	Shared *Shared `yaml:"shared,omitempty"`
+	Tests  []Test  `yaml:"tests"`
+}
+
+// CommandList is an ordered list of shell commands: the value shape of the
+// file-level setup and teardown keys. In YAML it is written as either a
+// single scalar string or a sequence of scalar strings. SetupCommands and
+// TeardownCommands wrap it so parse errors can name their key, mirroring how
+// ExitCode and Duration hardcode "exit" and "timeout" in their messages.
+type CommandList []string
+
+// SetupCommands is the file-level setup key: commands run once, in order,
+// before any of the file's tests.
+type SetupCommands CommandList
+
+func (s *SetupCommands) UnmarshalYAML(node *yaml.Node) error {
+	cmds, err := unmarshalCommandList(node, "setup")
+	if err != nil {
+		return err
+	}
+	*s = SetupCommands(cmds)
+	return nil
+}
+
+// TeardownCommands is the file-level teardown key: commands that always run
+// once, in order, after the file's tests.
+type TeardownCommands CommandList
+
+func (td *TeardownCommands) UnmarshalYAML(node *yaml.Node) error {
+	cmds, err := unmarshalCommandList(node, "teardown")
+	if err != nil {
+		return err
+	}
+	*td = TeardownCommands(cmds)
+	return nil
+}
+
+// unmarshalCommandList decodes the two accepted CommandList shapes, naming
+// key (setup or teardown) in every error.
+func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		// Only true strings are commands: yaml.v3 would happily coerce a
+		// bare 42 into "42", which could never be a meaningful command.
+		var cmd string
+		if node.Tag != "!!str" || node.Decode(&cmd) != nil {
+			return nil, fmt.Errorf("%s: command must be a string", key)
+		}
+		if strings.TrimSpace(cmd) == "" {
+			return nil, fmt.Errorf("%s: command must not be empty", key)
+		}
+		return CommandList{cmd}, nil
+	case yaml.SequenceNode:
+		if len(node.Content) == 0 {
+			return nil, fmt.Errorf("%s: must list at least one command", key)
+		}
+		cmds := make(CommandList, 0, len(node.Content))
+		for i, item := range node.Content {
+			var cmd string
+			if item.Kind != yaml.ScalarNode || item.Tag != "!!str" || item.Decode(&cmd) != nil {
+				return nil, fmt.Errorf("%s: command %d must be a string", key, i+1)
+			}
+			if strings.TrimSpace(cmd) == "" {
+				return nil, fmt.Errorf("%s: command %d must not be empty", key, i+1)
+			}
+			cmds = append(cmds, cmd)
+		}
+		return cmds, nil
+	}
+	return nil, fmt.Errorf("%s must be a command string or a list of command strings", key)
+}
+
+// Shared declares file-level fixture files, written once into the file's
+// shared directory before setup runs. Tests address them with {shared.X}
+// placeholders and should treat them as read-only.
+type Shared struct {
+	// Files maps file name to content. Contents go through {shared.X}
+	// placeholder expansion only; names must be local relative paths.
+	Files map[string]string `yaml:"files"`
 }
 
 // Test represents a single test case

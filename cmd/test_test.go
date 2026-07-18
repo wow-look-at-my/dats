@@ -54,6 +54,19 @@ func TestRunTestsFailure(t *testing.T) {
 	assert.Contains(t, out.String(), "not ok 1 - failing test")
 }
 
+func TestRunTestsTeardownFailure(t *testing.T) {
+	// A teardown failure fails the run (exit 1) even when every test passed.
+	datsFile := writeDats(t, "teardown.dats", `teardown: exit 1
+tests:
+  - cmd: echo hi
+`)
+
+	var out bytes.Buffer
+	err := runTests([]string{datsFile}, &out)
+	assert.ErrorIs(t, err, errTestsFailed)
+	assert.Contains(t, out.String(), "teardown failed")
+}
+
 func TestRunTestsMultipleFiles(t *testing.T) {
 	tmp := t.TempDir()
 	f1 := filepath.Join(tmp, "a.dats")

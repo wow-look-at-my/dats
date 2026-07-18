@@ -215,6 +215,176 @@ tests:
 	assert.Contains(t, err.Error(), `test 2: input file name "../evil.txt"`)
 }
 
+func TestParseFile_SetupTeardownSharedRoundtrip(t *testing.T) {
+	path := writeTempDats(t, `
+shared:
+  files:
+    config.json: '{"debug": true}'
+    sub/nested.txt: nested
+setup:
+  - mkdir output
+  - cp {shared.config.json} output/
+teardown: echo done
+tests:
+  - cmd: cat {shared.config.json}
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	assert.Equal(t, SetupCommands{"mkdir output", "cp {shared.config.json} output/"}, tf.Setup)
+	assert.Equal(t, TeardownCommands{"echo done"}, tf.Teardown)
+	require.NotNil(t, tf.Shared)
+	assert.Equal(t, map[string]string{
+		"config.json":    `{"debug": true}`,
+		"sub/nested.txt": "nested",
+	}, tf.Shared.Files)
+}
+
+func TestParseFile_SetupStringForm(t *testing.T) {
+	// A single scalar string is the one-command form of setup/teardown.
+	path := writeTempDats(t, `
+setup: echo one command
+teardown:
+  - echo first
+  - echo second
+tests:
+  - cmd: true
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	assert.Equal(t, SetupCommands{"echo one command"}, tf.Setup)
+	assert.Equal(t, TeardownCommands{"echo first", "echo second"}, tf.Teardown)
+}
+
+func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
+	// Backwards compatibility: files without setup/teardown/shared parse with
+	// all three absent.
+	path := writeTempDats(t, `
+tests:
+  - cmd: echo hi
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	assert.Nil(t, tf.Setup)
+	assert.Nil(t, tf.Teardown)
+	assert.Nil(t, tf.Shared)
+}
+
+func TestParseFile_CommandListRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"setup empty list": {`
+setup: []
+tests:
+  - cmd: true
+`, "setup: must list at least one command"},
+		"teardown empty list": {`
+teardown: []
+tests:
+  - cmd: true
+`, "teardown: must list at least one command"},
+		"setup blank string": {`
+setup: "   "
+tests:
+  - cmd: true
+`, "setup: command must not be empty"},
+		"setup numeric scalar": {`
+setup: 42
+tests:
+  - cmd: true
+`, "setup: command must be a string"},
+		"setup blank element": {`
+setup:
+  - echo ok
+  - "  "
+tests:
+  - cmd: true
+`, "setup: command 2 must not be empty"},
+		"setup sequence element": {`
+setup:
+  - echo ok
+  - [not, a, string]
+tests:
+  - cmd: true
+`, "setup: command 2 must be a string"},
+		"setup numeric element": {`
+setup:
+  - echo ok
+  - 42
+tests:
+  - cmd: true
+`, "setup: command 2 must be a string"},
+		"teardown map element": {`
+teardown:
+  - cmd: nope
+tests:
+  - cmd: true
+`, "teardown: command 1 must be a string"},
+		"setup map node": {`
+setup:
+  cmd: nope
+tests:
+  - cmd: true
+`, "setup must be a command string or a list of command strings"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParseFile_SharedRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"no files key": {`
+shared: {}
+tests:
+  - cmd: true
+`, "shared: must declare at least one file under files"},
+		"empty files": {`
+shared:
+  files: {}
+tests:
+  - cmd: true
+`, "shared: must declare at least one file under files"},
+		"traversal name": {`
+shared:
+  files:
+    ../evil.txt: pwned
+tests:
+  - cmd: true
+`, `shared file name "../evil.txt" must be a relative path that stays inside the shared directory`},
+		"absolute name": {`
+shared:
+  files:
+    /etc/evil.txt: pwned
+tests:
+  - cmd: true
+`, "must be a relative path that stays inside the shared directory"},
+		"unknown key under shared": {`
+shared:
+  files:
+    a.txt: content
+  bogus: true
+tests:
+  - cmd: true
+`, "not found"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestParseFile_NestedLocalFileNamesAllowed(t *testing.T) {
 	// Nested relative names like sub/file.txt are local and stay accepted.
 	path := writeTempDats(t, `
