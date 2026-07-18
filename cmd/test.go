@@ -39,6 +39,7 @@ func runTests(args []string, out io.Writer) error {
 
 	totalPassed := 0
 	totalFailed := 0
+	anyFailed := false
 
 	for _, path := range files {
 		result, err := r.RunFile(path)
@@ -47,6 +48,11 @@ func runTests(args []string, out io.Writer) error {
 		}
 		totalPassed += result.Passed
 		totalFailed += result.Failed
+		if !result.Ok() {
+			// Covers failing tests and teardown failures, which fail the
+			// file even when every test passed.
+			anyFailed = true
+		}
 	}
 
 	if len(files) > 1 {
@@ -57,7 +63,7 @@ func runTests(args []string, out io.Writer) error {
 		fmt.Fprintln(out)
 	}
 
-	if totalFailed > 0 {
+	if anyFailed {
 		return errTestsFailed
 	}
 

@@ -57,12 +57,24 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
 | `--keep-temp` | Global | Keep temp directory for debugging |
-| `--coverdir` | Global | Set GOCOVERDIR on executed commands to collect coverage data |
+| `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
 
 ## DATS File Format
 
 ```yaml
+# Optional file-level keys: shared fixture files written once per file,
+# setup command(s) run once before the tests, and teardown command(s) that
+# always run once after them (string or list form each).
+shared:
+  files:
+    config.json: |
+      {"debug": true}
+setup: cat {shared.config.json} > {shared.generated.txt}
+teardown:
+  - echo cleanup one
+  - echo cleanup two
+
 tests:
   # Simple command
   - desc: echo test
@@ -70,6 +82,13 @@ tests:
     outputs:
       stdout:
         - "Hello World"
+
+  # Shared fixtures are addressed with {shared.X} (read-only by convention)
+  - desc: reads a shared fixture
+    cmd: cat {shared.generated.txt}
+    outputs:
+      stdout:
+        - '"debug": true'
 
   # Command with input file
   - desc: cat reads file
@@ -159,16 +178,42 @@ tests:
   - desc: exit code variable
     exit: EXIT_SUCCESS
     cmd: true
+
+  # Matrix (parameterized) test: one instance per combination (this one runs
+  # 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
+  - desc: greets
+    cmd: echo "{matrix.greeting}, {matrix.name}!"
+    matrix:
+      greeting: [hello, howdy]
+      name: [alice, bob]
+    outputs:
+      stdout:
+        - "{matrix.greeting}, {matrix.name}!"
 ```
+
+### File-Level Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
+| `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
+| `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
+
+Setup and teardown are per-file barriers: a future parallel mode (`-j`) may
+run tests concurrently within and across files, but no test in a file starts
+before that file's setup completes, and teardown starts only after the file's
+last test finishes. Setup/teardown of different files may overlap in parallel
+mode — do not assume exclusive access to global resources.
 
 ### Test Properties
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
+| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths |
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats are rejected at parse time |
 | `timeout` | No | Per-test timeout: integer seconds (bare or quoted, e.g. `"5"`) or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout; floats are rejected (write `1.5s`, not `1.5`) |
+| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). Reference values as `{matrix.X}` in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs and reports as `desc [k=v, ...]` |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
 | `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
@@ -195,6 +240,13 @@ rejected at parse time, so `dats syntax` catches it). Nested names like
 
 ### Failure Reporting
 
+- A failing file-level `setup` command prints a loud file-level diagnostic
+  (command, exit status, captured output) and reports EVERY test in the file
+  as a failure with reason `file setup failed` — never as "skipped". Teardown
+  still runs.
+- A failing file-level `teardown` command prints the same style of diagnostic
+  and marks the file failed (exit 1) even when all tests passed; the summary
+  line gains a `teardown failed` annotation.
 - A command that exceeds its `timeout` has its whole process group killed
   (background children included) and fails with only `command timed out after
   X` — all other assertions are skipped, since checking partial output would
@@ -208,11 +260,16 @@ rejected at parse time, so `dats syntax` catches it). Nested names like
 
 ### Placeholder System
 
-Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}` and `{outputs.X}`, which expand to absolute paths in a temp directory:
+Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in a temp directory:
 - `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
 - `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `files` check required, as long as X is a local relative path; non-local names like `../x` or `/abs` are left as-is)
+- `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide, same locality rule as `{outputs.X}`)
 
-Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs, so it can write nested outputs directly.
+Setup commands, teardown commands, and `shared.files` contents expand only `{shared.X}`; the per-test `{inputs.X}`/`{outputs.X}` namespaces stay verbatim there. `inputs.stdin` is never expanded.
+
+`{matrix.X}` is a separate, earlier layer: it is text substitution (not a path), applied once per instance at expansion time — before any runtime expansion, and also in `desc`, `inputs.stdin`, and output patterns. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`, which then expand as usual at runtime; substituted text is never re-scanned for `{matrix.Y}`. Matrix placeholders are rejected at parse time in setup/teardown commands and `shared.files` contents (`not available outside tests`).
+
+Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs, so it can write nested outputs directly; the same goes for nested `shared.files` names.
 
 Commands run with `bash -c` in the working directory of the `dats` invocation; only fixture files live in the temp directory.
 

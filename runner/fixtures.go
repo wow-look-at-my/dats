@@ -13,7 +13,13 @@ import (
 var (
 	inputPlaceholderRe  = regexp.MustCompile(`\{inputs\.([^}]+)\}`)
 	outputPlaceholderRe = regexp.MustCompile(`\{outputs\.([^}]+)\}`)
+	sharedPlaceholderRe = regexp.MustCompile(`\{shared\.([^}]+)\}`)
 )
+
+// sharedDirName is the file-wide shared directory's name under the temp
+// directory: RunFile creates it there and {shared.X} placeholders resolve
+// into it, so the two must always agree.
+const sharedDirName = "shared"
 
 // TestContext holds the paths and context for a single test execution
 type TestContext struct {
@@ -22,6 +28,7 @@ type TestContext struct {
 	InputPaths  map[string]string // input name -> absolute path
 	OutputsDir  string            // Directory {outputs.X} placeholders resolve into
 	OutputPaths map[string]string // output name -> absolute path
+	SharedDir   string            // File-wide directory {shared.X} placeholders resolve into
 }
 
 // SetupFixtures creates fixture files for a test and returns the context.
@@ -61,6 +68,15 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	ctx.OutputsDir = filepath.Join(testDir, "outputs")
 	if err := os.MkdirAll(ctx.OutputsDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating output dir: %w", err)
+	}
+
+	// The file-wide shared directory sits alongside the per-test directories;
+	// {shared.X} placeholders resolve into it. RunFile creates it before
+	// setup runs, but it is ensured here too so the placeholders resolve to a
+	// writable path even when RunTest is driven directly.
+	ctx.SharedDir = filepath.Join(baseDir, sharedDirName)
+	if err := os.MkdirAll(ctx.SharedDir, 0755); err != nil {
+		return nil, fmt.Errorf("creating shared dir: %w", err)
 	}
 
 	// Pre-register the output paths named by `files` and `!files` checks so
@@ -107,12 +123,13 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	return ctx, nil
 }
 
-// ExpandPlaceholders replaces {inputs.X} and {outputs.X} with actual paths.
-// It is applied to the command and to input file contents. {inputs.X} for an
-// undeclared input X is left untouched; {outputs.X} resolves to a path under
-// the test's outputs directory as long as X stays inside it (non-local names
-// are left untouched). Text that is not a placeholder (any other brace
-// construct) passes through unchanged.
+// ExpandPlaceholders replaces {inputs.X}, {outputs.X}, and {shared.X} with
+// actual paths. It is applied to the command, to input file contents, and to
+// inputs.env values. {inputs.X} for an undeclared input X is left untouched;
+// {outputs.X} resolves to a path under the test's outputs directory as long
+// as X stays inside it (non-local names are left untouched); {shared.X}
+// resolves into the file-wide shared directory under the same rule. Text that
+// is not a placeholder (any other brace construct) passes through unchanged.
 func ExpandPlaceholders(s string, ctx *TestContext) string {
 	// Replace {inputs.X}
 	s = inputPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
@@ -137,7 +154,51 @@ func ExpandPlaceholders(s string, ctx *TestContext) string {
 		return match // No safe outputs path known for this placeholder
 	})
 
-	return s
+	// Replace {shared.X}: like {outputs.X}, the name needs no declaration and
+	// resolves into the file-wide shared directory as long as it stays local.
+	return ExpandSharedPlaceholders(s, ctx.SharedDir)
+}
+
+// ExpandSharedPlaceholders replaces only {shared.X} placeholders, resolving X
+// into sharedDir. It is the sole expansion applied to setup and teardown
+// commands and to shared file contents, where the per-test
+// {inputs.X}/{outputs.X} namespaces do not exist (those placeholders pass
+// through verbatim there). Like {outputs.X}, X needs no declaration but must
+// be a local relative name: traversal and absolute names are left untouched,
+// so a placeholder can never address a path outside the shared directory. An
+// empty sharedDir leaves every {shared.X} untouched.
+func ExpandSharedPlaceholders(s, sharedDir string) string {
+	return sharedPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
+		name := sharedPlaceholderRe.FindStringSubmatch(match)[1]
+		if sharedDir != "" && filepath.IsLocal(name) {
+			return filepath.Join(sharedDir, name)
+		}
+		return match // No safe shared path known for this placeholder
+	})
+}
+
+// SetupSharedFixtures writes the file-level shared fixture files into
+// sharedDir, in sorted name order. File names must be local relative paths
+// (ParseFile already enforces this; it is checked again here before anything
+// is written); parent directories of nested names are created. Contents go
+// through {shared.X} expansion only -- {inputs.X}/{outputs.X} are per-test
+// namespaces and stay verbatim.
+func SetupSharedFixtures(sharedDir string, files map[string]string) error {
+	for name := range files {
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("shared file name %q must be a relative path that stays inside the shared directory", name)
+		}
+	}
+	for _, name := range sortedStringKeys(files) {
+		path := filepath.Join(sharedDir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return fmt.Errorf("creating shared subdir: %w", err)
+		}
+		if err := os.WriteFile(path, []byte(ExpandSharedPlaceholders(files[name], sharedDir)), 0644); err != nil {
+			return fmt.Errorf("writing shared file %s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // Cleanup removes the fixture directory

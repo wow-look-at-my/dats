@@ -41,7 +41,7 @@ the current directory tree.
 |------|-------------|
 | `-v, --verbose` | Show command details, durations, and full output on failure |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
-| `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands to collect coverage data |
+| `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
 
 ## Examples

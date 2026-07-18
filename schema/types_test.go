@@ -9,6 +9,29 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func TestSetupCommands_UnmarshalYAML_Forms(t *testing.T) {
+	var single SetupCommands
+	require.Nil(t, yaml.Unmarshal([]byte("echo one"), &single))
+	assert.Equal(t, SetupCommands{"echo one"}, single)
+
+	var list SetupCommands
+	require.Nil(t, yaml.Unmarshal([]byte("- echo one\n- echo two\n"), &list))
+	assert.Equal(t, SetupCommands{"echo one", "echo two"}, list)
+}
+
+func TestTeardownCommands_UnmarshalYAML_ErrorsNameKey(t *testing.T) {
+	// The wrapper types exist so errors can name their key.
+	var td TeardownCommands
+	err := yaml.Unmarshal([]byte("[]"), &td)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "teardown: must list at least one command")
+
+	var s SetupCommands
+	err = yaml.Unmarshal([]byte("[]"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "setup: must list at least one command")
+}
+
 func TestExitCode_UnmarshalYAML_Int(t *testing.T) {
 	var e ExitCode
 	err := yaml.Unmarshal([]byte("42"), &e)

@@ -185,6 +185,85 @@ func TestExpandPlaceholdersUnregisteredOutput(t *testing.T) {
 	assert.Equal(t, "touch {outputs.new.txt}", result)
 }
 
+func TestExpandSharedPlaceholders(t *testing.T) {
+	assert.Equal(t, "cat /tmp/f/shared/config.json",
+		ExpandSharedPlaceholders("cat {shared.config.json}", "/tmp/f/shared"))
+	// Only {shared.X} expands: the per-test namespaces stay verbatim.
+	assert.Equal(t, "cat {inputs.a} {outputs.b}",
+		ExpandSharedPlaceholders("cat {inputs.a} {outputs.b}", "/tmp/f/shared"))
+	// Non-local names are left untouched.
+	assert.Equal(t, "cat {shared.../escape}",
+		ExpandSharedPlaceholders("cat {shared.../escape}", "/tmp/f/shared"))
+	assert.Equal(t, "cat {shared./abs}",
+		ExpandSharedPlaceholders("cat {shared./abs}", "/tmp/f/shared"))
+	// An empty sharedDir leaves everything untouched.
+	assert.Equal(t, "cat {shared.config.json}",
+		ExpandSharedPlaceholders("cat {shared.config.json}", ""))
+}
+
+func TestExpandPlaceholdersSharedNamespace(t *testing.T) {
+	ctx := &TestContext{SharedDir: "/tmp/f/shared"}
+	assert.Equal(t, "cat /tmp/f/shared/cfg.txt", ExpandPlaceholders("cat {shared.cfg.txt}", ctx))
+	// Non-local shared names stay verbatim in the per-test expansion too.
+	assert.Equal(t, "cat {shared.../escape}", ExpandPlaceholders("cat {shared.../escape}", ctx))
+}
+
+func TestSetupFixturesSetsSharedDir(t *testing.T) {
+	tmp := t.TempDir()
+	ctx, err := SetupFixtures(tmp, 0, &schema.Test{Cmd: "true"})
+	require.Nil(t, err)
+	assert.Equal(t, filepath.Join(tmp, "shared"), ctx.SharedDir)
+	// The shared directory exists so {shared.X} resolves to a writable path
+	// even when RunTest is driven directly.
+	info, err := os.Stat(ctx.SharedDir)
+	require.Nil(t, err)
+	assert.True(t, info.IsDir())
+}
+
+func TestSetupSharedFixtures(t *testing.T) {
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	files := map[string]string{
+		"config.json":  `{"debug": true}`,
+		"sub/deep.txt": "path: {shared.config.json}",
+	}
+	require.Nil(t, SetupSharedFixtures(sharedDir, files))
+
+	data, err := os.ReadFile(filepath.Join(sharedDir, "config.json"))
+	require.Nil(t, err)
+	assert.Equal(t, `{"debug": true}`, string(data))
+
+	// Nested parents are created; contents expand only {shared.X}.
+	data, err = os.ReadFile(filepath.Join(sharedDir, "sub", "deep.txt"))
+	require.Nil(t, err)
+	assert.Equal(t, "path: "+filepath.Join(sharedDir, "config.json"), string(data))
+}
+
+func TestSetupSharedFixturesLeavesTestNamespacesVerbatim(t *testing.T) {
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	require.Nil(t, SetupSharedFixtures(sharedDir, map[string]string{
+		"script.sh": "cp {inputs.a.txt} {outputs.b.txt}",
+	}))
+	data, err := os.ReadFile(filepath.Join(sharedDir, "script.sh"))
+	require.Nil(t, err)
+	assert.Equal(t, "cp {inputs.a.txt} {outputs.b.txt}", string(data))
+}
+
+func TestSetupSharedFixturesRejectsNonLocalNames(t *testing.T) {
+	tmp := t.TempDir()
+	sharedDir := filepath.Join(tmp, "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	for _, name := range []string{"../evil.txt", "/abs/evil.txt", ".."} {
+		err := SetupSharedFixtures(sharedDir, map[string]string{name: "pwned"})
+		require.NotNil(t, err, "shared name %q must be rejected", name)
+		assert.Contains(t, err.Error(), "must be a relative path that stays inside the shared directory")
+	}
+	// Nothing may be written at the escaped location.
+	_, statErr := os.Stat(filepath.Join(tmp, "evil.txt"))
+	assert.True(t, os.IsNotExist(statErr), "traversal shared file must not be written outside the shared directory")
+}
+
 func TestSetupFixturesRejectsTraversalInputName(t *testing.T) {
 	tmp := t.TempDir()
 	for _, name := range []string{"../../evil.txt", "/abs/evil.txt", ".."} {
