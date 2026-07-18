@@ -53,6 +53,27 @@ func ParseFile(path string) (*TestFile, error) {
 		}
 	}
 
+	// {matrix.X} belongs to a single test instance; setup and teardown
+	// commands and shared file contents run once per file, where no instance
+	// exists, so a matrix placeholder there can never resolve.
+	for i, cmd := range testFile.Setup {
+		if name, found := findMatrixPlaceholder(cmd); found {
+			return nil, fmt.Errorf("setup command %d: {matrix.%s} is not available outside tests", i+1, name)
+		}
+	}
+	for i, cmd := range testFile.Teardown {
+		if name, found := findMatrixPlaceholder(cmd); found {
+			return nil, fmt.Errorf("teardown command %d: {matrix.%s} is not available outside tests", i+1, name)
+		}
+	}
+	if testFile.Shared != nil {
+		for _, name := range sortedKeysOf(testFile.Shared.Files) {
+			if ref, found := findMatrixPlaceholder(testFile.Shared.Files[name]); found {
+				return nil, fmt.Errorf("shared file %q: {matrix.%s} is not available outside tests", name, ref)
+			}
+		}
+	}
+
 	for i, test := range testFile.Tests {
 		if test.Cmd == "" {
 			return nil, fmt.Errorf("test %d: missing required field 'cmd'", i+1)
@@ -74,6 +95,13 @@ func ParseFile(path string) (*TestFile, error) {
 			if !filepath.IsLocal(name) {
 				return nil, fmt.Errorf("test %d: output file name %q must be a relative path that stays inside the test directory", i+1, name)
 			}
+		}
+		// Every {matrix.X} reference in the test's substitution scope must
+		// name a variable declared by THIS test's matrix, so `dats syntax`
+		// catches typos without running anything. (Fixture file names and env
+		// var names are outside the scope and are not scanned.)
+		if err := validateMatrixRefs(&test); err != nil {
+			return nil, fmt.Errorf("test %d: %w", i+1, err)
 		}
 	}
 

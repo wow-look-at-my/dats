@@ -32,12 +32,14 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *
 	}
 }
 
-// RunFile runs all tests in a .dats file. Shared fixture files are written
-// and setup commands run first; then every test; then teardown commands,
-// which always run -- after test failures and even when setup failed. A
-// setup failure fails every test in the file (loudly; tests are never
-// reported as skipped), and a teardown failure marks the file failed even
-// when all tests passed.
+// RunFile runs all tests in a .dats file. Matrix tests are first expanded
+// into one instance per value combination -- every instance always runs;
+// there is no test filtering or selection. Shared fixture files are written
+// and setup commands run first; then every test instance; then teardown
+// commands, which always run -- after test failures and even when setup
+// failed. A setup failure fails every test instance in the file (loudly;
+// tests are never reported as skipped), and a teardown failure marks the
+// file failed even when all tests passed.
 func (r *Runner) RunFile(path string) (*FileResult, error) {
 	testFile, err := schema.ParseFile(path)
 	if err != nil {
@@ -62,11 +64,20 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		}
 	}
 
-	r.Formatter.PrintHeader(path, len(testFile.Tests))
+	// Expand every test into its matrix instances up front, so instance
+	// numbering, per-instance temp directories, the header's test count, the
+	// summary counts, and setup-failure reporting all operate on the expanded
+	// list. A file with a 2x2 matrix test and one plain test runs 5 tests.
+	instances := make([]schema.TestInstance, 0, len(testFile.Tests))
+	for i := range testFile.Tests {
+		instances = append(instances, schema.ExpandMatrix(&testFile.Tests[i])...)
+	}
+
+	r.Formatter.PrintHeader(path, len(instances))
 
 	result := &FileResult{
 		Path:    path,
-		Results: make([]TestResult, 0, len(testFile.Tests)),
+		Results: make([]TestResult, 0, len(instances)),
 	}
 
 	// The file's shared directory exists for the whole run (and is preserved
@@ -97,13 +108,13 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 	}
 
 	if result.SetupFailure != nil {
-		// Every test is reported as a normal failure -- loudly, never as
-		// "skipped" -- so the plan, the counts, and the exit code all stay
-		// consistent.
+		// Every test instance is reported as a normal failure -- loudly,
+		// never as "skipped" -- so the plan, the counts, and the exit code
+		// all stay consistent.
 		fmt.Fprintln(r.Formatter.Writer)
-		for i, test := range testFile.Tests {
+		for i := range instances {
 			testResult := TestResult{
-				Name:     testName(&test),
+				Name:     instanceName(&instances[i]),
 				Index:    i,
 				Failures: []string{"file setup failed"},
 			}
@@ -115,9 +126,11 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		if r.Verbose && len(testFile.Setup) > 0 {
 			fmt.Fprintln(r.Formatter.Writer)
 		}
-		// Run each test
-		for i, test := range testFile.Tests {
-			testResult := r.RunTest(&test, tempDir, i)
+		// Run each test instance; each gets its own test-<index> directory,
+		// so identical fixture names across matrix instances never collide.
+		for i := range instances {
+			testResult := r.RunTest(&instances[i].Test, tempDir, i)
+			testResult.Name = instanceName(&instances[i])
 			result.Results = append(result.Results, testResult)
 			r.Formatter.PrintResult(&testResult)
 
@@ -182,6 +195,18 @@ func testName(test *schema.Test) string {
 		return test.Desc
 	}
 	return test.Cmd
+}
+
+// instanceName returns the display name for an expanded test instance: the
+// instance's desc-or-cmd name (both already matrix-substituted) with the
+// matrix label appended, e.g. "greets [greeting=hello, name=alice]". The
+// label appears whether or not the test has a desc.
+func instanceName(instance *schema.TestInstance) string {
+	name := testName(&instance.Test)
+	if instance.Label != "" {
+		name += " " + instance.Label
+	}
+	return name
 }
 
 // RunTest runs a single test

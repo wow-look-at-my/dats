@@ -115,10 +115,14 @@ type Shared struct {
 
 // Test represents a single test case
 type Test struct {
-	Desc    string      `yaml:"desc,omitempty"`
-	Exit    ExitCode    `yaml:"exit"`
-	Cmd     string      `yaml:"cmd"`
-	Timeout Duration    `yaml:"timeout,omitempty"`
+	Desc    string   `yaml:"desc,omitempty"`
+	Exit    ExitCode `yaml:"exit"`
+	Cmd     string   `yaml:"cmd"`
+	Timeout Duration `yaml:"timeout,omitempty"`
+	// Matrix declares the test's parameter variables; when non-empty, the
+	// test expands into one instance per combination of values (see
+	// ExpandMatrix). Nil for ordinary tests.
+	Matrix  Matrix      `yaml:"matrix,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
 }
