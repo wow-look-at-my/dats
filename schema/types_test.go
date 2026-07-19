@@ -235,6 +235,69 @@ func TestOutputBlock_JSONOutput(t *testing.T) {
 	assert.False(t, oAbsent.HasJSONOutput())
 }
 
+func TestSnapshotCheck_UnmarshalYAML_Forms(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  SnapshotCheck
+	}{
+		{"scalar true snapshots stdout", "true", SnapshotCheck{Enabled: true, Stdout: true}},
+		{"scalar false is the zero value", "false", SnapshotCheck{}},
+		{"stderr only", "stderr: true", SnapshotCheck{Enabled: true, Stderr: true}},
+		{"stdout only", "stdout: true", SnapshotCheck{Enabled: true, Stdout: true}},
+		{"both streams", "stdout: true\nstderr: true", SnapshotCheck{Enabled: true, Stdout: true, Stderr: true}},
+		{"explicit false stream", "stdout: true\nstderr: false", SnapshotCheck{Enabled: true, Stdout: true}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var s SnapshotCheck
+			require.Nil(t, yaml.Unmarshal([]byte(tt.input), &s))
+			assert.Equal(t, tt.want, s)
+		})
+	}
+}
+
+func TestSnapshotCheck_UnmarshalYAML_Errors(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{"non-bool scalar", "banana", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
+		{"sequence", "[true]", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
+		// Iterating the mapping node directly bypasses yaml.v3's own
+		// duplicate-key detection, so the unmarshaler must catch this itself.
+		{"duplicate key", "stdout: true\nstdout: false", "snapshot: stdout declared more than once"},
+		{"unknown key", "files: true", `snapshot: unknown key "files" (allowed: stdout, stderr)`},
+		{"non-bool value", "stdout: 1", "snapshot: stdout must be a boolean"},
+		{"sequence value", "stderr: [true]", "snapshot: stderr must be a boolean"},
+		{"empty map", "{}", "snapshot: must enable at least one of stdout, stderr"},
+		{"single false stream", "stdout: false", "snapshot: must enable at least one of stdout, stderr"},
+		{"all-false map", "stdout: false\nstderr: false", "snapshot: must enable at least one of stdout, stderr"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var s SnapshotCheck
+			err := yaml.Unmarshal([]byte(tt.input), &s)
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+func TestOutputBlock_SnapshotAbsentAndNull(t *testing.T) {
+	// An omitted snapshot key stays the zero value...
+	var absent OutputBlock
+	require.Nil(t, yaml.Unmarshal([]byte("stdout:\n  - hi\n"), &absent))
+	assert.Equal(t, SnapshotCheck{}, absent.Snapshot)
+
+	// ...and so does an explicit null (yaml.v3 never invokes the unmarshaler
+	// for null nodes), matching how `matrix:` with explicit null is absent.
+	var null OutputBlock
+	require.Nil(t, yaml.Unmarshal([]byte("snapshot: null\n"), &null))
+	assert.Equal(t, SnapshotCheck{}, null.Snapshot)
+}
+
 func TestTestFile_UnmarshalYAML(t *testing.T) {
 	input := `
 tests:
