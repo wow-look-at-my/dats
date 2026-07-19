@@ -14,10 +14,8 @@ var rootCmd = &cobra.Command{
 	Use:   "dats",
 	Short: "Declarative Automated Testing System",
 	Long:  "DATS runs tests defined in declarative YAML files (.dats).",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTests(args, os.Stdout)
-	},
-	Args: cobra.ArbitraryArgs,
+	RunE:  runTestsCommand,
+	Args:  cobra.ArbitraryArgs,
 	// Errors are reported by Execute (or, for test/syntax failures, already
 	// reported by the runner output); cobra should not add usage dumps or a
 	// second error line.
@@ -30,6 +28,9 @@ var rootCmd = &cobra.Command{
 // their command's output, so they exit silently; any other error is printed
 // exactly once.
 func Execute() {
+	// Make-style -jN needs rewriting to --jobs=N before cobra parses the
+	// args; see normalizeJobsShorthand.
+	rootCmd.SetArgs(normalizeJobsShorthand(os.Args[1:]))
 	err := rootCmd.Execute()
 	if err == nil {
 		return
@@ -46,4 +47,5 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
 	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
+	registerJobsFlag(rootCmd.PersistentFlags())
 }

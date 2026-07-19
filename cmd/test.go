@@ -24,12 +24,23 @@ var testCmd = &cobra.Command{
 	Short: "Run tests from .dats files",
 	Long: `Run tests defined in .dats files. If no files are specified,
 recursively finds and runs all .dats files in the current directory tree.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return runTests(args, os.Stdout)
-	},
+	RunE: runTestsCommand,
 }
 
-func runTests(args []string, out io.Writer) error {
+// runTestsCommand is the shared RunE of the root command and the test
+// subcommand: it resolves the -j/--jobs flag and runs the given files.
+func runTestsCommand(cmd *cobra.Command, args []string) error {
+	jobs, err := resolveJobs(cmd.Flags())
+	if err != nil {
+		return err
+	}
+	return runTests(args, os.Stdout, jobs)
+}
+
+// runTests runs every resolved file: serially when jobs is 0 (the historical
+// code path, unchanged), or with up to jobs concurrently-running commands
+// when jobs >= 1. Both modes report identical totals and exit status.
+func runTests(args []string, out io.Writer, jobs int) error {
 	files, err := resolveFiles(args)
 	if err != nil {
 		return err
@@ -37,15 +48,28 @@ func runTests(args []string, out io.Writer) error {
 
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
 
+	var results []*runner.FileResult
+	if jobs > 0 {
+		results, err = r.RunFilesParallel(files, jobs)
+		if err != nil {
+			// Already carries the "running <path>:" context.
+			return err
+		}
+	} else {
+		for _, path := range files {
+			result, err := r.RunFile(path)
+			if err != nil {
+				return fmt.Errorf("running %s: %w", path, err)
+			}
+			results = append(results, result)
+		}
+	}
+
 	totalPassed := 0
 	totalFailed := 0
 	anyFailed := false
 
-	for _, path := range files {
-		result, err := r.RunFile(path)
-		if err != nil {
-			return fmt.Errorf("running %s: %w", path, err)
-		}
+	for _, result := range results {
 		totalPassed += result.Passed
 		totalFailed += result.Failed
 		if !result.Ok() {
