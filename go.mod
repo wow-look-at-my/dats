@@ -1,3 +1,3 @@
-module github.com/mhaynie/bats-declarative
+module github.com/wow-look-at-my/dats
 
 go 1.24.7

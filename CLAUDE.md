@@ -30,6 +30,9 @@ go test -cover ./...
 # Verbose mode (shows command details, full output on failure)
 ./build/dats -v examples/example.dats
 
+# Parallel execution (4 workers; bare -j = one per CPU; -j 4 does NOT bind)
+./build/dats -j4 examples/example.dats
+
 # Keep temp directory for debugging
 ./build/dats --keep-temp examples/example.dats
 ```
@@ -53,7 +56,11 @@ go test -cover ./...
   - `exec.go` - Command execution via bash, captures exit code and output
   - `fixtures.go` - Creates input files, expands `{inputs.X}` and `{outputs.X}` placeholders
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
-  - `output.go` - Result types (TestResult, FileResult) and TAP-like formatting
+  - `output.go` - Result types (TestResult, FileResult with SetupFailure/TeardownFailures + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `teardown failed` summary annotation)
+- `report/` - Machine-readable report rendering (public, importable by external modules)
+  - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
+  - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
+- `docs/` - Additional prose documentation (`reports.md` = report formats + stability contract); `schema.json` - JSON Schema for IDE validation
 
 ### Key Types (generated from XSD)
 - **Dats** - Root `<dats>` element containing `[]*Test`
@@ -70,9 +77,16 @@ XML provides a natural distinction between properties ON an object (attributes) 
 - **Children** = structured content within the test: `<stdin>`, `<input>`, `<stdout>`, `<output>`
 
 ### Placeholder System
-Commands use `{inputs.X}` and `{outputs.X}` which expand to absolute paths in the temp directory:
-- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt`
-- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt`
+Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in the temp directory:
+- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
+- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `outputs.files` check required, as long as X is a local relative path; non-local names are left as-is)
+- `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide directory shared by all tests; no declaration required, same locality rule as `{outputs.X}`)
+
+Setup commands, teardown commands, and `shared.files` contents expand ONLY `{shared.X}`; `{inputs.X}`/`{outputs.X}` stay verbatim there. `inputs.stdin` is never expanded.
+
+`{matrix.X}` is a separate, earlier layer: single-pass text substitution at instance-expansion time (before any runtime expansion), also reaching `desc`, `inputs.stdin`, output patterns, and json_output strings. Matrix values may contain other placeholders (expanded at runtime as usual); substituted text is never re-scanned. Matrix placeholders in setup/teardown/shared are parse errors (`not available outside tests`); fixture file NAMES and env var NAMES are never substituted.
+
+Fixture names (`inputs.files`, `outputs.files`, `outputs.!files`, `shared.files`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup). Nested names like `sub/file.txt` are allowed; parent directories of declared output files and of shared files are auto-created.
 
 ## DATS File Format
 

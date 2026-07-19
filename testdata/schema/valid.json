@@ -1,0 +1,130 @@
+{
+  "tests": [
+    {
+      "desc": "simple stdout patterns",
+      "cmd": "echo Hello World",
+      "exit": 0,
+      "outputs": {
+        "stdout": [
+          "Hello World"
+        ]
+      }
+    },
+    {
+      "desc": "inputs (stdin + files + env) and negated output",
+      "cmd": "cat {inputs.input.txt}",
+      "inputs": {
+        "stdin": "piped to stdin",
+        "files": {
+          "input.txt": "Hello, world!",
+          "sub/dir/nested.txt": "nested content"
+        },
+        "env": {
+          "MY_VAR": "hello",
+          "CONFIG_PATH": "{inputs.input.txt}"
+        }
+      },
+      "outputs": {
+        "stdout": [
+          "Hello, world!"
+        ],
+        "stderr": [],
+        "!stdout": [
+          "error",
+          "fail"
+        ],
+        "!stderr": [
+          "panic"
+        ]
+      }
+    },
+    {
+      "desc": "line-specific regex checks",
+      "cmd": "printf line0",
+      "outputs": {
+        "stdout": {
+          "0": "^line0$",
+          "2": "^line2$"
+        }
+      }
+    },
+    {
+      "desc": "output files and negated files (!files inverts: exists true = must NOT exist)",
+      "cmd": "echo data",
+      "outputs": {
+        "files": {
+          "out.txt": {
+            "exists": true,
+            "match": [
+              "data"
+            ],
+            "notMatch": [
+              "error"
+            ]
+          }
+        },
+        "!files": {
+          "missing.txt": {
+            "exists": true
+          }
+        }
+      }
+    },
+    {
+      "desc": "exit variable and integer timeout",
+      "cmd": "true",
+      "exit": "EXIT_SUCCESS",
+      "timeout": 5
+    },
+    {
+      "desc": "duration-string timeout",
+      "cmd": "true",
+      "timeout": "500ms"
+    },
+    {
+      "desc": "quoted integer exit code and quoted bare-integer timeout (seconds)",
+      "cmd": "exit 3",
+      "exit": "3",
+      "timeout": "5"
+    },
+    {
+      "desc": "empty file checks are implicit existence assertions (files: must exist, !files: must NOT exist); null is equivalent to {}",
+      "cmd": "echo data > {outputs.out.txt}",
+      "outputs": {
+        "files": {
+          "out.txt": {},
+          "out2.txt": null
+        },
+        "!files": {
+          "stray.txt": {}
+        }
+      }
+    },
+    {
+      "desc": "line-keyed negated checks and json_output",
+      "cmd": "mytool --json",
+      "exit": "EXIT_FAILURE",
+      "outputs": {
+        "!stdout": {
+          "0": "error",
+          "2": "^warning"
+        },
+        "!stderr": [
+          "panic"
+        ],
+        "json_output": {
+          "name": "dats",
+          "count": 2,
+          "tags": [
+            "a",
+            "b"
+          ],
+          "nested": {
+            "ok": true,
+            "note": null
+          }
+        }
+      }
+    }
+  ]
+}

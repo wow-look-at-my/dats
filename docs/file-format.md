@@ -2,13 +2,100 @@
 
 ## Root Structure
 
-A `.dats` file contains a single `tests` array:
+A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`,
+`setup`, and `teardown` keys:
 
 ```yaml
+shared:      # optional file-level fixture files
+setup:       # optional command(s) run once before the tests
+teardown:    # optional command(s) always run once after the tests
 tests:
   - # test 1
   - # test 2
 ```
+
+A file must contain exactly one YAML document. A second `---` document is a parse error
+(`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys
+anywhere in the file are also parse errors, so a misspelled field cannot silently disable its
+assertion.
+
+## File-Level Setup, Teardown, and Shared Fixtures
+
+Three optional top-level keys run commands and materialize fixture files once per **file**
+(backwards compatible for existing files — see
+[Backwards Compatibility](#backwards-compatibility) for the one caveat):
+
+```yaml
+shared:
+  files:
+    config.json: |
+      {"debug": true}
+
+setup: cat {shared.config.json} > {shared.generated.txt}   # a single string...
+
+teardown:                                                  # ...or a list of strings
+  - first cleanup command
+  - second cleanup command
+
+tests:
+  - cmd: cat {shared.generated.txt}
+```
+
+`setup` and `teardown` each accept either a single command string or a sequence of command
+strings; blank commands, non-string entries, and empty lists are parse errors
+(`setup: must list at least one command`). `shared` must declare at least one file under
+`files` (`shared: must declare at least one file under files`); the file names follow the
+same locality rule as `inputs.files` names — relative paths that stay inside the shared
+directory, nested names like `sub/file.txt` allowed.
+
+### `{shared.X}` Placeholders
+
+`{shared.<filename>}` expands to a path under the file's `shared/` directory, e.g.
+`/tmp/dats-xxxxxx/shared/<filename>`. Like `{outputs.X}`, the name does not need to be
+declared — any **local relative** name resolves, and a non-local name (one containing `..` or
+an absolute path) is left verbatim, so a placeholder can never address a path outside the
+shared directory.
+
+`{shared.X}` expands everywhere `{inputs.X}`/`{outputs.X}` already expand: the command,
+`inputs.files` contents, and `inputs.env` values (`inputs.stdin` stays unexpanded, as
+always). It additionally expands — as the **only** namespace — in setup commands, teardown
+commands, and `shared.files` contents; `{inputs.X}` and `{outputs.X}` are per-test
+namespaces and pass through verbatim there.
+
+### Execution Order and Failure Semantics
+
+Per file, the runner:
+
+1. Creates the `shared/` directory (alongside the per-test directories; preserved by
+   `--keep-temp`).
+2. Writes the `shared.files` fixtures into it.
+3. Runs the `setup` commands in declared order — through the same `bash -c` path as test
+   commands, in the working directory of the `dats` invocation, with the inherited
+   environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, so
+   coverage captures hook invocations of an instrumented binary too), no stdin, and no
+   timeout, capturing stdout and stderr. Teardown commands run the same way.
+4. Runs the tests.
+5. Always runs **all** `teardown` commands in declared order — after the tests, after test
+   failures, and even when setup failed. One failing teardown command does not stop the
+   rest. (Teardown does not apply to files that fail to parse: nothing ran.)
+
+If a setup command fails (non-zero exit or signal death), the remaining setup commands are
+skipped, the file's tests do **not** run, and every test is reported as a normal failure
+with reason `file setup failed` — loudly, never as "skipped" — after a file-level diagnostic
+naming the failing command, its exit status, and its captured output. The run exits 1.
+
+If a teardown command fails, a file-level diagnostic is printed and the **file** is marked
+failed — the run exits 1 even when every test passed — with the summary line annotated
+`teardown failed`. Individual test lines stay as they ran.
+
+### Concurrency Contract
+
+Setup and teardown are per-file barriers: a future parallel mode (`-j`) may run tests
+concurrently within and across files, but no test in a file starts before that file's setup
+completes, and teardown starts only after the file's last test finishes. Tests should treat
+the shared directory as **read-only**; tests that mutate shared state are undefined under
+parallelism. Setup/teardown of different files may overlap in parallel mode — do not assume
+exclusive access to global resources.
 
 ## Test Object
 
@@ -19,7 +106,9 @@ Each test has these fields:
 | `cmd` | string | Yes | - | Command to execute |
 | `desc` | string | No | Value of `cmd` | Test description/name |
 | `exit` | int or string | No | `0` | Expected exit code |
-| `inputs` | object | No | - | Stdin and input files |
+| `timeout` | int or string | No | none | Per-test timeout (seconds or duration string) |
+| `matrix` | object | No | - | Parameter variables expanding the test into one instance per combination — see [Matrix (Parameterized) Tests](#matrix-parameterized-tests) |
+| `inputs` | object | No | - | Stdin, input files, and environment variables |
 | `outputs` | object | No | - | Output validations |
 
 ### Minimal Test
@@ -35,11 +124,14 @@ tests:
 tests:
   - desc: comprehensive example
     exit: 0
+    timeout: 5s
     cmd: process {inputs.data.txt} -o {outputs.result.txt}
     inputs:
       stdin: "optional stdin content"
       files:
         data.txt: "input file content"
+      env:
+        PROCESS_MODE: strict
     outputs:
       stdout:
         - "pattern to match"
@@ -56,13 +148,155 @@ tests:
 
 ---
 
+## Matrix (Parameterized) Tests
+
+A test may declare `matrix:` — a mapping of variable name to a list of scalar values —
+expanding the test into one instance per **combination** of values (cartesian product):
+
+```yaml
+tests:
+  - desc: greets
+    cmd: echo "{matrix.greeting}, {matrix.name}!"
+    matrix:
+      greeting: [hello, howdy]
+      name: [alice, bob]
+    outputs:
+      stdout:
+        - "{matrix.greeting}, {matrix.name}!"
+```
+
+This runs as 4 tests. **Every instance always runs** — dats has no test filtering or
+selection by design; the expanded list IS the plan, and a matrix test cannot run "some"
+of its combinations.
+
+### Expansion Order and Instance Names
+
+Expansion is deterministic: variables keep their **declaration order**, and the **last**
+declared variable varies **fastest**. The example above produces, in order:
+
+```
+ok 1 - greets [greeting=hello, name=alice]
+ok 2 - greets [greeting=hello, name=bob]
+ok 3 - greets [greeting=howdy, name=alice]
+ok 4 - greets [greeting=howdy, name=bob]
+```
+
+Each instance's reported name is the test's `desc` (or its `cmd`, after substitution,
+when no desc is set) followed by the label ` [k=v, k2=v2]` — assignments in declaration
+order. The label appears on every reported line, including single-value matrices
+(`[k=v]`) and the `file setup failed` lines when file-level setup fails, so a failing
+instance is always identifiable. Instances count as ordinary tests everywhere: the
+file header's `(N tests)`, the summary counts, and the exit code all see the expanded
+list, and each instance gets its own private `test-<index>/` fixture directory
+(identical fixture names across instances never collide).
+
+### Variables and Values
+
+Variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Each variable lists at least one
+**scalar** value — string, number, or boolean. A value is substituted as its literal
+YAML text: `1.50` stays `1.50` (never reformatted), `true` stays `true`, and a quoted
+string contributes its content. Because values are compared after this stringification,
+`[1.50, "1.50"]` is a duplicate — and duplicates, which could only produce
+byte-identical instances, are parse errors.
+
+### Substitution Scope
+
+`{matrix.X}` substitutes into exactly these strings of the declaring test:
+
+- `desc`
+- `cmd`
+- `inputs.stdin`
+- `inputs.files` **contents** (values)
+- `inputs.env` **values**
+- every output pattern string: `stdout`, `stderr`, `!stdout`, `!stderr` in both the
+  list and line-map forms, and `files`/`!files` `match`/`notMatch` entries
+- every **string** scalar inside `json_output` — keys and values (non-string scalars
+  like numbers and booleans are untouched, so substitution cannot change a value's
+  JSON type)
+
+NOT substituted (always literal): fixture file **names** (the keys under
+`inputs.files`, `outputs.files`, `outputs.!files`), env var **names**, `exit`,
+`timeout`, and the `matrix` block itself. A file name containing `{matrix.x}` is not a
+reference — it is a (strange) literal file name.
+
+### Layering with `{inputs.X}`/`{outputs.X}`/`{shared.X}`
+
+Matrix substitution is a separate, earlier layer: it happens once per instance at
+expansion time, before any runtime placeholder expansion. That is why `inputs.stdin`
+gets matrix substitution even though it never gets runtime expansion. A matrix value
+may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}` — after substitution the
+text behaves like any other text in that position, expanding where those namespaces
+normally expand:
+
+```yaml
+tests:
+  - desc: reads the file the matrix names
+    cmd: cat {matrix.path}
+    matrix:
+      path: ["{shared.config.json}"]
+```
+
+Substitution is a **single pass**: substituted text is never re-scanned, so a matrix
+value containing a literal `{matrix.y}` stays literal — it is not expanded again.
+
+### Strict Errors
+
+All of these are parse errors (so `dats syntax` catches them without running anything):
+
+| Problem | Error |
+|---------|-------|
+| `matrix:` present but empty (`{}`) | `matrix must declare at least one variable` |
+| `matrix:` not a mapping | `matrix must be a mapping of variable names to value lists` |
+| Bad variable name | `matrix variable name "bad-name" must match ^[A-Za-z_][A-Za-z0-9_]*$` |
+| Variable declared twice | `matrix variable "x" declared more than once` |
+| Value not a sequence | `matrix variable "x" must list its values as a sequence` |
+| Empty value list | `matrix variable "x" must list at least one value` |
+| Non-scalar value (mapping/sequence/null) | `matrix variable "x" value 2: values must be scalar strings, numbers, or booleans` |
+| Duplicate value (post-stringification) | `matrix variable "x" lists duplicate value "1.50"` |
+| Reference to an undeclared variable | `test 1: {matrix.nope} is not a declared matrix variable (declared: greeting, name)` |
+| `{matrix.X}` in a test with no matrix | `test 1: {matrix.x} is used but the test declares no matrix` |
+| Empty reference `{matrix.}` | `test 1: {matrix.} must name a matrix variable` |
+| `{matrix.X}` in a setup/teardown command | `setup command 1: {matrix.x} is not available outside tests` |
+| `{matrix.X}` in `shared.files` contents | `shared file "config.json": {matrix.x} is not available outside tests` |
+
+The reference check scans exactly the substitution scope above: every `{matrix.X}`
+there must name a variable declared by **that** test's matrix. Setup and teardown
+commands and shared file contents run once per file, where no matrix instance exists,
+so matrix placeholders are rejected there even when some test declares the variable.
+`matrix:` with an explicit null value is treated as an absent key (like `shared:`).
+
+---
+
+## Backwards Compatibility
+
+Files that use none of the new keys (`shared`, `setup`, `teardown`, `matrix`) parse and
+behave identically, with one caveat: literal text shaped like the two new placeholder
+namespaces changes meaning.
+
+- `{shared.<name>}` with a local relative `<name>` previously passed through as literal
+  text; it now expands to a path under the file's `shared/` directory wherever
+  placeholders expand (`cmd`, `inputs.files` contents, `inputs.env` values).
+- `{matrix.<name>}` anywhere in the matrix substitution scope is now validated: in a
+  test without a `matrix` block it is a parse error (`test N: {matrix.<name>} is used
+  but the test declares no matrix`). Such a file previously ran with the text kept
+  literal.
+
+Text that only *resembles* a placeholder without being one — a non-local name like
+`{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`),
+or any other brace construct — still passes through verbatim.
+
+---
+
 ## Command Field (`cmd`)
 
-The command supports placeholders for input and output files:
+The command is run with `bash -c` in the working directory of the `dats` invocation (the
+runner does not change directory). Fixture files live in a fresh per-run temp directory and
+are addressed by absolute path through placeholders:
 
 ### Input Placeholders
 
-`{inputs.<filename>}` expands to the path of an input fixture file.
+`{inputs.<filename>}` expands to the absolute path of an input fixture file, e.g.
+`/tmp/dats-xxxxxx/test-<index>/inputs/<filename>`.
 
 ```yaml
 inputs:
@@ -71,11 +305,19 @@ inputs:
 cmd: cat {inputs.data.txt}
 ```
 
-Generates: `cat "$BATS_TEST_DIRNAME/fixtures/<basename>/<index>/inputs/data.txt"`
-
 ### Output Placeholders
 
-`{outputs.<filename>}` expands to a path where the command should write output.
+`{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the
+command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path
+is provided; the command is responsible for creating the file. The name does not need to
+appear under `outputs.files` — any **local relative** name resolves. A non-local name (one
+containing `..` or an absolute path, e.g. `{outputs.../escape}`) is left verbatim, so a
+placeholder can never address a path outside the test directory.
+
+Names that DO appear under `files`/`!files` get their parent directories created before the
+command runs, so a command can write a declared nested output like
+`{outputs.sub/report.txt}` directly. For undeclared nested names, the command must create the
+intermediate directories itself.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -85,7 +327,10 @@ outputs:
       exists: true
 ```
 
-Generates: `process -o "$BATS_TEST_DIRNAME/fixtures/<basename>/<index>/outputs/result.bin"`
+### Shared Placeholders
+
+`{shared.<filename>}` expands to a path under the file-wide `shared/` directory — see
+[File-Level Setup, Teardown, and Shared Fixtures](#file-level-setup-teardown-and-shared-fixtures).
 
 ### Multiple Placeholders
 
@@ -93,32 +338,95 @@ Generates: `process -o "$BATS_TEST_DIRNAME/fixtures/<basename>/<index>/outputs/r
 cmd: diff {inputs.a.txt} {inputs.b.txt} > {outputs.diff.txt}
 ```
 
+### Placeholders in Input File Contents
+
+The same expansion is applied to the contents of `inputs.files`, so a fixture (e.g. a script
+or program the command runs) can reference other input paths and output paths:
+
+```yaml
+inputs:
+  files:
+    script.sh: 'cp {inputs.data.txt} {outputs.copy.txt}'
+    data.txt: "content"
+cmd: bash {inputs.script.sh}
+outputs:
+  files:
+    copy.txt:
+      match:
+        - "content"
+```
+
+`{inputs.<name>}` for a name not declared under `inputs.files` is left untouched (in both the
+command and file contents), as is any other brace construct.
+
 ---
 
 ## Exit Code Field (`exit`)
 
 ### Integer Values (0-255)
 
+Bare and quoted integers are equivalent; the 0-255 range is enforced either way:
+
 ```yaml
 exit: 0      # success
 exit: 1      # generic failure
 exit: 127    # command not found
+exit: "3"    # quoted integer, same as 3
 ```
+
+Floats are rejected at parse time (`exit: 1.5` is an error, as is an integral float like
+`2.0`) — an exit code is always an integer.
 
 ### Variable Names
 
-Must match pattern `^EXIT_[A-Z_]+$`:
+Exactly two names are recognized (any other `EXIT_*` name is rejected at parse time, since the
+runner could never resolve it):
 
-```yaml
-exit: EXIT_SUCCESS   # expands to $EXIT_SUCCESS
-exit: EXIT_FAILURE   # expands to $EXIT_FAILURE
-```
-
-Built-in variables defined in `runtime/test_helper.bash`:
 - `EXIT_SUCCESS` = 0
 - `EXIT_FAILURE` = 1
 
-You can define additional variables in your own helper file.
+```yaml
+exit: EXIT_SUCCESS
+exit: EXIT_FAILURE
+```
+
+### Signal Deaths
+
+A command terminated by a signal has no normal exit code; it surfaces as `-1` with the signal
+named in the failure message:
+
+```
+# expected exit code 0, got -1 (killed by signal: killed)
+```
+
+---
+
+## Timeout Field (`timeout`)
+
+Bounds how long the command may run. Accepts an integer number of seconds (bare or quoted — a
+quoted bare integer like `"5"` also means seconds) or a Go duration string. `0` or an omitted
+field means no timeout.
+
+```yaml
+timeout: 5       # 5 seconds
+timeout: "5"     # quoted integer, also 5 seconds
+timeout: 500ms   # 500 milliseconds
+timeout: 1m30s   # 90 seconds
+```
+
+Floats are rejected at parse time — `timeout: 0.9` is an error, not 0 seconds; write
+fractional seconds as a duration string like `900ms` or `1.5s`.
+
+When the deadline elapses, the command's **whole process group** is killed — background
+children included, not just the direct `bash` process. The test then fails with only a
+`command timed out after <duration>` message; every other assertion is skipped, since checking
+partial output or missing files would bury the real cause under secondary failures. The
+stdout/stderr captured before the kill are still shown in verbose mode.
+
+A command that leaves orphaned background processes holding its stdout/stderr open cannot
+block the runner indefinitely: the pipes are force-closed about 1 second after the main
+process exits (timeout or not). Output written by such stragglers after that point is not
+captured.
 
 ---
 
@@ -132,11 +440,13 @@ inputs:
     another.txt: |
       multi-line
       content
+  env:
+    MY_VAR: "value"
 ```
 
 ### `stdin`
 
-Content piped to the command via bash here-string (`<<<`):
+Content piped to the command's standard input.
 
 ```yaml
 inputs:
@@ -144,11 +454,17 @@ inputs:
 cmd: grep hello
 ```
 
-Generates: `run bash -c "grep hello" <<< $'hello world'`
-
 ### `files`
 
-Map of filename to content. Creates fixture files before test runs:
+Map of filename to content. Each file is created before the test runs; reference it in the
+command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported.
+Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see
+[Placeholders in Input File Contents](#placeholders-in-input-file-contents).
+
+File names must be relative paths that stay inside the test directory — `..` traversal and
+absolute paths are rejected at parse time (so `dats syntax` catches them) and again at
+fixture-setup time. The same rule applies to the names under `outputs.files` and
+`outputs.!files`.
 
 ```yaml
 inputs:
@@ -158,7 +474,25 @@ inputs:
     data.csv: "a,b,c"
 ```
 
-Reference these files in the command with `{inputs.<filename>}`.
+### `env`
+
+Map of environment variable name to value. The variables are **added** to the environment the
+command inherits from `dats` (they do not replace it), appended in sorted key order so runs
+are deterministic. Values go through the same `{inputs.X}`/`{outputs.X}` placeholder expansion
+as the command, so a variable can carry a fixture's absolute path:
+
+```yaml
+inputs:
+  files:
+    cfg.json: '{"mode": "test"}'
+  env:
+    MY_VAR: hello
+    CONFIG_PATH: "{inputs.cfg.json}"
+cmd: 'echo "$MY_VAR"; cat "$CONFIG_PATH"'
+```
+
+With `--coverdir`, `GOCOVERDIR` is appended after the test's variables, so the flag wins even
+over a test's own `GOCOVERDIR` entry.
 
 ---
 
@@ -166,16 +500,19 @@ Reference these files in the command with `{inputs.<filename>}`.
 
 ```yaml
 outputs:
-  stdout:        # patterns that MUST appear
-  stderr:        # patterns that MUST appear
-  "!stdout":     # patterns that must NOT appear
-  "!stderr":     # patterns that must NOT appear
+  stdout:        # patterns that MUST appear (or line-number map)
+  stderr:        # patterns that MUST appear (or line-number map)
+  "!stdout":     # patterns that must NOT appear (or line-number map)
+  "!stderr":     # patterns that must NOT appear (or line-number map)
   files:         # output file checks
+  "!files":      # negated output file checks
+  json_output:   # expected JSON value of the whole stdout
 ```
 
 ### Pattern Lists
 
-Match patterns anywhere in output:
+A list of **literal substrings**, each of which must appear somewhere in the output. They are
+not regexes — metacharacters have no special meaning:
 
 ```yaml
 outputs:
@@ -184,15 +521,11 @@ outputs:
     - "another pattern"
 ```
 
-Generates:
-```bash
-assert_output --partial $'expected text'
-assert_output --partial $'another pattern'
-```
-
 ### Line-Specific Checks
 
-Use integer keys (0-indexed) with regex patterns:
+Use integer keys (0-indexed) with Go/RE2 regex values. Each regex is searched **unanchored**
+within its line — use `^...$` to pin the whole line. Addressing a line the output does not
+have fails the test (empty output has zero lines):
 
 ```yaml
 outputs:
@@ -202,18 +535,15 @@ outputs:
     5: "pattern on line 6"
 ```
 
-Generates:
-```bash
-assert_line --index 0 --regexp $'^first line$'
-assert_line --index 2 --regexp $'^third line$'
-assert_line --index 5 --regexp $'pattern on line 6'
-```
+Line keys must be unique, non-negative integers: a duplicate line number (including different
+spellings such as `0` and `00`) and a negative line number are both parse errors.
 
-**Note**: You cannot mix pattern lists and line-specific checks in the same block. Use one format or the other.
+**Note**: You cannot mix pattern lists and line-specific checks in the same block. Use one
+format or the other.
 
 ### Negated Output Checks
 
-`!stdout` and `!stderr` assert patterns do NOT appear:
+`!stdout` and `!stderr` assert substring patterns do NOT appear:
 
 ```yaml
 outputs:
@@ -224,10 +554,15 @@ outputs:
     - "warning"
 ```
 
-Generates:
-```bash
-refute_output --partial $'error'
-refute_output --partial $'failed'
+Like the positive checks, negated checks also accept the line-specific map form. Each regex
+must NOT match (unanchored search) within the given 0-indexed line. A line that does not
+exist passes — there is nothing there to match:
+
+```yaml
+outputs:
+  "!stdout":
+    0: "error"        # line 0 must not contain "error"
+    2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
 ```
 
 ---
@@ -248,23 +583,89 @@ outputs:
         - "should not contain"
 ```
 
+File names must be relative paths that stay inside the test directory (`..` and absolute
+paths are rejected at parse time). Nested names like `sub/report.txt` are allowed; parent
+directories of every file declared under `files`/`!files` are created before the command
+runs. When several file checks fail, the failures are reported in sorted-by-name order.
+
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `exists` | boolean | Whether the file should exist |
-| `match` | string[] | Regex patterns that must appear (uses `grep -qE`) |
-| `notMatch` | string[] | Regex patterns that must NOT appear |
+| `match` | string[] | Regex patterns that must match the file's contents |
+| `notMatch` | string[] | Regex patterns that must NOT match the file's contents |
 
-### Negative File Checks
+### Empty Checks Are Implicit Existence Assertions
 
-Use `!files` to assert files do NOT exist:
+A check with none of the three fields — written `{}` or left null — asserts existence rather
+than passing vacuously. Under `files` the file must exist; under `!files` it must NOT exist:
+
+```yaml
+outputs:
+  files:
+    out.txt: {}       # out.txt must exist
+    log.txt:          # null value, same meaning: log.txt must exist
+  "!files":
+    stray.txt: {}     # stray.txt must NOT exist
+```
+
+### Negated File Checks (`!files`)
+
+`!files` accepts the same `exists`/`match`/`notMatch` fields as `files`, but asserts the
+NEGATION of each check:
+
+| Field | `files` meaning | `!files` meaning |
+|-------|-----------------|------------------|
+| `exists: true` | file must exist | file must NOT exist |
+| `exists: false` | file must NOT exist | file must exist |
+| `match: [p]` | contents must match `p` | contents must NOT match `p` (a missing file passes) |
+| `notMatch: [p]` | contents must NOT match `p` (a missing file passes) | contents must match `p` (a missing file fails) |
+
+The common use is asserting that a file must NOT exist or must NOT contain something:
 
 ```yaml
 outputs:
   "!files":
     error.log:
-      exists: false
+      exists: true        # error.log must NOT exist
+    report.txt:
+      match:
+        - "FAILED"        # report.txt must NOT contain FAILED
+```
+
+---
+
+## JSON Output (`json_output`)
+
+`json_output` asserts that the whole stdout is a single JSON value that deep-equals the given
+value:
+
+```yaml
+tests:
+  - desc: emits the expected JSON document
+    cmd: mytool --json
+    outputs:
+      json_output:
+        name: dats
+        count: 2
+        tags: [a, b]
+```
+
+Comparison rules:
+
+- Object keys are **order-insensitive**; arrays are **order-sensitive**.
+- Numbers compare by value (`2` equals `2.0`).
+- The expected value may be any JSON value — object, array, string, number, bool, or `null`
+  (`json_output: null` asserts stdout is exactly the JSON `null`).
+- Stdout must contain exactly one JSON value (trailing whitespace is fine, trailing data is
+  not). Non-JSON stdout fails the assertion.
+
+On mismatch the failure lists each difference with its JSONPath-style location:
+
+```
+# json_output: at $.tokens[3].kind: expected "Ident", got "Keyword"
+# json_output: at $: missing key "eof" (expected true)
 ```
 
 ---
@@ -272,25 +673,38 @@ outputs:
 ## Complete Field Reference
 
 ```yaml
+shared:                    # optional file-level fixtures
+  files:
+    <name>: string         # filename: content ({shared.X} placeholders expanded)
+setup: string|[]           # optional; command(s) run once before the tests
+teardown: string|[]        # optional; command(s) always run once after the tests
 tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0
+    timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
     cmd: string            # required
+    matrix:                # optional; expands the test into one instance per combination
+      <name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
     inputs:
       stdin: string        # optional
       files:               # optional
         <name>: string     # filename: content
+      env:                 # optional
+        <name>: string     # env var: value (placeholders expanded)
     outputs:
       stdout: []|{}        # pattern list or line checks
       stderr: []|{}        # pattern list or line checks
       "!stdout": []|{}     # negated patterns
       "!stderr": []|{}     # negated patterns
       files:
-        <name>:
+        <name>:            # empty check ({}/null) = must exist
           exists: bool
           match: []
           notMatch: []
       "!files":
-        <name>:
+        <name>:            # empty check ({}/null) = must NOT exist
           exists: bool
+          match: []
+          notMatch: []
+      json_output: any     # expected JSON value of the whole stdout
 ```

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mhaynie/bats-declarative/internal/schema"
+	"github.com/wow-look-at-my/dats/schema"
 )
 
 // AssertContains checks if pattern appears as a substring in text
@@ -42,6 +42,25 @@ func AssertLineRegex(lines []string, lineNum int, pattern string) error {
 	return nil
 }
 
+// RefuteLineRegex checks that the given regex does NOT match within line
+// lineNum. A line that does not exist passes: there is nothing there to
+// match. An invalid regex is always an error, even for a nonexistent line.
+func RefuteLineRegex(lines []string, lineNum int, pattern string) error {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid regex %q: %w", pattern, err)
+	}
+
+	if lineNum < 0 || lineNum >= len(lines) {
+		return nil
+	}
+
+	if re.MatchString(lines[lineNum]) {
+		return fmt.Errorf("line %d: expected to NOT match %q, got %q", lineNum, pattern, lines[lineNum])
+	}
+	return nil
+}
+
 // AssertExitCode checks if the actual exit code matches expected
 func AssertExitCode(actual int, expected *schema.ExitCode) error {
 	if expected == nil {
@@ -72,18 +91,29 @@ func AssertExitCode(actual int, expected *schema.ExitCode) error {
 
 // AssertFileExists checks that a file exists
 func AssertFileExists(path string) error {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return nil
+	}
+	if os.IsNotExist(err) {
 		return fmt.Errorf("expected file %q to exist", path)
 	}
-	return nil
+	// Any other stat error (symlink loop, permissions, ...) is a real
+	// failure, not a silent pass
+	return fmt.Errorf("could not stat file %q: %v", path, err)
 }
 
 // RefuteFileExists checks that a file does NOT exist
 func RefuteFileExists(path string) error {
-	if _, err := os.Stat(path); err == nil {
+	_, err := os.Stat(path)
+	if err == nil {
 		return fmt.Errorf("expected file %q to NOT exist", path)
 	}
-	return nil
+	if os.IsNotExist(err) {
+		return nil
+	}
+	// Any other stat error means absence cannot be verified
+	return fmt.Errorf("could not stat file %q: %v", path, err)
 }
 
 // AssertFileContains checks if file contains all given patterns
@@ -111,9 +141,14 @@ func AssertFileContains(path string, patterns []string) []error {
 // RefuteFileContains checks that file does NOT contain any of the given patterns
 func RefuteFileContains(path string, patterns []string) []error {
 	content, err := os.ReadFile(path)
-	if err != nil {
-		// File doesn't exist - that's fine for refute
+	if os.IsNotExist(err) {
+		// File doesn't exist - nothing can match, so the refutation holds
 		return nil
+	}
+	if err != nil {
+		// Any other read error (a directory, permissions, ...) is a real
+		// failure, not a vacuous pass
+		return []error{fmt.Errorf("could not read file %q: %w", path, err)}
 	}
 
 	text := string(content)
