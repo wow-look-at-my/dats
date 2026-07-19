@@ -4,6 +4,7 @@
 
 ```
 dats [test] [files-or-dirs...] [flags]
+dats watch [files-or-dirs...] [flags]
 dats syntax [files-or-dirs...] [flags]
 dats version
 ```
@@ -17,6 +18,7 @@ the current directory tree.
 | Command | Description |
 |---------|-------------|
 | `test` | Run tests from the given `.dats` files or directories. This is the default action, so `dats file.dats` and `dats test file.dats` are equivalent. |
+| `watch` | Run tests like `test`, then keep watching the resolved files and re-run the complete argument scope on every change (see [Watch Mode](#watch-mode-dats-watch)). |
 | `syntax` | Parse and validate `.dats` files without executing any tests. Accepts the same file/directory arguments. |
 | `version` | Print a one-line `dats <version>` (also available as the `--version` flag). |
 
@@ -74,6 +76,9 @@ dats --report-json report.json tests/
 
 # Rewrite snapshot golden files from actual output
 dats --update tests/
+
+# Watch mode: run everything, then re-run on file changes (Ctrl-C to exit)
+dats watch tests/
 
 # Keep the temp directory to inspect fixtures/outputs
 dats --keep-temp test.dats
@@ -193,6 +198,78 @@ Updated 3 golden file(s), pruned 1 stale
   pruned, and an emptied snapshot directory is removed. Non-`.golden` files are never
   touched.
 - `dats syntax` accepts `--update` but ignores it — nothing runs, so nothing is updated.
+
+## Watch Mode (dats watch)
+
+`dats watch [files-or-dirs...]` resolves the same targets as `dats test`, runs them, then
+keeps watching and re-runs on every relevant change:
+
+```bash
+dats watch demo.dats     # one file
+dats watch tests/        # a directory tree
+dats watch               # everything under the current directory
+```
+
+### What is watched
+
+- The **resolved `.dats` files** (via their parent directories, so editors that save by
+  rename-replace still trigger).
+- Each resolved file's **`.snapshots/` golden directory** (when it exists) — goldens are
+  test inputs, so editing one re-runs.
+- Every **directory argument** (and the current directory in no-arg mode), recursively —
+  with the same hidden-directory skip rules as discovery — so newly created `.dats` files
+  and new subdirectories are picked up and join the scope.
+
+Changes are **debounced** (250ms after the last event), so an editor's save burst causes
+one re-run; changes landing while a run is in flight coalesce into exactly one follow-up
+run. Chmod-only events are ignored.
+
+### The complete scope re-runs, every time
+
+Each re-run executes the **complete original argument scope**, never a subset. dats has no
+test filtering or selection by design — every instance always runs — and `watch` adds no
+narrowing flags. The obvious alternative (re-running only the changed file) was considered
+and rejected: it is test selection through the back door, and cross-file signals like the
+combined total would silently stop covering the scope you asked for. Runs are cheap and
+complete beats clever.
+
+A run that fails — including a `.dats` file made temporarily unparseable mid-edit — never
+kills the watch: the error is reported and watching continues; fixing the file triggers
+the next run.
+
+### Terminal UX
+
+- On a TTY, the screen is cleared before every run; otherwise runs are separated by a
+  `----------------------------------------` line (except before the first).
+- Every run starts with `# watch: run N at HH:MM:SS`, suffixed ` (initial)` on the first
+  run or ` (changed: <up to 3 paths>, +K more)` afterwards, and ends with
+  `# watch: waiting for changes (Ctrl-C to exit)`.
+
+### Exiting
+
+Ctrl-C (or SIGTERM) prints `# watch: interrupted, exiting` and **exits 0** — watch's exit
+code never reflects test outcomes. If a run is in flight, the in-flight commands' whole
+process groups are killed promptly, the interrupted file's `teardown` still runs (the
+always-runs contract holds even here), and the aborted run's outcome is discarded.
+
+### Composing with other flags
+
+`watch` inherits every flag and adds none:
+
+- `-v`, `-j` — verbose and parallel runs behave exactly as under `dats test`.
+- `--report-junit`/`--report-json` — the report files are rewritten after every run; report
+  writes never retrigger the watcher, even when the report lives inside a watched
+  directory.
+- `--update` — every run rewrites stale goldens. While `--update` is set, golden-file
+  changes do not trigger runs (the run itself writes goldens, so reacting would
+  self-retrigger — and a re-run would be a no-op anyway, since goldens are rewritten from
+  actual output).
+
+### Caveat
+
+Watching relies on OS filesystem notifications (fsnotify). Network and remote filesystems
+(NFS, SMB, some container mounts) may not deliver change events — on such mounts, edits
+may not trigger re-runs.
 
 ## Output
 

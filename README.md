@@ -37,6 +37,9 @@ dats --report-json report.json test tests/
 # Rewrite snapshot golden files from actual output (see outputs.snapshot)
 dats --update test tests/
 
+# Watch mode: run everything, then re-run the complete scope on file changes
+dats watch tests/
+
 # Keep temp directory for debugging
 dats test --keep-temp tests.dats
 
@@ -60,6 +63,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Command | Description |
 |---------|-------------|
 | `test` | Run tests from `.dats` files or directories (default when no subcommand given) |
+| `watch` | Run tests, then re-run the **complete** argument scope whenever the resolved `.dats` files, their `.snapshots/` golden dirs, or directory arguments change (debounced; no per-file re-run — dats has no test filtering by design). Ctrl-C exits 0. See [docs/cli.md](docs/cli.md#watch-mode-dats-watch) |
 | `syntax` | Validate `.dats` file syntax without executing tests |
 | `version` | Print a one-line `dats <version>` |
 
