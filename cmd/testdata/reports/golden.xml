@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="11" failures="7" time="X">
+  <testsuite name="a-pass.dats" tests="2" failures="0" time="X">
+    <testcase classname="a-pass.dats" name="greets alice [who=alice]" time="X"></testcase>
+    <testcase classname="a-pass.dats" name="greets bob [who=bob]" time="X"></testcase>
+  </testsuite>
+  <testsuite name="b-fail.dats" tests="3" failures="2" time="X">
+    <testcase classname="b-fail.dats" name="multi-assert failure" time="X">
+      <failure message="expected exit code 0, got 3">expected exit code 0, got 3&#xA;stdout: expected output to contain &#34;wanted-one&#34;&#xA;stdout: expected output to contain &#34;wanted-two&#34;</failure>
+      <system-out>real-out</system-out>
+      <system-err>real-err</system-err>
+    </testcase>
+    <testcase classname="b-fail.dats" name="still passes" time="X"></testcase>
+    <testcase classname="b-fail.dats" name="wrong file content" time="X">
+      <failure message="file result.txt: file &#34;TMPDIR/test-2/outputs/result.txt&#34;: expected to match &#34;different&#34;">file result.txt: file &#34;TMPDIR/test-2/outputs/result.txt&#34;: expected to match &#34;different&#34;</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="c-setupfail.dats" tests="3" failures="3" time="X">
+    <testcase classname="c-setupfail.dats" name="[setup]">
+      <failure message="exit code 7">command: echo setup-out; echo setup-err &gt;&amp;2; exit 7&#xA;exit code 7</failure>
+      <system-out>setup-out&#xA;</system-out>
+      <system-err>setup-err&#xA;</system-err>
+    </testcase>
+    <testcase classname="c-setupfail.dats" name="never runs" time="X">
+      <failure message="file setup failed">file setup failed</failure>
+    </testcase>
+    <testcase classname="c-setupfail.dats" name="also never runs" time="X">
+      <failure message="file setup failed">file setup failed</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="d-teardownfail.dats" tests="3" failures="2" time="X">
+    <testcase classname="d-teardownfail.dats" name="passes fine" time="X"></testcase>
+    <testcase classname="d-teardownfail.dats" name="[teardown] #1">
+      <failure message="exit code 4">command: echo cleanup-out; exit 4&#xA;exit code 4</failure>
+      <system-out>cleanup-out&#xA;</system-out>
+    </testcase>
+    <testcase classname="d-teardownfail.dats" name="[teardown] #2">
+      <failure message="exit code 5">command: echo cleanup-err &gt;&amp;2; exit 5&#xA;exit code 5</failure>
+      <system-err>cleanup-err&#xA;</system-err>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -1,25 +1,92 @@
 # DATS - Declarative Automated Testing System
 
-A Go CLI that converts declarative YAML test definitions into [BATS](https://github.com/bats-core/bats-core) (Bash Automated Testing System) test files.
+A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
 ## Installation
 
 ```bash
-just build
-just install  # symlinks to ~/.local/bin/dats
+just build          # Build the dats binary to build/dats
+just install        # Symlink binary to ~/.local/bin/dats
 ```
 
 ## Usage
 
 ```bash
-dats tests.dats output/
+# Run test files (positional args or via 'test' subcommand)
+dats tests.dats
+dats test tests.dats
+
+# Run all .dats files in a directory (recursively)
+dats test tests/
+
+# Run all .dats files in the current directory tree
+dats test
+
+# Verbose mode (shows command details, full output on failure)
+dats -v test tests.dats
+
+# Parallel execution: 4 workers, or one per CPU with bare -j
+# (attach the value: -j4/-j=4/--jobs=4 — "-j 4" does NOT bind the 4)
+dats -j4 test tests/
+dats -j test tests/
+
+# Machine-readable reports for CI/editors (written even when the run fails)
+dats --report-junit report.xml test tests/
+dats --report-json report.json test tests/
+
+# Keep temp directory for debugging
+dats test --keep-temp tests.dats
+
+# Validate .dats file syntax without running tests
+dats syntax tests.dats
+
+# Validate all .dats files in current directory tree
+dats syntax
+
+# Print the version
+dats version
 ```
 
-This generates `output/tests.gen.bats` which can be run with `bats output/*.gen.bats`.
+Both `test` and `syntax` accept any mix of `.dats` files and directories.
+Directory arguments and no-arg discovery recurse the tree, skipping hidden
+directories and hidden `.dats` files (leading `.`); explicitly named files are
+always accepted. Repeated arguments are deduplicated by absolute path.
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `test` | Run tests from `.dats` files or directories (default when no subcommand given) |
+| `syntax` | Validate `.dats` file syntax without executing tests |
+| `version` | Print a one-line `dats <version>` |
+
+### Flags
+
+| Flag | Scope | Description |
+|------|-------|-------------|
+| `-v, --verbose` | Global | Show verbose output |
+| `-j, --jobs[=N]` | Global | Run test commands in parallel with N workers (bare `-j` = one per CPU; attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make). Spawned commands run at low OS priority (unix nice 19, best-effort). Default (flag absent) is fully serial — unchanged. Output stays byte-identical to a serial run when outcomes are equal; see [docs/cli.md](docs/cli.md) |
+| `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
+| `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
+| `--keep-temp` | Global | Keep temp directory for debugging |
+| `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
+| `--version` | Root | Print `dats <version>` (same output as `dats version`) |
 
 ## DATS File Format
 
 ```yaml
+# Optional file-level keys: shared fixture files written once per file,
+# setup command(s) run once before the tests, and teardown command(s) that
+# always run once after them (string or list form each).
+shared:
+  files:
+    config.json: |
+      {"debug": true}
+setup: cat {shared.config.json} > {shared.generated.txt}
+teardown:
+  - echo cleanup one
+  - echo cleanup two
+
 tests:
   # Simple command
   - desc: echo test
@@ -28,11 +95,19 @@ tests:
       stdout:
         - "Hello World"
 
+  # Shared fixtures are addressed with {shared.X} (read-only by convention)
+  - desc: reads a shared fixture
+    cmd: cat {shared.generated.txt}
+    outputs:
+      stdout:
+        - '"debug": true'
+
   # Command with input file
   - desc: cat reads file
     inputs:
-      input.txt: |
-        Hello, world!
+      files:
+        input.txt: |
+          Hello, world!
     cmd: cat {inputs.input.txt}
     outputs:
       stdout:
@@ -40,16 +115,29 @@ tests:
 
   # Command with stdin
   - desc: cat reads stdin
-    stdin: "Hello from stdin"
+    inputs:
+      stdin: "Hello from stdin"
     cmd: cat
     outputs:
       stdout:
         - "Hello from stdin"
 
+  # Per-test environment variables (added to the inherited environment;
+  # values go through placeholder expansion)
+  - desc: env var visible to command
+    inputs:
+      env:
+        MY_VAR: hello
+    cmd: echo "$MY_VAR"
+    outputs:
+      stdout:
+        - "hello"
+
   # Expected non-zero exit
   - desc: grep returns 1 when not found
     exit: 1
-    stdin: "hello world"
+    inputs:
+      stdin: "hello world"
     cmd: grep -q "notfound"
 
   # Line-specific assertions (0-indexed)
@@ -70,37 +158,136 @@ tests:
         - "error"
         - "fail"
 
+  # Output file validation
+  - desc: creates output file
+    cmd: echo "result" > {outputs.result.txt}
+    outputs:
+      files:
+        result.txt:
+          exists: true
+          match:
+            - "result"
+          notMatch:
+            - "error"
+
+  # Negated output file (each check inverted: exists true = must NOT exist)
+  - desc: no stray file
+    cmd: echo nothing
+    outputs:
+      "!files":
+        unexpected.txt:
+          exists: true
+
+  # Per-test timeout (integer seconds or a Go duration string)
+  - desc: must finish quickly
+    cmd: echo fast
+    timeout: 2s
+    outputs:
+      stdout:
+        - "fast"
+
   # Exit code variables
   - desc: exit code variable
     exit: EXIT_SUCCESS
     cmd: true
+
+  # Matrix (parameterized) test: one instance per combination (this one runs
+  # 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
+  - desc: greets
+    cmd: echo "{matrix.greeting}, {matrix.name}!"
+    matrix:
+      greeting: [hello, howdy]
+      name: [alice, bob]
+    outputs:
+      stdout:
+        - "{matrix.greeting}, {matrix.name}!"
 ```
+
+### File-Level Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
+| `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
+| `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
+
+Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
+concurrently within and across files, but no test in a file starts before
+that file's setup completes, and teardown starts only after the file's last
+test finishes. Setup/teardown of different files may overlap in parallel
+mode — do not assume exclusive access to global resources.
 
 ### Test Properties
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
-| `desc` | No | Optional description for the test |
-| `exit` | No | Expected exit code (default: 0). Can be int or `EXIT_*` variable |
-| `stdin` | No | Content piped to command's stdin |
-| `inputs` | No | Map of filename to content - creates fixture files |
-| `outputs` | No | Validation block for stdout, stderr, and output files |
+| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths |
+| `desc` | No | Description for the test (used in output) |
+| `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats are rejected at parse time |
+| `timeout` | No | Per-test timeout: integer seconds (bare or quoted, e.g. `"5"`) or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout; floats are rejected (write `1.5s`, not `1.5`) |
+| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). Reference values as `{matrix.X}` in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs and reports as `desc [k=v, ...]` |
+| `inputs.stdin` | No | Content piped to command's stdin |
+| `inputs.files` | No | Map of filename → content (creates fixture files) |
+| `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
+| `outputs.stdout` | No | Patterns to match in stdout |
+| `outputs.stderr` | No | Patterns to match in stderr |
+| `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
+| `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
+| `outputs.files` | No | Map of filename → FileCheck for output file validation; an empty check (`{}` or null) means "must exist" |
+| `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist; empty check = must NOT exist) |
+| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
+
+File names under `inputs.files`, `outputs.files`, and `outputs.!files` must be
+relative paths that stay inside the test directory (no `..` or absolute paths;
+rejected at parse time, so `dats syntax` catches it). Nested names like
+`sub/file.txt` are allowed.
 
 ### Output Assertions
 
-- `stdout` / `stderr` - List of patterns to match, or map of line numbers to regex patterns
-- `!stdout` / `!stderr` - Patterns that must NOT appear
-- Other keys are treated as output file checks with `exists` and `contains` properties
+- `stdout` / `stderr` - List of patterns to match (substring), or map of line numbers (0-indexed) to regex patterns
+- `!stdout` / `!stderr` - Patterns that must NOT appear in output (list of substrings, or map of 0-indexed line numbers to regexes that must not match within that line)
+- `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match); an empty check is an implicit "must exist"
+- `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match; an empty check is an implicit "must NOT exist"
+- `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
-## VS Code Extension
+### Failure Reporting
 
-Provides syntax highlighting and schema validation for `.dats` files.
+- A failing file-level `setup` command prints a loud file-level diagnostic
+  (command, exit status, captured output) and reports EVERY test in the file
+  as a failure with reason `file setup failed` — never as "skipped". Teardown
+  still runs.
+- A failing file-level `teardown` command prints the same style of diagnostic
+  and marks the file failed (exit 1) even when all tests passed; the summary
+  line gains a `teardown failed` annotation.
+- A command that exceeds its `timeout` has its whole process group killed
+  (background children included) and fails with only `command timed out after
+  X` — all other assertions are skipped, since checking partial output would
+  bury the real cause. Captured stdout/stderr are still shown in verbose mode.
+- A command killed by a signal names it in the exit-code failure, e.g.
+  `expected exit code 0, got -1 (killed by signal: killed)`.
+- Multiple failing file checks report in sorted-by-name order.
+- Commands that leave orphaned background processes holding stdout/stderr do
+  not block the runner: the pipes are force-closed about 1 second after the
+  main process exits, and anything stragglers write after that is not captured.
 
-```bash
-just vscode::build           # builds to build/dats.vsix
-code --install-extension build/dats.vsix
-```
+### Placeholder System
+
+Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in a temp directory:
+- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
+- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `files` check required, as long as X is a local relative path; non-local names like `../x` or `/abs` are left as-is)
+- `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide, same locality rule as `{outputs.X}`)
+
+Setup commands, teardown commands, and `shared.files` contents expand only `{shared.X}`; the per-test `{inputs.X}`/`{outputs.X}` namespaces stay verbatim there. `inputs.stdin` is never expanded.
+
+`{matrix.X}` is a separate, earlier layer: it is text substitution (not a path), applied once per instance at expansion time — before any runtime expansion, and also in `desc`, `inputs.stdin`, and output patterns. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`, which then expand as usual at runtime; substituted text is never re-scanned for `{matrix.Y}`. Matrix placeholders are rejected at parse time in setup/teardown commands and `shared.files` contents (`not available outside tests`).
+
+Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs, so it can write nested outputs directly; the same goes for nested `shared.files` names.
+
+Commands run with `bash -c` in the working directory of the `dats` invocation; only fixture files live in the temp directory.
+
+## JSON Schema
+
+`schema.json` provides IDE validation for `.dats` files. Can be used with YAML language servers.
 
 ## License
 

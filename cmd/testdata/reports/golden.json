@@ -1,0 +1,149 @@
+{
+  "format_version": 1,
+  "ok": false,
+  "summary": {
+    "files": 4,
+    "tests": 8,
+    "passed": 4,
+    "failed": 4,
+    "wall_seconds": 0
+  },
+  "files": [
+    {
+      "path": "a-pass.dats",
+      "ok": true,
+      "duration_seconds": 0,
+      "setup_failure": null,
+      "teardown_failures": [],
+      "tests": [
+        {
+          "name": "greets alice [who=alice]",
+          "index": 1,
+          "ok": true,
+          "duration_seconds": 0,
+          "failures": [],
+          "command": "echo \"hi alice\""
+        },
+        {
+          "name": "greets bob [who=bob]",
+          "index": 2,
+          "ok": true,
+          "duration_seconds": 0,
+          "failures": [],
+          "command": "echo \"hi bob\""
+        }
+      ]
+    },
+    {
+      "path": "b-fail.dats",
+      "ok": false,
+      "duration_seconds": 0,
+      "setup_failure": null,
+      "teardown_failures": [],
+      "tests": [
+        {
+          "name": "multi-assert failure",
+          "index": 1,
+          "ok": false,
+          "duration_seconds": 0,
+          "failures": [
+            "expected exit code 0, got 3",
+            "stdout: expected output to contain \"wanted-one\"",
+            "stdout: expected output to contain \"wanted-two\""
+          ],
+          "command": "printf 'real-out'; printf 'real-err' >&2; exit 3",
+          "stdout": "real-out",
+          "stderr": "real-err"
+        },
+        {
+          "name": "still passes",
+          "index": 2,
+          "ok": true,
+          "duration_seconds": 0,
+          "failures": [],
+          "command": "echo fine"
+        },
+        {
+          "name": "wrong file content",
+          "index": 3,
+          "ok": false,
+          "duration_seconds": 0,
+          "failures": [
+            "file result.txt: file \"TMPDIR/test-2/outputs/result.txt\": expected to match \"different\""
+          ],
+          "command": "printf data > TMPDIR/test-2/outputs/result.txt",
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "path": "c-setupfail.dats",
+      "ok": false,
+      "duration_seconds": 0,
+      "setup_failure": {
+        "command": "echo setup-out; echo setup-err >&2; exit 7",
+        "detail": "exit code 7",
+        "stdout": "setup-out\n",
+        "stderr": "setup-err\n"
+      },
+      "teardown_failures": [],
+      "tests": [
+        {
+          "name": "never runs",
+          "index": 1,
+          "ok": false,
+          "duration_seconds": 0,
+          "failures": [
+            "file setup failed"
+          ],
+          "command": "",
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "name": "also never runs",
+          "index": 2,
+          "ok": false,
+          "duration_seconds": 0,
+          "failures": [
+            "file setup failed"
+          ],
+          "command": "",
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "path": "d-teardownfail.dats",
+      "ok": false,
+      "duration_seconds": 0,
+      "setup_failure": null,
+      "teardown_failures": [
+        {
+          "command": "echo cleanup-out; exit 4",
+          "detail": "exit code 4",
+          "stdout": "cleanup-out\n",
+          "stderr": ""
+        },
+        {
+          "command": "echo cleanup-err >&2; exit 5",
+          "detail": "exit code 5",
+          "stdout": "",
+          "stderr": "cleanup-err\n"
+        }
+      ],
+      "tests": [
+        {
+          "name": "passes fine",
+          "index": 1,
+          "ok": true,
+          "duration_seconds": 0,
+          "failures": [],
+          "command": "echo ok"
+        }
+      ]
+    }
+  ]
+}
