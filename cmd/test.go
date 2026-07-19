@@ -48,6 +48,7 @@ func runTests(args []string, out io.Writer, jobs int) error {
 	}
 
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
+	r.Update = updateGoldens
 
 	// Wall time of the execution phase, consumed only by the report files;
 	// stdout output never mentions it. Hard errors below abort the run
@@ -93,6 +94,25 @@ func runTests(args []string, out io.Writer, jobs int) error {
 			fmt.Fprintf(out, ", %d failed", totalFailed)
 		}
 		fmt.Fprintln(out)
+	}
+
+	// Under --update, summarize the golden churn (writes and prunes were
+	// already listed per file). Silent when nothing changed.
+	if updateGoldens {
+		updated, pruned := 0, 0
+		for _, result := range results {
+			for i := range result.Results {
+				updated += len(result.Results[i].UpdatedGoldens)
+			}
+			pruned += len(result.PrunedGoldens)
+		}
+		if updated+pruned > 0 {
+			fmt.Fprintf(out, "\nUpdated %d golden file(s)", updated)
+			if pruned > 0 {
+				fmt.Fprintf(out, ", pruned %d stale", pruned)
+			}
+			fmt.Fprintln(out)
+		}
 	}
 
 	// Reports are written whenever the run executed -- especially when tests

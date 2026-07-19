@@ -17,6 +17,9 @@ type Runner struct {
 	KeepTemp  bool   // Keep temp directory for debugging
 	CoverDir  string // Directory for GOCOVERDIR coverage data
 	Formatter *Formatter
+	// Update rewrites snapshot golden files from actual output instead of
+	// failing mismatches, and prunes stale goldens (the --update flag).
+	Update bool
 
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
@@ -134,9 +137,12 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		}
 		// Run each test instance; each gets its own test-<index> directory,
 		// so identical fixture names across matrix instances never collide.
+		// Snapshot assertions apply after the instance name is set -- the
+		// golden file name derives from it.
 		for i := range instances {
 			testResult := r.RunTest(&instances[i].Test, tempDir, i)
 			testResult.Name = instanceName(&instances[i])
+			r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
 			result.Results = append(result.Results, testResult)
 			r.Formatter.PrintResult(&testResult)
 
@@ -146,6 +152,14 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 				result.Failed++
 			}
 		}
+	}
+
+	// Under --update, stale golden files (instances or streams that no
+	// longer exist) are pruned after the instance loop -- but never after a
+	// setup failure, when nothing ran and nothing is authoritative.
+	if r.Update && result.SetupFailure == nil {
+		r.pruneStaleGoldens(result, instances, path)
+		r.Formatter.PrintPrunedGoldens(result)
 	}
 
 	// Teardown always runs: in declared order, after test failures, and even
@@ -289,6 +303,11 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		result.Duration = time.Since(start)
 		return result
 	}
+
+	// Every early return above skipped this line, so snapshot assertions
+	// (applied by the caller) run exactly when the command ran to
+	// completion.
+	result.ranToCompletion = true
 
 	// Check exit code
 	if err := AssertExitCode(execResult.ExitCode, test.Exit); err != nil {

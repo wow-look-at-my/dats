@@ -72,11 +72,13 @@ func (r *Runner) RunFilesParallel(paths []string, jobs int) ([]*FileResult, erro
 			defer wg.Done()
 			// Each file gets its own runner writing to its own buffer so
 			// concurrent files never interleave output; everything else
-			// (verbosity, temp handling, coverage) matches the parent.
+			// (verbosity, temp handling, coverage, golden updating) matches
+			// the parent.
 			fileRunner := &Runner{
 				Verbose:     r.Verbose,
 				KeepTemp:    r.KeepTemp,
 				CoverDir:    r.CoverDir,
+				Update:      r.Update,
 				Formatter:   &Formatter{Writer: &buffers[i], Verbose: r.Verbose},
 				lowPriority: true,
 			}
@@ -187,8 +189,10 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 		}
 		// Launch every instance; the shared global pool bounds how many run
 		// at once across all files. Each writes only its own slice element,
-		// its own test-<index> directory, and (by convention, read-only) the
-		// file's shared directory.
+		// its own test-<index> directory, its own (per-instance unique)
+		// golden files, and (by convention, read-only) the file's shared
+		// directory. Snapshot assertions apply after the instance name is
+		// set -- the golden file name derives from it.
 		instanceResults := make([]TestResult, len(instances))
 		var wg sync.WaitGroup
 		for i := range instances {
@@ -199,6 +203,7 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 				defer pool.release()
 				testResult := r.RunTest(&instances[i].Test, tempDir, i)
 				testResult.Name = instanceName(&instances[i])
+				r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
 				instanceResults[i] = testResult
 			}(i)
 		}
@@ -214,6 +219,13 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 				result.Failed++
 			}
 		}
+	}
+
+	// Identical to serial: under --update, stale goldens are pruned after
+	// the instance loop, never after a setup failure.
+	if r.Update && result.SetupFailure == nil {
+		r.pruneStaleGoldens(result, instances, path)
+		r.Formatter.PrintPrunedGoldens(result)
 	}
 
 	// Teardown always runs -- in declared order, sequentially, after every

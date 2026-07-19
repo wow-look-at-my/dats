@@ -21,6 +21,14 @@ var (
 // into it, so the two must always agree.
 const sharedDirName = "shared"
 
+// testDirPath returns the per-instance test directory under baseDir for the
+// given expanded-instance index. SetupFixtures builds the fixture tree there
+// and NormalizeSnapshotText replaces the same path with {testdir}, so the
+// two must always agree.
+func testDirPath(baseDir string, testIndex int) string {
+	return filepath.Join(baseDir, fmt.Sprintf("test-%d", testIndex))
+}
+
 // TestContext holds the paths and context for a single test execution
 type TestContext struct {
 	BaseDir     string            // Temp directory for this test file
@@ -60,7 +68,7 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 		}
 	}
 
-	testDir := filepath.Join(baseDir, fmt.Sprintf("test-%d", testIndex))
+	testDir := testDirPath(baseDir, testIndex)
 
 	// The outputs directory always exists so that every {outputs.X}
 	// placeholder resolves to a writable path, whether or not a files
