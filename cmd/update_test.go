@@ -116,6 +116,19 @@ func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "dats syntax must not touch goldens")
 }
 
+// TestExampleSnapshotGoldensInSync guards the committed example goldens:
+// examples/snapshot.dats must pass against examples/snapshot.snapshots/ as
+// checked in. Regenerate with `dats --update examples/snapshot.dats` if the
+// example legitimately changed.
+func TestExampleSnapshotGoldensInSync(t *testing.T) {
+	example := filepath.Join("..", "examples", "snapshot.dats")
+	setUpdateFlag(t, false)
+
+	var out bytes.Buffer
+	require.Nil(t, runTests([]string{example}, &out, 0), "output:\n%s", out.String())
+	assert.Contains(t, out.String(), "6/6 passed")
+}
+
 func TestReportsIncludeSnapshotFailures(t *testing.T) {
 	// A snapshot failure is an ordinary assertion failure to the report
 	// writers: it appears in the JSON failures list and the JUnit failure

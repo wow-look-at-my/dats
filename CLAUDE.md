@@ -44,7 +44,7 @@ go test -cover ./...
 3. Per file: a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test instance in the file — reported as failures, never "skipped" — but teardown still runs)
 4. For each test instance, fixtures are set up in a temp directory
 5. Command is executed via `bash -c` with placeholder expansion
-6. Exit code, stdout, stderr, and output files are validated against assertions
+6. Exit code, stdout, stderr, and output files are validated against assertions; `outputs.snapshot` additionally byte-compares captured streams against golden files in `<file>.snapshots/` next to the .dats file (temp paths normalized to `{testdir}`/`{shareddir}`/`{tmproot}` tokens), and `--update` rewrites those goldens from actual output (never from an instance with other failures) and prunes stale ones
 7. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
 8. Results are printed in TAP-like format
 9. With `-j`/`--jobs` (jobs mode) the same per-file semantics run concurrently: one global N-slot pool bounds every spawned command (instances and hooks) across all files, per-file barriers are preserved, spawned commands are reniced to 19 (unix, best-effort), and output is buffered and printed in canonical order — byte-identical to a serial run when outcomes are equal. Flag absent = the serial path above, untouched
@@ -53,10 +53,11 @@ go test -cover ./...
 ### Go Package Structure
 - `main.go` - Minimal entry point; calls `cmd.Execute()`
 - `cmd/` - Cobra CLI commands (each command self-registers in its own file)
-  - `root.go` - Root command and persistent flags (`--verbose`, `--keep-temp`, `--coverdir`, `-j`/`--jobs`, `--report-junit`/`--report-json`); failing runs exit 1 without usage dumps, errors print exactly once
+  - `root.go` - Root command and persistent flags (`--verbose`, `--keep-temp`, `--coverdir`, `-j`/`--jobs`, `--report-junit`/`--report-json`, `--update`); failing runs exit 1 without usage dumps, errors print exactly once
   - `jobs.go` - The `-j`/`--jobs` flag: registration (int flag with NoOptDefVal = NumCPU so bare `-j` works), make-style `-jN` argv normalization to `--jobs=N` (pflag resolves NoOptDefVal before the attached `-farg` form, so a raw `-j4` would fail; space-separated `-j 4` intentionally leaves `4` positional, as in GNU make), and resolution (absent → 0 = serial; explicit N < 1 → error)
   - `report.go` - The `--report-junit`/`--report-json` flags (long-only, value required) and the write-to-disk plumbing (MkdirAll parent dirs, attempt both files, errors.Join); rendering lives in the `report` package. runTests measures the execution wall time and calls writeReports after totals — always when the run executed, never on hard errors that abort it
-  - `test.go` - `test` subcommand (also the default action): runs tests; jobs==0 runs the serial loop, jobs>=1 calls `runner.RunFilesParallel`; after totals it writes any requested report files (a write failure is a real error even when tests passed)
+  - `update.go` - The `--update` flag (long-only bool): rewrite snapshot golden files instead of failing. Plumbed into `Runner.Update` by runTests, which also prints the end-of-run goldens summary (`Updated N golden file(s)[, pruned M stale]`, silent when nothing changed); `dats syntax` accepts the flag but ignores it
+  - `test.go` - `test` subcommand (also the default action): runs tests; jobs==0 runs the serial loop, jobs>=1 calls `runner.RunFilesParallel`; after totals (and the goldens summary under `--update`) it writes any requested report files (a write failure is a real error even when tests passed)
   - `syntax.go` - `syntax` subcommand: validates `.dats` files without running them
   - `version.go` - `version` subcommand and `--version` flag: one-line `dats <version>` from build info
   - `find.go` - Resolves file/directory args (dirs recurse; symlinked dir roots followed) or discovers `.dats` files in the tree; skips hidden dirs/files, dedupes by absolute path
@@ -69,8 +70,9 @@ go test -cover ./...
   - `parallel.go` - Jobs-mode orchestration (`RunFilesParallel`): parses ALL files up front (fail fast; nothing runs on a parse error), then runs files concurrently under ONE global pool of N slots bounding every spawned command (test instances AND hook commands). Per-file barriers match serial exactly (setup before any instance, hooks sequential, teardown after the last instance, setup failure fails every instance without running them); output is buffered per file and flushed in canonical order — byte-identical to a serial run when outcomes are equal. `runFileParallel` mirrors RunFile step for step; keep the two in sync
   - `exec.go` - Command execution via bash; per-test timeouts kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced. Jobs mode additionally renices each spawned command's process group to nice 19 right after start (`setLowPriority`; best-effort, platform-split: unix real / windows no-op); serial runs make zero priority syscalls
   - `fixtures.go` - Creates input files, validates fixture-name locality, creates parent dirs for nested declared outputs, expands `{inputs.X}`/`{outputs.X}`/`{shared.X}` placeholders; SetupSharedFixtures writes file-level shared files ({shared.X}-only expansion via ExpandSharedPlaceholders)
+  - `snapshot.go` - Snapshot (golden-file) assertions: SnapshotDir (`<file>.snapshots` next to the .dats), GoldenFileName (`NNN-<slug>.<stream>.golden`, NNN = canonical 1-based instance number, slug from the instance display name), NormalizeSnapshotText ({testdir}/{shareddir}/{tmproot} tokens, longest-path-first), applySnapshot (called by RunFile AND runFileParallel after the instance name is set; compares — or under `Runner.Update` rewrites — goldens, only for commands that ran to completion, never updating from an instance with other failures), and pruneStaleGoldens (update mode after a clean setup: removes unexpected `*.golden` files, removes an emptied dir, touches nothing else)
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
-  - `output.go` - Result types (TestResult, FileResult with SetupFailure/TeardownFailures + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `teardown failed` summary annotation)
+  - `output.go` - Result types (TestResult with UpdatedGoldens, FileResult with SetupFailure/TeardownFailures/PrunedGoldens + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `# updated golden:`/`# pruned stale golden:` lines, `teardown failed` summary annotation)
 - `report/` - Machine-readable report rendering (public, importable by external modules)
   - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
   - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
@@ -80,7 +82,8 @@ go test -cover ./...
 - **ExitCode** - Can be int 0-255 (bare or quoted, e.g. `"3"`) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`
 - **Duration** - Per-test timeout; int seconds (bare or quoted, e.g. `"5"`) or Go duration string (e.g. `500ms`, `2s`, `1m30s`)
 - **OutputCheck** - Either `[]string` (patterns) or `map[int]string` (line-specific regex, 0-indexed; duplicate or negative line keys are parse errors)
-- **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, files, !files, and json_output checks
+- **OutputBlock** - Handles stdout, stderr, !stdout, !stderr, files, !files, snapshot, and json_output checks
+- **SnapshotCheck** - The `outputs.snapshot` key: scalar bool (`true` = snapshot stdout; `false` = zero value, same as omitted) or a map of stream booleans (`stdout`/`stderr`, at least one true; duplicate/unknown keys and non-bool values are parse errors). Value type (no pointer) so matrix `copyTest` duplicates it by plain value copy; holds no strings, so it is outside the `{matrix.X}` substitution scope
 - **FileCheck** - Validates output files with `exists`, `match`, and `notMatch` properties; an empty check (`{}` or null) is an implicit existence assertion
 - **InputBlock** - Contains `stdin` (string), `files` (map of filename to content), and `env` (map of env var name to value, added to the inherited environment in sorted key order)
 - **CommandList / SetupCommands / TeardownCommands** - File-level `setup`/`teardown` values: a single command string or a sequence of command strings ([]string underneath); the two wrapper types exist so parse errors name their key. Empty lists, blank commands, and non-string entries are parse errors
@@ -142,6 +145,9 @@ tests:
       "!files":               # Negated output file validation (each check inverted)
         unexpected.txt:
           exists: true        # must NOT exist
+      snapshot: true          # Golden-file assertion: stdout must byte-match
+                              # <file>.snapshots/NNN-<slug>.stdout.golden
+                              # (or {stdout: bool, stderr: bool}; --update rewrites)
 ```
 
 ### File-Level Properties
@@ -170,6 +176,7 @@ tests:
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation; empty check (`{}`/null) = must exist |
 | `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist; empty check = must NOT exist) |
+| `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or map of stream booleans (`stdout`/`stderr`, at least one true). Captured output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp-path normalization; `--update` rewrites goldens (skipping instances with other failures) and prunes stale ones |
 | `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive, numbers by value) |
 
 ## CI/CD

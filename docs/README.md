@@ -42,3 +42,5 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
 - **Environment variables** (`inputs.env`) are added to the command's inherited environment
 - **Output checks** match patterns or specific lines in stdout/stderr
 - **Negated checks** (`!stdout`, `!stderr`, `!files`) assert patterns/files do NOT appear
+- **Snapshots** (`snapshot`) byte-compare stdout/stderr against golden files stored next to
+  the `.dats` file; `dats --update` rewrites them from actual output

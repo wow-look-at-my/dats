@@ -43,6 +43,7 @@ the current directory tree.
 | `-j, --jobs[=N]` | Run test commands in parallel with N workers (bare `-j` = one per CPU). Attach the value — `-jN`, `-j=N`, or `--jobs=N`; a space-separated `-j N` does not bind (see [Parallel Execution](#parallel-execution--j)). Without the flag, execution is fully serial |
 | `--report-junit <path>` | Write a JUnit XML report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--report-json <path>` | Write a JSON report of the run to `<path>` (see [Report Files](#report-files)) |
+| `--update` | Rewrite snapshot golden files from actual output instead of failing, and prune stale ones (see [Updating Snapshots](#updating-snapshots---update)) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
@@ -70,6 +71,9 @@ dats -j tests/
 # Machine-readable reports (either or both; parent dirs are created)
 dats --report-junit report.xml tests/
 dats --report-json report.json tests/
+
+# Rewrite snapshot golden files from actual output
+dats --update tests/
 
 # Keep the temp directory to inspect fixtures/outputs
 dats --keep-temp test.dats
@@ -157,6 +161,38 @@ be given; parent directories are created automatically.
 
 See [Machine-Readable Reports](reports.md) for the full format specification and its
 stability guarantees.
+
+## Updating Snapshots (--update)
+
+Tests with an `outputs.snapshot` assertion compare captured output against golden files
+stored next to the `.dats` file (see
+[Snapshot Assertions](file-format.md#snapshot-assertions-outputssnapshot)). `--update`
+rewrites those goldens from actual output instead of failing:
+
+```
+$ dats --update demo.dats
+Running demo.dats (2 tests)
+
+ok 1 - renders the report
+  # updated golden: demo.snapshots/001-renders-the-report.stdout.golden
+ok 2 - split streams
+  # updated golden: demo.snapshots/002-split-streams.stdout.golden
+  # updated golden: demo.snapshots/002-split-streams.stderr.golden
+# pruned stale golden: demo.snapshots/003-renamed-away.stdout.golden
+
+2/2 passed
+
+Updated 3 golden file(s), pruned 1 stale
+```
+
+- Only missing or differing goldens are written; up-to-date goldens are untouched and
+  unlisted (a fully clean run prints no goldens summary at all).
+- An instance with any **other** failure neither writes nor compares its goldens — goldens
+  never update from a failing run.
+- Stale `*.golden` files (tests renamed, reordered, or removed; streams disabled) are
+  pruned, and an emptied snapshot directory is removed. Non-`.golden` files are never
+  touched.
+- `dats syntax` accepts `--update` but ignores it — nothing runs, so nothing is updated.
 
 ## Output
 
