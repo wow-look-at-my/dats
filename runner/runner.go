@@ -17,6 +17,12 @@ type Runner struct {
 	KeepTemp  bool   // Keep temp directory for debugging
 	CoverDir  string // Directory for GOCOVERDIR coverage data
 	Formatter *Formatter
+
+	// lowPriority runs every spawned workload command -- test instances and
+	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
+	// 19, best-effort; no-op on windows). Only the jobs-mode orchestration
+	// (RunFilesParallel) sets it; serial runs never touch process priority.
+	lowPriority bool
 }
 
 // NewRunner creates a new test runner
@@ -168,7 +174,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure {
 	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	execResult, err := Execute(cmd, "", r.commandEnv(), 0)
+	execResult, err := execute(cmd, "", r.commandEnv(), 0, r.lowPriority)
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
 	}
@@ -264,7 +270,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	env := r.commandEnv(extra...)
 
 	// Execute the command
-	execResult, err := Execute(cmd, test.Inputs.Stdin, env, test.Timeout.Value)
+	execResult, err := execute(cmd, test.Inputs.Stdin, env, test.Timeout.Value, r.lowPriority)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)

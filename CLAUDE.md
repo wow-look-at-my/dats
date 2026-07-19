@@ -29,6 +29,9 @@ go test -cover ./...
 # Verbose mode (shows command details, full output on failure)
 ./build/dats -v examples/example.dats
 
+# Parallel execution (4 workers; bare -j = one per CPU; -j 4 does NOT bind)
+./build/dats -j4 examples/example.dats
+
 # Keep temp directory for debugging
 ./build/dats --keep-temp examples/example.dats
 ```
@@ -44,12 +47,16 @@ go test -cover ./...
 6. Exit code, stdout, stderr, and output files are validated against assertions
 7. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
 8. Results are printed in TAP-like format
+9. With `-j`/`--jobs` (jobs mode) the same per-file semantics run concurrently: one global N-slot pool bounds every spawned command (instances and hooks) across all files, per-file barriers are preserved, spawned commands are reniced to 19 (unix, best-effort), and output is buffered and printed in canonical order — byte-identical to a serial run when outcomes are equal. Flag absent = the serial path above, untouched
+10. With `--report-junit`/`--report-json`, runTests writes report files from the finished results at end of run — always when the run executed (especially failing runs; identical data serial and `-j`), never on hard errors that abort the run; a report write failure is itself an error (stderr, exit 1). Formats and stability contract: `docs/reports.md`
 
 ### Go Package Structure
 - `main.go` - Minimal entry point; calls `cmd.Execute()`
 - `cmd/` - Cobra CLI commands (each command self-registers in its own file)
-  - `root.go` - Root command and persistent flags (`--verbose`, `--keep-temp`, `--coverdir`); failing runs exit 1 without usage dumps, errors print exactly once
-  - `test.go` - `test` subcommand (also the default action): runs tests
+  - `root.go` - Root command and persistent flags (`--verbose`, `--keep-temp`, `--coverdir`, `-j`/`--jobs`, `--report-junit`/`--report-json`); failing runs exit 1 without usage dumps, errors print exactly once
+  - `jobs.go` - The `-j`/`--jobs` flag: registration (int flag with NoOptDefVal = NumCPU so bare `-j` works), make-style `-jN` argv normalization to `--jobs=N` (pflag resolves NoOptDefVal before the attached `-farg` form, so a raw `-j4` would fail; space-separated `-j 4` intentionally leaves `4` positional, as in GNU make), and resolution (absent → 0 = serial; explicit N < 1 → error)
+  - `report.go` - The `--report-junit`/`--report-json` flags (long-only, value required) and the write-to-disk plumbing (MkdirAll parent dirs, attempt both files, errors.Join); rendering lives in the `report` package. runTests measures the execution wall time and calls writeReports after totals — always when the run executed, never on hard errors that abort it
+  - `test.go` - `test` subcommand (also the default action): runs tests; jobs==0 runs the serial loop, jobs>=1 calls `runner.RunFilesParallel`; after totals it writes any requested report files (a write failure is a real error even when tests passed)
   - `syntax.go` - `syntax` subcommand: validates `.dats` files without running them
   - `version.go` - `version` subcommand and `--version` flag: one-line `dats <version>` from build info
   - `find.go` - Resolves file/directory args (dirs recurse; symlinked dir roots followed) or discovers `.dats` files in the tree; skips hidden dirs/files, dedupes by absolute path
@@ -59,11 +66,15 @@ go test -cover ./...
   - `matrix.go` - `Matrix` (declaration-ordered variables, strict value validation), `ExpandMatrix` (cartesian instance expansion, deep copies, single-pass `{matrix.X}` substitution), and the single definition of the matrix substitution scope shared by validation and expansion
 - `runner/` - Native test runner (public, importable by external modules)
   - `runner.go` - Orchestrates test execution (RunFile, RunTest); RunFile also writes shared fixtures, runs setup (stops at first failure; then every test is reported failed with reason "file setup failed"), and always runs all teardown commands (runHookCommand executes one setup/teardown command via the same bash path and env construction as test commands — including `GOCOVERDIR` under `--coverdir` — with {shared.X}-only expansion)
-  - `exec.go` - Command execution via bash; per-test timeouts kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced
+  - `parallel.go` - Jobs-mode orchestration (`RunFilesParallel`): parses ALL files up front (fail fast; nothing runs on a parse error), then runs files concurrently under ONE global pool of N slots bounding every spawned command (test instances AND hook commands). Per-file barriers match serial exactly (setup before any instance, hooks sequential, teardown after the last instance, setup failure fails every instance without running them); output is buffered per file and flushed in canonical order — byte-identical to a serial run when outcomes are equal. `runFileParallel` mirrors RunFile step for step; keep the two in sync
+  - `exec.go` - Command execution via bash; per-test timeouts kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced. Jobs mode additionally renices each spawned command's process group to nice 19 right after start (`setLowPriority`; best-effort, platform-split: unix real / windows no-op); serial runs make zero priority syscalls
   - `fixtures.go` - Creates input files, validates fixture-name locality, creates parent dirs for nested declared outputs, expands `{inputs.X}`/`{outputs.X}`/`{shared.X}` placeholders; SetupSharedFixtures writes file-level shared files ({shared.X}-only expansion via ExpandSharedPlaceholders)
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
   - `output.go` - Result types (TestResult, FileResult with SetupFailure/TeardownFailures + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `teardown failed` summary annotation)
-- `docs/` - Additional prose documentation; `schema.json` - JSON Schema for IDE validation
+- `report/` - Machine-readable report rendering (public, importable by external modules)
+  - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
+  - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
+- `docs/` - Additional prose documentation (`reports.md` = report formats + stability contract); `schema.json` - JSON Schema for IDE validation
 
 ### Key Types
 - **ExitCode** - Can be int 0-255 (bare or quoted, e.g. `"3"`) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`

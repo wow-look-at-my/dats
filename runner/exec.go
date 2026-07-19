@@ -31,6 +31,16 @@ const waitDelay = 1 * time.Second
 // command's whole process group is killed when the deadline elapses and the
 // result's TimedOut flag is set.
 func Execute(cmd string, stdin string, env []string, timeout time.Duration) (*ExecResult, error) {
+	return execute(cmd, stdin, env, timeout, false)
+}
+
+// execute is Execute plus the jobs-mode lowPriority knob: when set, the
+// child's whole process group is moved to the lowest scheduling priority
+// (nice 19 on unix; no-op on windows) right after it starts, so parallel
+// workloads never starve the machine -- or dats itself, which stays at
+// normal priority. Best-effort: renice failures are ignored. Serial runs
+// pass false and make no priority syscalls at all.
+func execute(cmd string, stdin string, env []string, timeout time.Duration, lowPriority bool) (*ExecResult, error) {
 	ctx := context.Background()
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -74,11 +84,24 @@ func Execute(cmd string, stdin string, env []string, timeout time.Duration) (*Ex
 	// then force the pipes closed instead of blocking forever.
 	command.WaitDelay = waitDelay
 
-	err := command.Run()
+	if err := command.Start(); err != nil {
+		// The command never started (e.g. bash could not be spawned).
+		return nil, err
+	}
+
+	// setProcAttrs put the child in its own process group (where supported),
+	// so renicing the group reaches the direct child and everything it has
+	// forked; later descendants inherit the niceness from their parent. A
+	// command may exit before the call lands -- that race, like any other
+	// renice failure, is deliberately ignored.
+	if lowPriority {
+		_ = setLowPriority(command.Process.Pid)
+	}
+
+	err := command.Wait()
 
 	state := command.ProcessState
 	if state == nil {
-		// The command never started (e.g. bash could not be spawned).
 		return nil, err
 	}
 

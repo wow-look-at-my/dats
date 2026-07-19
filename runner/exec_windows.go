@@ -23,3 +23,7 @@ func killProcessGroup(p *os.Process) error {
 
 // stateSignal always reports no signal on windows.
 func stateSignal(state *os.ProcessState) string { return "" }
+
+// setLowPriority is a no-op on windows: workload priority control is not
+// wired up (jobs mode still bounds concurrency, it just cannot renice).
+func setLowPriority(pid int) error { return nil }

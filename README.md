@@ -25,6 +25,15 @@ dats test
 # Verbose mode (shows command details, full output on failure)
 dats -v test tests.dats
 
+# Parallel execution: 4 workers, or one per CPU with bare -j
+# (attach the value: -j4/-j=4/--jobs=4 — "-j 4" does NOT bind the 4)
+dats -j4 test tests/
+dats -j test tests/
+
+# Machine-readable reports for CI/editors (written even when the run fails)
+dats --report-junit report.xml test tests/
+dats --report-json report.json test tests/
+
 # Keep temp directory for debugging
 dats test --keep-temp tests.dats
 
@@ -56,6 +65,9 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Flag | Scope | Description |
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
+| `-j, --jobs[=N]` | Global | Run test commands in parallel with N workers (bare `-j` = one per CPU; attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make). Spawned commands run at low OS priority (unix nice 19, best-effort). Default (flag absent) is fully serial — unchanged. Output stays byte-identical to a serial run when outcomes are equal; see [docs/cli.md](docs/cli.md) |
+| `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
+| `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
@@ -199,10 +211,10 @@ tests:
 | `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
 | `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
 
-Setup and teardown are per-file barriers: a future parallel mode (`-j`) may
-run tests concurrently within and across files, but no test in a file starts
-before that file's setup completes, and teardown starts only after the file's
-last test finishes. Setup/teardown of different files may overlap in parallel
+Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
+concurrently within and across files, but no test in a file starts before
+that file's setup completes, and teardown starts only after the file's last
+test finishes. Setup/teardown of different files may overlap in parallel
 mode — do not assume exclusive access to global resources.
 
 ### Test Properties

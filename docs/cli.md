@@ -40,6 +40,9 @@ the current directory tree.
 | Flag | Description |
 |------|-------------|
 | `-v, --verbose` | Show command details, durations, and full output on failure |
+| `-j, --jobs[=N]` | Run test commands in parallel with N workers (bare `-j` = one per CPU). Attach the value — `-jN`, `-j=N`, or `--jobs=N`; a space-separated `-j N` does not bind (see [Parallel Execution](#parallel-execution--j)). Without the flag, execution is fully serial |
+| `--report-junit <path>` | Write a JUnit XML report of the run to `<path>` (see [Report Files](#report-files)) |
+| `--report-json <path>` | Write a JSON report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
@@ -60,6 +63,14 @@ dats test
 # Verbose output
 dats -v test.dats
 
+# Parallel execution: 4 workers / one worker per CPU
+dats -j4 tests/
+dats -j tests/
+
+# Machine-readable reports (either or both; parent dirs are created)
+dats --report-junit report.xml tests/
+dats --report-json report.json tests/
+
 # Keep the temp directory to inspect fixtures/outputs
 dats --keep-temp test.dats
 
@@ -76,6 +87,76 @@ dats --version
 dats -h
 dats <command> -h
 ```
+
+## Parallel Execution (-j)
+
+`-j`/`--jobs` runs test commands in parallel. Without the flag, execution is fully serial —
+the historical behavior, unchanged.
+
+### Flag forms
+
+- Bare `-j` or `--jobs` — one worker per CPU.
+- `-jN`, `-j=N`, `--jobs=N` — exactly N workers. An explicit N below 1 is an error.
+- **The space-separated forms do not work**: with an optional flag value, `-j 4` and
+  `--jobs 4` parse as bare `-j` (one worker per CPU) plus a positional argument `4` — the
+  same trap as GNU make. Since `4` is not a `.dats` file, the run fails with
+  `cannot access 4`; attach the value instead.
+
+### Scheduling
+
+- **One global pool.** At most N workload commands run at once across ALL files — and
+  file-level setup/teardown commands occupy pool slots exactly like test commands, so no
+  more than N spawned processes ever exist at once.
+- **Per-file barriers are preserved.** Within each file, shared files are written and setup
+  commands run (sequentially, in declared order) before any of that file's test instances
+  start; a setup failure reports every instance as failed (`file setup failed`, never
+  "skipped") without running them; teardown commands run (sequentially, in declared order)
+  only after the file's last instance finishes, and always run. Test instances of one file
+  may run concurrently with each other and with other files' instances and hooks.
+- **Everything still runs.** `-j` changes scheduling only — there is no test filtering or
+  selection, and per-test timeouts, exit-code semantics, fixture isolation, and
+  `--coverdir` behave identically to a serial run.
+
+### Output and determinism
+
+Output is buffered and printed in canonical order — files in the order given on the command
+line (or discovered), instances in expansion order within each file — regardless of
+completion order. A `-j` run's output is byte-identical to a serial run of the same corpus
+whenever the outcomes are equal; summary counts and the process exit code are computed
+identically. (Under `-v`, reported durations naturally vary between runs.)
+
+### Priority
+
+Every spawned workload command — test instances and setup/teardown hooks — runs at low OS
+priority (nice 19 applied to the command's process group) so a heavily parallel run does
+not starve the machine; `dats` itself stays at normal priority. This is best-effort and
+unix-only (a no-op on Windows); renice failures are ignored. Serial runs never touch
+process priority.
+
+### Error handling
+
+In jobs mode every file is parsed up front, so a parse error in any file aborts the run
+before a single command executes. (Serial mode parses each file as it reaches it: a bad
+later file aborts the run after earlier files already ran. This error-path difference is
+the only behavioral divergence.)
+
+## Report Files
+
+`--report-junit <path>` and `--report-json <path>` write machine-readable reports of the
+run — for CI systems and editor integrations — at the end of the run. Either or both may
+be given; parent directories are created automatically.
+
+- Reports are written whenever the run executed, **including failing runs** (the process
+  still exits 1); they are built from the same data in serial and `-j` runs, in canonical
+  order. Stdout output and exit codes are unchanged.
+- Hard errors that abort the run (unreadable file, parse error) write no report; a report
+  file that cannot be written is itself an error (stderr message, exit 1) even when every
+  test passed. `dats syntax` never writes reports.
+- JSON summary counts equal the CLI summary numbers (test instances only); JUnit totals
+  additionally include synthetic `[setup]`/`[teardown]` cases for failed file-level hooks.
+
+See [Machine-Readable Reports](reports.md) for the full format specification and its
+stability guarantees.
 
 ## Output
 
