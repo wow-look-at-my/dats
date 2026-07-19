@@ -8,6 +8,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -85,7 +86,7 @@ func runSnapshotFile(t *testing.T, path string, update bool) (*FileResult, strin
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	r.Update = update
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	return result, buf.String()
 }
@@ -501,12 +502,12 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 
 	var serial bytes.Buffer
 	rs := NewRunner(&serial, false, false, "")
-	_, err := rs.RunFile(path)
+	_, err := rs.RunFile(context.Background(), path)
 	require.Nil(t, err)
 
 	var parallel bytes.Buffer
 	rp := NewRunner(&parallel, false, false, "")
-	_, err = rp.RunFilesParallel([]string{path}, 4)
+	_, err = rp.RunFilesParallel(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 
 	require.Contains(t, serial.String(), "4/4 passed")
@@ -518,10 +519,10 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 	require.Nil(t, os.Remove(filepath.Join(SnapshotDir(path), "002-greet-who-alice.stdout.golden")))
 	var serialFail, parallelFail bytes.Buffer
 	rsf := NewRunner(&serialFail, false, false, "")
-	_, err = rsf.RunFile(path)
+	_, err = rsf.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	rpf := NewRunner(&parallelFail, false, false, "")
-	_, err = rpf.RunFilesParallel([]string{path}, 4)
+	_, err = rpf.RunFilesParallel(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 	require.Contains(t, serialFail.String(), "does not exist (run with --update to create it)")
 	assert.Equal(t, serialFail.String(), parallelFail.String())
@@ -538,7 +539,7 @@ func TestSnapshotParallelUpdateWritesIdenticalGoldens(t *testing.T) {
 	var buf bytes.Buffer
 	rp := NewRunner(&buf, false, false, "")
 	rp.Update = true
-	_, err := rp.RunFilesParallel([]string{parallelPath}, 4)
+	_, err := rp.RunFilesParallel(context.Background(), []string{parallelPath}, 4)
 	require.Nil(t, err)
 
 	readTree := func(dir string) map[string]string {

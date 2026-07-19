@@ -10,6 +10,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,7 +47,11 @@ func (s slots) release() { <-s }
 // Unlike the serial loop, which parses each file as it reaches it, every
 // file is parsed up front: a parse error in any file aborts before a single
 // command runs.
-func (r *Runner) RunFilesParallel(paths []string, jobs int) ([]*FileResult, error) {
+//
+// Canceling ctx kills every in-flight command's process group promptly;
+// teardown commands still run (context.WithoutCancel in runFileParallel),
+// exactly as in the serial path.
+func (r *Runner) RunFilesParallel(ctx context.Context, paths []string, jobs int) ([]*FileResult, error) {
 	if jobs < 1 {
 		return nil, fmt.Errorf("jobs must be at least 1, got %d", jobs)
 	}
@@ -82,7 +87,7 @@ func (r *Runner) RunFilesParallel(paths []string, jobs int) ([]*FileResult, erro
 				Formatter:   &Formatter{Writer: &buffers[i], Verbose: r.Verbose},
 				lowPriority: true,
 			}
-			results[i], errs[i] = fileRunner.runFileParallel(paths[i], parsed[i], pool)
+			results[i], errs[i] = fileRunner.runFileParallel(ctx, paths[i], parsed[i], pool)
 		}(i)
 	}
 	wg.Wait()
@@ -112,7 +117,7 @@ func (r *Runner) RunFilesParallel(paths []string, jobs int) ([]*FileResult, erro
 // directories keep the expansion order regardless of completion order -- and
 // print in that order once every instance finished. Each command, hook or
 // instance, holds a pool slot while it runs.
-func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool slots) (*FileResult, error) {
+func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *schema.TestFile, pool slots) (*FileResult, error) {
 	tempDir, err := os.MkdirTemp("", "dats-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
@@ -158,7 +163,7 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 	if result.SetupFailure == nil {
 		for _, raw := range testFile.Setup {
 			pool.acquire()
-			fail := r.runHookCommand("setup", raw, sharedDir)
+			fail := r.runHookCommand(ctx, "setup", raw, sharedDir)
 			pool.release()
 			if fail != nil {
 				result.SetupFailure = fail
@@ -201,7 +206,7 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 				defer wg.Done()
 				pool.acquire()
 				defer pool.release()
-				testResult := r.RunTest(&instances[i].Test, tempDir, i)
+				testResult := r.RunTest(ctx, &instances[i].Test, tempDir, i)
 				testResult.Name = instanceName(&instances[i])
 				r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
 				instanceResults[i] = testResult
@@ -230,13 +235,18 @@ func (r *Runner) runFileParallel(path string, testFile *schema.TestFile, pool sl
 
 	// Teardown always runs -- in declared order, sequentially, after every
 	// instance has finished, and even when setup failed. One failing command
-	// does not stop the rest; any failure marks the file failed.
+	// does not stop the rest; any failure marks the file failed. As in the
+	// serial path, teardown commands run under context.WithoutCancel: the
+	// file-format contract says teardown ALWAYS runs, including when a watch
+	// run is interrupted -- a canceled ctx must kill in-flight setup/test
+	// commands but never the cleanup.
+	teardownCtx := context.WithoutCancel(ctx)
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
 	}
 	for _, raw := range testFile.Teardown {
 		pool.acquire()
-		fail := r.runHookCommand("teardown", raw, sharedDir)
+		fail := r.runHookCommand(teardownCtx, "teardown", raw, sharedDir)
 		pool.release()
 		if fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)

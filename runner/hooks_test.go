@@ -6,9 +6,11 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -49,7 +51,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 	assert.True(t, result.Ok())
@@ -72,7 +74,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 }
@@ -87,7 +89,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 }
@@ -105,7 +107,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 	assert.True(t, result.Ok())
@@ -129,7 +131,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 
 	// Every test is reported as a failure, never skipped.
@@ -169,7 +171,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	require.NotNil(t, result.SetupFailure)
 	assert.Equal(t, "partial output\n", result.SetupFailure.Stdout)
@@ -197,7 +199,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	require.NotNil(t, result.SetupFailure)
 	assert.Equal(t, "", result.SetupFailure.Command)
@@ -221,7 +223,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed)
 	assert.Equal(t, 0, result.Failed)
@@ -250,7 +252,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Failed) // the test itself failed
 	require.Len(t, result.TeardownFailures, 1)
@@ -284,7 +286,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 }
@@ -305,7 +307,7 @@ tests:
 	coverDir := filepath.Join(t.TempDir(), "coverage")
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, coverDir)
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.True(t, result.Ok(), "output:\n%s", buf.String())
 
@@ -330,7 +332,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.True(t, result.Ok(), "output:\n%s", buf.String())
 
@@ -348,9 +350,39 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, true, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.True(t, result.Ok())
 	assert.Contains(t, buf.String(), "# setup: echo prepare")
 	assert.Contains(t, buf.String(), "# teardown: echo cleanup")
+}
+
+func TestRunFileCanceledContextTeardownStillRuns(t *testing.T) {
+	// Canceling the context mid-run aborts the in-flight test command
+	// promptly and reports the instance as failed -- but teardown runs under
+	// context.WithoutCancel, so the cleanup marker must still appear.
+	marker := filepath.Join(t.TempDir(), "teardown-ran")
+	path := writeRunnerDats(t, `
+teardown: touch `+marker+`
+tests:
+  - desc: long sleeper
+    cmd: sleep 5
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	result, err := r.RunFile(ctx, path)
+	elapsed := time.Since(start)
+	require.Nil(t, err)
+	assert.Less(t, elapsed, 2*time.Second, "cancellation must abort the run promptly")
+	assert.Equal(t, 1, result.Failed)
+	assert.False(t, result.Ok())
+	assert.FileExists(t, marker, "teardown must run under context.WithoutCancel even after cancellation")
 }

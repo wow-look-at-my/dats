@@ -7,6 +7,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 6, result.Passed)
 	assert.Equal(t, 0, result.Failed)
@@ -74,7 +75,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 	assert.Equal(t, 0, result.Failed)
@@ -98,7 +99,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 }
@@ -116,7 +117,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
 }
@@ -131,7 +132,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed)
 	assert.Contains(t, buf.String(), "Running "+path+" (1 tests)")
@@ -147,7 +148,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed)
 	assert.Contains(t, buf.String(), "ok 1 - echo a [x=a]")
@@ -166,7 +167,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 5, result.Passed)
 	assert.Equal(t, 1, result.Failed)
@@ -199,7 +200,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 0, result.Passed)
 	assert.Equal(t, 5, result.Failed)
@@ -242,7 +243,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 }
@@ -265,7 +266,7 @@ tests:
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 	assert.Contains(t, buf.String(), "ok 1 - literal [a={matrix.b}, b=real]")

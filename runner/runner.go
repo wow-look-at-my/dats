@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -49,7 +50,11 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *
 // failed. A setup failure fails every test instance in the file (loudly;
 // tests are never reported as skipped), and a teardown failure marks the
 // file failed even when all tests passed.
-func (r *Runner) RunFile(path string) (*FileResult, error) {
+//
+// Canceling ctx kills in-flight setup and test commands (whole process
+// groups) promptly; teardown still runs -- see the context.WithoutCancel
+// call below.
+func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) {
 	testFile, err := schema.ParseFile(path)
 	if err != nil {
 		return nil, err
@@ -108,7 +113,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 	}
 	if result.SetupFailure == nil {
 		for _, raw := range testFile.Setup {
-			if fail := r.runHookCommand("setup", raw, sharedDir); fail != nil {
+			if fail := r.runHookCommand(ctx, "setup", raw, sharedDir); fail != nil {
 				result.SetupFailure = fail
 				r.Formatter.PrintHookFailure("setup", fail)
 				break // remaining setup commands are skipped; every test fails below
@@ -140,7 +145,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 		// Snapshot assertions apply after the instance name is set -- the
 		// golden file name derives from it.
 		for i := range instances {
-			testResult := r.RunTest(&instances[i].Test, tempDir, i)
+			testResult := r.RunTest(ctx, &instances[i].Test, tempDir, i)
 			testResult.Name = instanceName(&instances[i])
 			r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
 			result.Results = append(result.Results, testResult)
@@ -164,12 +169,16 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 
 	// Teardown always runs: in declared order, after test failures, and even
 	// when setup failed. One failing command does not stop the rest; any
-	// failure marks the file failed.
+	// failure marks the file failed. Teardown commands run under
+	// context.WithoutCancel: the file-format contract says teardown ALWAYS
+	// runs, including when a watch run is interrupted -- a canceled ctx must
+	// kill in-flight setup/test commands but never the cleanup.
+	teardownCtx := context.WithoutCancel(ctx)
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
 	}
 	for _, raw := range testFile.Teardown {
-		if fail := r.runHookCommand("teardown", raw, sharedDir); fail != nil {
+		if fail := r.runHookCommand(teardownCtx, "teardown", raw, sharedDir); fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)
 			r.Formatter.PrintHookFailure("teardown", fail)
 		}
@@ -185,10 +194,12 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 // inherited environment -- including GOCOVERDIR under --coverdir, exactly
 // like test commands -- no stdin, no timeout), expanding only {shared.X}
 // placeholders. It returns nil on success (exit 0) or the failure otherwise.
-func (r *Runner) runHookCommand(kind, rawCmd, sharedDir string) *CommandFailure {
+// Callers pass the live ctx for setup and a context.WithoutCancel ctx for
+// teardown, which must run even after cancellation.
+func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir string) *CommandFailure {
 	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	execResult, err := execute(cmd, "", r.commandEnv(), 0, r.lowPriority)
+	execResult, err := execute(ctx, cmd, "", r.commandEnv(), 0, r.lowPriority)
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
 	}
@@ -253,8 +264,10 @@ func instanceName(instance *schema.TestInstance) string {
 	return name
 }
 
-// RunTest runs a single test
-func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResult {
+// RunTest runs a single test. Canceling ctx kills the in-flight command's
+// whole process group; the instance then fails fast with "execution: context
+// canceled" or a signal death, never as a timeout.
+func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string, index int) TestResult {
 	start := time.Now()
 
 	result := TestResult{
@@ -263,7 +276,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Setup fixtures
-	ctx, err := SetupFixtures(baseDir, index, test)
+	fixtures, err := SetupFixtures(baseDir, index, test)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("fixture setup: %v", err))
 		result.Duration = time.Since(start)
@@ -271,7 +284,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	}
 
 	// Expand placeholders in command
-	cmd := ExpandPlaceholders(test.Cmd, ctx)
+	cmd := ExpandPlaceholders(test.Cmd, fixtures)
 	result.Command = cmd
 
 	// Build environment for command execution: test env entries are appended
@@ -279,12 +292,12 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	// placeholder expansion as the command.
 	var extra []string
 	for _, key := range sortedStringKeys(test.Inputs.Env) {
-		extra = append(extra, key+"="+ExpandPlaceholders(test.Inputs.Env[key], ctx))
+		extra = append(extra, key+"="+ExpandPlaceholders(test.Inputs.Env[key], fixtures))
 	}
 	env := r.commandEnv(extra...)
 
 	// Execute the command
-	execResult, err := execute(cmd, test.Inputs.Stdin, env, test.Timeout.Value, r.lowPriority)
+	execResult, err := execute(ctx, cmd, test.Inputs.Stdin, env, test.Timeout.Value, r.lowPriority)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)
@@ -401,10 +414,10 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	// entry asserts the negation of each of its checks. Names are checked in
 	// sorted order so failures report deterministically.
 	for _, name := range sortedStringKeys(test.Outputs.Files) {
-		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.Files[name], false)...)
+		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(fixtures, baseDir, index, name), test.Outputs.Files[name], false)...)
 	}
 	for _, name := range sortedStringKeys(test.Outputs.NotFiles) {
-		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(ctx, baseDir, index, name), test.Outputs.NotFiles[name], true)...)
+		result.Failures = append(result.Failures, checkFile("!file "+name, outputPath(fixtures, baseDir, index, name), test.Outputs.NotFiles[name], true)...)
 	}
 
 	result.Passed = len(result.Failures) == 0

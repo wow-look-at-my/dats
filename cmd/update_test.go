@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
 	setUpdateFlag(t, true)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests([]string{datsFile}, &out, 0))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0))
 
 	goldenPath := filepath.Join(runner.SnapshotDir(datsFile), "001-snap.stdout.golden")
 	content, err := os.ReadFile(goldenPath)
@@ -60,7 +61,7 @@ func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
 
 	// A second update run changes nothing and stays silent about goldens.
 	var out2 bytes.Buffer
-	require.Nil(t, runTests([]string{datsFile}, &out2, 0))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out2, 0))
 	assert.NotContains(t, out2.String(), "Updated")
 	assert.NotContains(t, out2.String(), "updated golden")
 }
@@ -74,7 +75,7 @@ func TestRunTestsUpdateSummaryCountsPrunes(t *testing.T) {
 	setUpdateFlag(t, true)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests([]string{datsFile}, &out, 0))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0))
 	assert.Contains(t, out.String(), "# pruned stale golden: "+stale)
 	assert.Contains(t, out.String(), "\nUpdated 1 golden file(s), pruned 1 stale\n")
 	_, statErr := os.Stat(stale)
@@ -88,7 +89,7 @@ func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
 	setUpdateFlag(t, false)
 
 	var out bytes.Buffer
-	err := runTests([]string{datsFile}, &out, 0)
+	err := runTests(context.Background(), []string{datsFile}, &out, 0)
 	assert.ErrorIs(t, err, errTestsFailed)
 	assert.Contains(t, out.String(), "does not exist (run with --update to create it)")
 	assert.NotContains(t, out.String(), "Updated")
@@ -125,7 +126,7 @@ func TestExampleSnapshotGoldensInSync(t *testing.T) {
 	setUpdateFlag(t, false)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests([]string{example}, &out, 0), "output:\n%s", out.String())
+	require.Nil(t, runTests(context.Background(), []string{example}, &out, 0), "output:\n%s", out.String())
 	assert.Contains(t, out.String(), "6/6 passed")
 }
 
@@ -141,7 +142,7 @@ func TestReportsIncludeSnapshotFailures(t *testing.T) {
 	setReportFlags(t, junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests([]string{datsFile}, &out, 0)
+	err := runTests(context.Background(), []string{datsFile}, &out, 0)
 	assert.ErrorIs(t, err, errTestsFailed)
 
 	jsonRaw, readErr := os.ReadFile(jsonPath)
