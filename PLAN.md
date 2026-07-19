@@ -1,5 +1,9 @@
 # Plan: Replace BATS with Native Test Runner
 
+> **Status: COMPLETED (historical record).** This migration has shipped — `dats` is now a
+> native test runner and no longer generates BATS files. This document is kept for context.
+> For current behavior see `README.md`, `CLAUDE.md`, and `docs/`.
+
 ## Summary
 
 Drop the intermediate BATS generation step. Instead of `dats generate foo.dats` producing `.gen.bats` files that require BATS to run, the `dats` binary will directly execute tests from `.dats` files.

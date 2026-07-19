@@ -35,6 +35,21 @@ tests:
     cmd: false
 ```
 
+### Bounding Run Time
+
+`timeout` accepts an integer number of seconds or a Go duration string. A command that exceeds
+the timeout is killed and the test fails.
+
+```yaml
+tests:
+  - desc: must finish quickly
+    cmd: ./fast-tool
+    timeout: 2s
+    outputs:
+      stdout:
+        - "done"
+```
+
 ---
 
 ## Input Handling
@@ -90,6 +105,28 @@ tests:
       files:
         config.json: |
           {"mode": "test"}
+```
+
+### Environment Variables
+
+`inputs.env` adds variables to the environment the command inherits. Values go through the
+same placeholder expansion as the command, so a variable can point at a fixture:
+
+```yaml
+tests:
+  - desc: tool reads config path from the environment
+    cmd: 'echo "$APP_MODE"; cat "$CONFIG_PATH"'
+    inputs:
+      files:
+        config.json: |
+          {"mode": "test"}
+      env:
+        APP_MODE: test
+        CONFIG_PATH: "{inputs.config.json}"
+    outputs:
+      stdout:
+        - "test"
+        - '"mode": "test"'
 ```
 
 ---
@@ -176,7 +213,7 @@ tests:
     outputs:
       "!files":
         error.log:
-          exists: false
+          exists: true    # inverted: error.log must NOT exist
 ```
 
 ---
@@ -184,6 +221,9 @@ tests:
 ## Common Patterns
 
 ### Testing CLI Tools
+
+Pattern lists are literal substrings, so matching a version number takes the line-keyed regex
+form (list patterns like `v[0-9]+` would be searched for verbatim and never match):
 
 ```yaml
 tests:
@@ -200,7 +240,7 @@ tests:
     cmd: mytool --version
     outputs:
       stdout:
-        - "v[0-9]+\\.[0-9]+"
+        0: "v[0-9]+\\.[0-9]+"
 ```
 
 ### Testing Error Handling
@@ -295,7 +335,7 @@ tests:
   # Output file generation
   - desc: generates binary output
     exit: 0
-    cmd: mycompiler {inputs.source.lang} -o {outputs/binary}
+    cmd: mycompiler {inputs.source.lang} -o {outputs.binary}
     inputs:
       files:
         source.lang: "print(42)"
@@ -310,7 +350,7 @@ tests:
     cmd: mycompiler --help
     outputs:
       stdout:
-        0: "^Usage: mycompiler"
+        - "Usage: mycompiler"
         - "--help"
         - "--version"
         - "--output"
@@ -320,5 +360,7 @@ tests:
     cmd: mycompiler --version
     outputs:
       stdout:
-        - "^mycompiler v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        # line-keyed regex form: list patterns are literal substrings and
+        # could never match a version pattern like this
+        0: "^mycompiler v[0-9]+\\.[0-9]+\\.[0-9]+$"
 ```

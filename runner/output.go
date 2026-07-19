@@ -26,6 +26,33 @@ type FileResult struct {
 	Results []TestResult
 	Passed  int
 	Failed  int
+	// SetupFailure records the shared-fixture write or setup command that
+	// failed before any test could run. When set, every test in the file is
+	// reported as a failure (never silently skipped).
+	SetupFailure *CommandFailure
+	// TeardownFailures records every teardown command that failed. Teardown
+	// always runs -- after test failures and even when setup failed -- and
+	// any entry here marks the whole file failed, even when every test
+	// passed.
+	TeardownFailures []CommandFailure
+}
+
+// Ok reports whether the file run passed as a whole: every test passed, setup
+// succeeded, and no teardown command failed.
+func (fr *FileResult) Ok() bool {
+	return fr.Failed == 0 && fr.SetupFailure == nil && len(fr.TeardownFailures) == 0
+}
+
+// CommandFailure describes a failed file-level setup or teardown step.
+type CommandFailure struct {
+	// Command is the command as executed (after {shared.X} expansion), or ""
+	// when the failure was not a command (e.g. writing shared fixtures).
+	Command string
+	// Detail says why it failed, e.g. "exit code 3" or
+	// "exit code -1 (killed by signal: killed)".
+	Detail string
+	Stdout string // captured stdout of the failed command
+	Stderr string // captured stderr of the failed command
 }
 
 // Formatter handles output formatting
@@ -63,26 +90,56 @@ func (f *Formatter) printVerboseDetails(r *TestResult) {
 		fmt.Fprintf(f.Writer, "  # duration: %s\n", r.Duration)
 	}
 	if !r.Passed {
-		if r.Stdout != "" {
-			fmt.Fprintf(f.Writer, "  # stdout:\n")
-			for _, line := range strings.Split(strings.TrimSuffix(r.Stdout, "\n"), "\n") {
-				fmt.Fprintf(f.Writer, "  #   %s\n", line)
-			}
-		}
-		if r.Stderr != "" {
-			fmt.Fprintf(f.Writer, "  # stderr:\n")
-			for _, line := range strings.Split(strings.TrimSuffix(r.Stderr, "\n"), "\n") {
-				fmt.Fprintf(f.Writer, "  #   %s\n", line)
-			}
-		}
+		f.printCaptured("  # ", "stdout", r.Stdout)
+		f.printCaptured("  # ", "stderr", r.Stderr)
 	}
 }
 
-// PrintSummary prints the final summary
+// printCaptured renders a captured output stream under a "label:" line, each
+// line indented two spaces past prefix. Empty output prints nothing.
+func (f *Formatter) printCaptured(prefix, label, content string) {
+	if content == "" {
+		return
+	}
+	fmt.Fprintf(f.Writer, "%s%s:\n", prefix, label)
+	for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+		fmt.Fprintf(f.Writer, "%s  %s\n", prefix, line)
+	}
+}
+
+// PrintHookCommand prints a file-level setup or teardown command as it is
+// about to execute. Verbose only, mirroring how -v shows test commands.
+func (f *Formatter) PrintHookCommand(kind, cmd string) {
+	if !f.Verbose {
+		return
+	}
+	fmt.Fprintf(f.Writer, "# %s: %s\n", kind, cmd)
+}
+
+// PrintHookFailure prints the loud file-level diagnostic for a failed setup
+// or teardown step: the command (when there is one), why it failed, and its
+// captured output rendered the way failing-test output is rendered.
+func (f *Formatter) PrintHookFailure(kind string, fail *CommandFailure) {
+	if fail.Command != "" {
+		fmt.Fprintf(f.Writer, "# %s command failed: %s\n", kind, fail.Command)
+		fmt.Fprintf(f.Writer, "#   %s\n", fail.Detail)
+	} else {
+		fmt.Fprintf(f.Writer, "# %s failed: %s\n", kind, fail.Detail)
+	}
+	f.printCaptured("#   ", "stdout", fail.Stdout)
+	f.printCaptured("#   ", "stderr", fail.Stderr)
+}
+
+// PrintSummary prints the final summary. Test counts stay test counts; a
+// teardown failure is called out separately so "N/N passed" can never read as
+// a clean run when the file still failed.
 func (f *Formatter) PrintSummary(fr *FileResult) {
 	fmt.Fprintf(f.Writer, "\n%d/%d passed", fr.Passed, fr.Passed+fr.Failed)
 	if fr.Failed > 0 {
 		fmt.Fprintf(f.Writer, ", %d failed", fr.Failed)
+	}
+	if len(fr.TeardownFailures) > 0 {
+		fmt.Fprintf(f.Writer, ", teardown failed")
 	}
 	fmt.Fprintf(f.Writer, "\n")
 }
