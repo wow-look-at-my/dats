@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/runner"
@@ -48,6 +49,11 @@ func runTests(args []string, out io.Writer, jobs int) error {
 
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
 
+	// Wall time of the execution phase, consumed only by the report files;
+	// stdout output never mentions it. Hard errors below abort the run
+	// without writing reports (today's control flow, unchanged).
+	start := time.Now()
+
 	var results []*runner.FileResult
 	if jobs > 0 {
 		results, err = r.RunFilesParallel(files, jobs)
@@ -64,6 +70,8 @@ func runTests(args []string, out io.Writer, jobs int) error {
 			results = append(results, result)
 		}
 	}
+
+	wall := time.Since(start)
 
 	totalPassed := 0
 	totalFailed := 0
@@ -85,6 +93,14 @@ func runTests(args []string, out io.Writer, jobs int) error {
 			fmt.Fprintf(out, ", %d failed", totalFailed)
 		}
 		fmt.Fprintln(out)
+	}
+
+	// Reports are written whenever the run executed -- especially when tests
+	// failed and the run is about to exit 1. A report that cannot be written
+	// is a real error (stderr message, exit 1) even when every test passed,
+	// so it takes precedence over the silent errTestsFailed sentinel.
+	if err := writeReports(results, wall); err != nil {
+		return err
 	}
 
 	if anyFailed {

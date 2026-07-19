@@ -30,6 +30,10 @@ dats -v test tests.dats
 dats -j4 test tests/
 dats -j test tests/
 
+# Machine-readable reports for CI/editors (written even when the run fails)
+dats --report-junit report.xml test tests/
+dats --report-json report.json test tests/
+
 # Keep temp directory for debugging
 dats test --keep-temp tests.dats
 
@@ -62,6 +66,8 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
 | `-j, --jobs[=N]` | Global | Run test commands in parallel with N workers (bare `-j` = one per CPU; attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make). Spawned commands run at low OS priority (unix nice 19, best-effort). Default (flag absent) is fully serial — unchanged. Output stays byte-identical to a serial run when outcomes are equal; see [docs/cli.md](docs/cli.md) |
+| `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
+| `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |

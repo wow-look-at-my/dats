@@ -48,4 +48,5 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
 	registerJobsFlag(rootCmd.PersistentFlags())
+	registerReportFlags(rootCmd.PersistentFlags())
 }

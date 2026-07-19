@@ -41,6 +41,8 @@ the current directory tree.
 |------|-------------|
 | `-v, --verbose` | Show command details, durations, and full output on failure |
 | `-j, --jobs[=N]` | Run test commands in parallel with N workers (bare `-j` = one per CPU). Attach the value — `-jN`, `-j=N`, or `--jobs=N`; a space-separated `-j N` does not bind (see [Parallel Execution](#parallel-execution--j)). Without the flag, execution is fully serial |
+| `--report-junit <path>` | Write a JUnit XML report of the run to `<path>` (see [Report Files](#report-files)) |
+| `--report-json <path>` | Write a JSON report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
@@ -64,6 +66,10 @@ dats -v test.dats
 # Parallel execution: 4 workers / one worker per CPU
 dats -j4 tests/
 dats -j tests/
+
+# Machine-readable reports (either or both; parent dirs are created)
+dats --report-junit report.xml tests/
+dats --report-json report.json tests/
 
 # Keep the temp directory to inspect fixtures/outputs
 dats --keep-temp test.dats
@@ -133,6 +139,24 @@ In jobs mode every file is parsed up front, so a parse error in any file aborts 
 before a single command executes. (Serial mode parses each file as it reaches it: a bad
 later file aborts the run after earlier files already ran. This error-path difference is
 the only behavioral divergence.)
+
+## Report Files
+
+`--report-junit <path>` and `--report-json <path>` write machine-readable reports of the
+run — for CI systems and editor integrations — at the end of the run. Either or both may
+be given; parent directories are created automatically.
+
+- Reports are written whenever the run executed, **including failing runs** (the process
+  still exits 1); they are built from the same data in serial and `-j` runs, in canonical
+  order. Stdout output and exit codes are unchanged.
+- Hard errors that abort the run (unreadable file, parse error) write no report; a report
+  file that cannot be written is itself an error (stderr message, exit 1) even when every
+  test passed. `dats syntax` never writes reports.
+- JSON summary counts equal the CLI summary numbers (test instances only); JUnit totals
+  additionally include synthetic `[setup]`/`[teardown]` cases for failed file-level hooks.
+
+See [Machine-Readable Reports](reports.md) for the full format specification and its
+stability guarantees.
 
 ## Output
 
