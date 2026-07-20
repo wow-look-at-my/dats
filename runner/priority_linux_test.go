@@ -10,6 +10,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -62,7 +63,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel([]string{path}, 2)
+	results, err := r.RunFilesParallel(context.Background(), []string{path}, 2)
 	require.Nil(t, err)
 	require.Len(t, results, 1)
 	assert.True(t, results[0].Ok(), "output:\n%s", buf.String())
@@ -99,7 +100,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(path)
+	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.True(t, result.Ok(), "output:\n%s", buf.String())
 	assert.Equal(t, 2, result.Passed)

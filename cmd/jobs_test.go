@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -118,8 +119,8 @@ func TestRunTestsJobsOutputMatchesSerial(t *testing.T) {
 	example := filepath.Join("..", "examples", "example.dats")
 
 	var serial, parallel bytes.Buffer
-	require.Nil(t, runTests([]string{example}, &serial, 0))
-	require.Nil(t, runTests([]string{example}, &parallel, 4))
+	require.Nil(t, runTests(context.Background(), []string{example}, &serial, 0))
+	require.Nil(t, runTests(context.Background(), []string{example}, &parallel, 4))
 
 	require.NotEmpty(t, serial.String())
 	assert.Contains(t, serial.String(), "(22 tests)")
@@ -182,8 +183,8 @@ tests:
 	}
 
 	var serial, parallel bytes.Buffer
-	errSerial := runTests(paths, &serial, 0)
-	errParallel := runTests(paths, &parallel, 4)
+	errSerial := runTests(context.Background(), paths, &serial, 0)
+	errParallel := runTests(context.Background(), paths, &parallel, 4)
 
 	// Equal outcomes in both modes, including the failing exit...
 	assert.ErrorIs(t, errSerial, errTestsFailed)

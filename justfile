@@ -21,13 +21,13 @@ build-cover output="$BUILD_DIR/dats":
 # Run all tests with coverage
 test: build
     go test -cover ./...
-    "$BUILD_DIR/dats" examples/example.dats
+    "$BUILD_DIR/dats" examples/
 
 # Run all tests and collect binary coverage data
 test-cover: build-cover
     go test -cover ./...
     rm -rf "$COVER_DIR" && mkdir -p "$COVER_DIR"
-    GOCOVERDIR="$COVER_DIR" "$BUILD_DIR/dats" examples/example.dats
+    GOCOVERDIR="$COVER_DIR" "$BUILD_DIR/dats" examples/
     go tool covdata percent -i="$COVER_DIR"
     go tool covdata textfmt -i="$COVER_DIR" -o="$COVER_DIR/coverage.txt"
     @echo "Coverage profile: $COVER_DIR/coverage.txt"

@@ -49,4 +49,5 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
 	registerJobsFlag(rootCmd.PersistentFlags())
 	registerReportFlags(rootCmd.PersistentFlags())
+	registerUpdateFlag(rootCmd.PersistentFlags())
 }
