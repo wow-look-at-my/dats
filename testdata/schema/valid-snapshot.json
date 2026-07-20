@@ -1,0 +1,49 @@
+{
+  "tests": [
+    {
+      "desc": "boolean form snapshots stdout",
+      "cmd": "echo hello",
+      "outputs": {
+        "snapshot": true
+      }
+    },
+    {
+      "desc": "boolean toggle-off",
+      "cmd": "echo hello",
+      "outputs": {
+        "snapshot": false
+      }
+    },
+    {
+      "desc": "per-stream form",
+      "cmd": "echo out; echo err >&2",
+      "outputs": {
+        "snapshot": {
+          "stdout": true,
+          "stderr": true
+        }
+      }
+    },
+    {
+      "desc": "stderr only, composed with other assertions",
+      "cmd": "echo warning >&2",
+      "exit": 0,
+      "outputs": {
+        "stderr": ["warning"],
+        "snapshot": {
+          "stderr": true
+        }
+      }
+    },
+    {
+      "desc": "per-instance goldens for a matrix test",
+      "cmd": "echo {matrix.who}",
+      "matrix": {
+        "who": ["alice", "bob"]
+      },
+      "outputs": {
+        "snapshot": true
+      }
+    }
+  ]
+}

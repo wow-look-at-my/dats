@@ -7,10 +7,12 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +54,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(paths, 8)
+	results, err := r.RunFilesParallel(context.Background(), paths, 8)
 	require.Nil(t, err)
 	require.Len(t, results, 3)
 	for i, res := range results {
@@ -86,7 +88,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel([]string{path}, 4)
+	results, err := r.RunFilesParallel(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 	require.Len(t, results, 1)
 	res := results[0]
@@ -144,7 +146,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel([]string{fileA, fileB}, 4)
+	results, err := r.RunFilesParallel(context.Background(), []string{fileA, fileB}, 4)
 	require.Nil(t, err)
 	require.Len(t, results, 2)
 	for i, res := range results {
@@ -169,7 +171,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel([]string{good, bad}, 2)
+	results, err := r.RunFilesParallel(context.Background(), []string{good, bad}, 2)
 	require.NotNil(t, err)
 	assert.Nil(t, results)
 	assert.Contains(t, err.Error(), "bad.dats")
@@ -181,7 +183,38 @@ tests:
 func TestRunFilesParallelRejectsNonPositiveJobs(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	_, err := r.RunFilesParallel(nil, 0)
+	_, err := r.RunFilesParallel(context.Background(), nil, 0)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "at least 1")
+}
+
+func TestRunFilesParallelCanceledContextTeardownStillRuns(t *testing.T) {
+	// The jobs-mode path honors the same contract as serial RunFile: a
+	// canceled context kills the in-flight instances promptly, they report as
+	// failures, and teardown still runs under context.WithoutCancel.
+	marker := filepath.Join(t.TempDir(), "teardown-ran")
+	path := writeParallelDats(t, "cancel.dats", `
+teardown: touch `+marker+`
+tests:
+  - desc: long sleeper
+    cmd: sleep 5
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	start := time.Now()
+	results, err := r.RunFilesParallel(ctx, []string{path}, 2)
+	elapsed := time.Since(start)
+	require.Nil(t, err)
+	require.Len(t, results, 1)
+	assert.Less(t, elapsed, 2*time.Second, "cancellation must abort the run promptly")
+	assert.Equal(t, 1, results[0].Failed)
+	assert.False(t, results[0].Ok())
+	assert.FileExists(t, marker, "teardown must run under context.WithoutCancel even after cancellation")
 }

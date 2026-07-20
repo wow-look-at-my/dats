@@ -218,6 +218,32 @@ tests:
 
 ---
 
+## Snapshot (Golden-File) Assertions
+
+Pin an entire output verbatim without spelling it out in YAML: the captured stream must
+byte-match a golden file stored next to the `.dats` file. Create and refresh goldens with
+`dats --update`; see the
+[file format reference](file-format.md#snapshot-assertions-outputssnapshot) for storage,
+naming, and normalization details, and `examples/snapshot.dats` in the repository for a
+runnable demo with committed goldens.
+
+```yaml
+tests:
+  - desc: renders the report          # golden: <file>.snapshots/001-renders-the-report.stdout.golden
+    cmd: mytool report
+    outputs:
+      snapshot: true                  # boolean shorthand: snapshot stdout
+
+  - desc: split streams
+    cmd: mytool report --warnings
+    outputs:
+      snapshot:                       # per-stream form
+        stdout: true
+        stderr: true
+```
+
+---
+
 ## Common Patterns
 
 ### Testing CLI Tools

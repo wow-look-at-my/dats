@@ -27,11 +27,12 @@ type ExecResult struct {
 // can never block a test indefinitely.
 const waitDelay = 1 * time.Second
 
-// Execute runs a command and captures its output. If timeout > 0, the
-// command's whole process group is killed when the deadline elapses and the
-// result's TimedOut flag is set.
-func Execute(cmd string, stdin string, env []string, timeout time.Duration) (*ExecResult, error) {
-	return execute(cmd, stdin, env, timeout, false)
+// Execute runs a command and captures its output. ctx is the base context:
+// canceling it kills the command's whole process group (reported as a signal
+// death, never as a timeout). If timeout > 0, the deadline is layered on top
+// of ctx and the result's TimedOut flag is set when it elapses.
+func Execute(ctx context.Context, cmd string, stdin string, env []string, timeout time.Duration) (*ExecResult, error) {
+	return execute(ctx, cmd, stdin, env, timeout, false)
 }
 
 // execute is Execute plus the jobs-mode lowPriority knob: when set, the
@@ -40,8 +41,7 @@ func Execute(cmd string, stdin string, env []string, timeout time.Duration) (*Ex
 // workloads never starve the machine -- or dats itself, which stays at
 // normal priority. Best-effort: renice failures are ignored. Serial runs
 // pass false and make no priority syscalls at all.
-func execute(cmd string, stdin string, env []string, timeout time.Duration, lowPriority bool) (*ExecResult, error) {
-	ctx := context.Background()
+func execute(ctx context.Context, cmd string, stdin string, env []string, timeout time.Duration, lowPriority bool) (*ExecResult, error) {
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -123,7 +123,10 @@ func execute(cmd string, stdin string, env []string, timeout time.Duration, lowP
 	// A run counts as timed out only when the deadline expired, our cancel
 	// actually fired, and the command did not complete on its own: a command
 	// that exits -- even exactly at the deadline -- is reported by its exit
-	// code, never as a timeout.
+	// code, never as a timeout. ctx here is the derived per-command context,
+	// so a parent cancellation (e.g. Ctrl-C in watch mode) surfaces as
+	// context.Canceled, not DeadlineExceeded, and correctly stays TimedOut ==
+	// false -- the command shows as a signal death instead.
 	result.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded) &&
 		cancelFired.Load() &&
 		!state.Success() &&

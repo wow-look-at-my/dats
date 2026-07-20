@@ -34,6 +34,12 @@ dats -j test tests/
 dats --report-junit report.xml test tests/
 dats --report-json report.json test tests/
 
+# Rewrite snapshot golden files from actual output (see outputs.snapshot)
+dats --update test tests/
+
+# Watch mode: run everything, then re-run the complete scope on file changes
+dats watch tests/
+
 # Keep temp directory for debugging
 dats test --keep-temp tests.dats
 
@@ -57,6 +63,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Command | Description |
 |---------|-------------|
 | `test` | Run tests from `.dats` files or directories (default when no subcommand given) |
+| `watch` | Run tests, then re-run the **complete** argument scope whenever the resolved `.dats` files, their `.snapshots/` golden dirs, or directory arguments change (debounced; no per-file re-run — dats has no test filtering by design). Ctrl-C exits 0. See [docs/cli.md](docs/cli.md#watch-mode-dats-watch) |
 | `syntax` | Validate `.dats` file syntax without executing tests |
 | `version` | Print a one-line `dats <version>` |
 
@@ -68,6 +75,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | `-j, --jobs[=N]` | Global | Run test commands in parallel with N workers (bare `-j` = one per CPU; attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make). Spawned commands run at low OS priority (unix nice 19, best-effort). Default (flag absent) is fully serial — unchanged. Output stays byte-identical to a serial run when outcomes are equal; see [docs/cli.md](docs/cli.md) |
 | `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
 | `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
+| `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
@@ -191,6 +199,14 @@ tests:
     exit: EXIT_SUCCESS
     cmd: true
 
+  # Snapshot (golden-file) assertion: stdout must byte-match the golden
+  # stored next to this file (<file>.snapshots/NNN-<slug>.stdout.golden);
+  # create/refresh goldens with `dats --update`
+  - desc: matches the stored golden
+    cmd: echo stable output
+    outputs:
+      snapshot: true
+
   # Matrix (parameterized) test: one instance per combination (this one runs
   # 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
   - desc: greets
@@ -235,6 +251,7 @@ mode — do not assume exclusive access to global resources.
 | `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
 | `outputs.files` | No | Map of filename → FileCheck for output file validation; an empty check (`{}` or null) means "must exist" |
 | `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist; empty check = must NOT exist) |
+| `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or `{stdout: bool, stderr: bool}` (at least one true). Output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp paths normalize to `{testdir}`/`{shareddir}`/`{tmproot}`; `dats --update` (re)writes goldens and prunes stale ones |
 | `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
 File names under `inputs.files`, `outputs.files`, and `outputs.!files` must be
@@ -248,6 +265,7 @@ rejected at parse time, so `dats syntax` catches it). Nested names like
 - `!stdout` / `!stderr` - Patterns that must NOT appear in output (list of substrings, or map of 0-indexed line numbers to regexes that must not match within that line)
 - `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match); an empty check is an implicit "must exist"
 - `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match; an empty check is an implicit "must NOT exist"
+- `snapshot` - Golden-file assertion: captured stdout (and/or stderr) must byte-match a golden stored in a `.snapshots` directory next to the `.dats` file, temp paths normalized to stable tokens; `dats --update` rewrites goldens from actual output and prunes stale ones. See [docs/file-format.md](docs/file-format.md#snapshot-assertions-outputssnapshot)
 - `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
 ### Failure Reporting
