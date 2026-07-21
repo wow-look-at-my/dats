@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestRunTestSimplePass(t *testing.T) {
 		Desc: "simple echo",
 	}
 
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 	assert.Equal(t, "simple echo", result.Name)
 	assert.Empty(t, result.Failures)
@@ -46,7 +47,7 @@ func TestRunTestUsesCmd(t *testing.T) {
 	tmp := t.TempDir()
 
 	test := &schema.Test{Cmd: "echo hi"}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.Equal(t, "echo hi", result.Name)
 }
 
@@ -60,7 +61,7 @@ func TestRunTestExitCodeFail(t *testing.T) {
 		Exit: schema.ExitCode{Value: 0},
 	}
 
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	assert.NotEmpty(t, result.Failures)
 }
@@ -77,7 +78,7 @@ func TestRunTestStdoutPattern(t *testing.T) {
 		},
 	}
 
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -93,7 +94,7 @@ func TestRunTestStdoutPatternFail(t *testing.T) {
 		},
 	}
 
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 }
 
@@ -108,7 +109,7 @@ func TestRunTestNotStdout(t *testing.T) {
 			NotStdout: schema.OutputCheck{Patterns: []string{"missing"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 
 	test2 := &schema.Test{
@@ -117,7 +118,7 @@ func TestRunTestNotStdout(t *testing.T) {
 			NotStdout: schema.OutputCheck{Patterns: []string{"hello"}},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 }
 
@@ -132,7 +133,7 @@ func TestRunTestStderr(t *testing.T) {
 			Stderr: schema.OutputCheck{Patterns: []string{"err"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -147,7 +148,7 @@ func TestRunTestNotStderr(t *testing.T) {
 			NotStderr: schema.OutputCheck{Patterns: []string{"missing"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -164,7 +165,7 @@ func TestRunTestLineChecks(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -180,7 +181,7 @@ func TestRunTestNegativeLineChecks(t *testing.T) {
 			NotStdout: schema.OutputCheck{LineChecks: map[int]string{1: "error"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.NotEmpty(t, result.Failures)
 	assert.Contains(t, result.Failures[0], "!stdout")
@@ -193,7 +194,7 @@ func TestRunTestNegativeLineChecks(t *testing.T) {
 			NotStdout: schema.OutputCheck{LineChecks: map[int]string{1: "error"}},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.True(t, result2.Passed, "failures: %v", result2.Failures)
 
 	// Line does not exist: pass (nothing there to match)
@@ -203,7 +204,7 @@ func TestRunTestNegativeLineChecks(t *testing.T) {
 			NotStdout: schema.OutputCheck{LineChecks: map[int]string{7: "error"}},
 		},
 	}
-	result3 := r.RunTest(test3, tmp, 2)
+	result3 := r.RunTest(context.Background(), test3, tmp, 2)
 	assert.True(t, result3.Passed, "failures: %v", result3.Failures)
 }
 
@@ -218,7 +219,7 @@ func TestRunTestNegativeStderrLineChecks(t *testing.T) {
 			NotStderr: schema.OutputCheck{LineChecks: map[int]string{0: "^warning"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.NotEmpty(t, result.Failures)
 	assert.Contains(t, result.Failures[0], "!stderr")
@@ -229,7 +230,7 @@ func TestRunTestNegativeStderrLineChecks(t *testing.T) {
 			NotStderr: schema.OutputCheck{LineChecks: map[int]string{0: "^warning"}},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.True(t, result2.Passed, "failures: %v", result2.Failures)
 }
 
@@ -246,7 +247,7 @@ func TestRunTestStderrLineChecks(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -264,7 +265,7 @@ func TestRunTestWithInputs(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{"world"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -282,7 +283,7 @@ func TestRunTestWithStdin(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{"piped input"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -300,7 +301,7 @@ func TestRunTestOutputFileExists(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -327,7 +328,7 @@ func TestRunTestPlaceholderInInputContents(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
@@ -345,7 +346,7 @@ func TestRunTestOutputPlaceholderWithoutFilesCheck(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{"data"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	content, err := os.ReadFile(filepath.Join(tmp, "test-0", "outputs", "free.txt"))
@@ -367,7 +368,7 @@ func TestRunTestOutputFileNotExists(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -384,7 +385,7 @@ func TestRunTestOutputFileNotMatch(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed)
 }
 
@@ -403,7 +404,7 @@ func TestRunTestNotFilesExists(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	// The same check fails when the command does create the file.
@@ -415,7 +416,7 @@ func TestRunTestNotFilesExists(t *testing.T) {
 			},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 	require.NotEmpty(t, result2.Failures)
 	assert.Contains(t, result2.Failures[0], "!file stray.txt")
@@ -436,7 +437,7 @@ func TestRunTestNotFilesExistsFalse(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	test2 := &schema.Test{
@@ -447,7 +448,7 @@ func TestRunTestNotFilesExistsFalse(t *testing.T) {
 			},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 }
 
@@ -465,7 +466,7 @@ func TestRunTestNotFilesMatch(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	// Fails when the pattern does match.
@@ -477,7 +478,7 @@ func TestRunTestNotFilesMatch(t *testing.T) {
 			},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 
 	// A missing file passes vacuously: it cannot match anything.
@@ -489,7 +490,7 @@ func TestRunTestNotFilesMatch(t *testing.T) {
 			},
 		},
 	}
-	result3 := r.RunTest(test3, tmp, 2)
+	result3 := r.RunTest(context.Background(), test3, tmp, 2)
 	assert.True(t, result3.Passed, "failures: %v", result3.Failures)
 }
 
@@ -507,7 +508,7 @@ func TestRunTestNotFilesNotMatch(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	test2 := &schema.Test{
@@ -518,7 +519,7 @@ func TestRunTestNotFilesNotMatch(t *testing.T) {
 			},
 		},
 	}
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 }
 
@@ -534,7 +535,7 @@ outputs:
     name: dats
     count: 2
 `)
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 
 	test2 := parseTestYAML(t, `
@@ -544,7 +545,7 @@ outputs:
     name: dats
     count: 2
 `)
-	result2 := r.RunTest(test2, tmp, 1)
+	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
 	require.NotEmpty(t, result2.Failures)
 	assert.Contains(t, result2.Failures[0], "json_output")
@@ -556,7 +557,7 @@ outputs:
   json_output:
     name: dats
 `)
-	result3 := r.RunTest(test3, tmp, 2)
+	result3 := r.RunTest(context.Background(), test3, tmp, 2)
 	assert.False(t, result3.Passed)
 	require.NotEmpty(t, result3.Failures)
 	assert.Contains(t, result3.Failures[0], "stdout is not valid JSON")
@@ -580,7 +581,7 @@ func TestRunTestTimeout(t *testing.T) {
 		Cmd:     "sleep 1",
 		Timeout: schema.Duration{Value: 50 * time.Millisecond},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.True(t, len(result.Failures) > 0)
 	assert.Contains(t, result.Failures[0], "timed out after")
@@ -603,7 +604,7 @@ func TestRunFile(t *testing.T) {
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	result, err := r.RunFile(datsFile)
+	result, err := r.RunFile(context.Background(), datsFile)
 	require.Nil(t, err)
 	assert.Equal(t, 2, result.Passed)
 	assert.Equal(t, 0, result.Failed)
@@ -619,7 +620,7 @@ func TestRunFileKeepTemp(t *testing.T) {
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, true, "")
-	result, err := r.RunFile(datsFile)
+	result, err := r.RunFile(context.Background(), datsFile)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed)
 	assert.Contains(t, buf.String(), "Temp directory:")
@@ -628,7 +629,7 @@ func TestRunFileKeepTemp(t *testing.T) {
 func TestRunFileInvalidPath(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	_, err := r.RunFile("/nonexistent/path.dats")
+	_, err := r.RunFile(context.Background(), "/nonexistent/path.dats")
 	assert.NotNil(t, err)
 }
 
@@ -643,7 +644,7 @@ func TestRunFileCoverDir(t *testing.T) {
 	coverDir := filepath.Join(tmp, "coverage")
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, coverDir)
-	_, err := r.RunFile(datsFile)
+	_, err := r.RunFile(context.Background(), datsFile)
 	require.Nil(t, err)
 
 	// Coverage directory should have been created

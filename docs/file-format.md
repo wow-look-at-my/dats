@@ -506,6 +506,7 @@ outputs:
   "!stderr":     # patterns that must NOT appear (or line-number map)
   files:         # output file checks
   "!files":      # negated output file checks
+  snapshot:      # golden-file (snapshot) assertion on stdout/stderr
   json_output:   # expected JSON value of the whole stdout
 ```
 
@@ -670,6 +671,122 @@ On mismatch the failure lists each difference with its JSONPath-style location:
 
 ---
 
+## Snapshot Assertions (outputs.snapshot)
+
+`snapshot` asserts that captured output byte-matches a stored **golden file**, so a test can
+pin an entire output verbatim without spelling it out in YAML. Two forms:
+
+```yaml
+tests:
+  - desc: renders the report
+    cmd: mytool report
+    outputs:
+      snapshot: true          # snapshot stdout (boolean shorthand)
+
+  - desc: split streams
+    cmd: mytool report --warnings
+    outputs:
+      snapshot:               # per-stream form: enable stdout and/or stderr
+        stdout: true
+        stderr: true
+```
+
+`snapshot: false` is the documented toggle-off — identical to omitting the key, handy for
+temporarily disabling a snapshot without deleting the block. The per-stream mapping must
+enable at least one stream; a mapping that enables neither (empty, or explicit falses),
+an unknown key, a non-boolean value, and a duplicate key are all parse errors.
+
+### Golden Storage and Naming
+
+Goldens live in a `.snapshots` directory next to the `.dats` file — `examples/demo.dats`
+keeps its goldens in `examples/demo.snapshots/`. Each enabled stream of each test instance
+gets its own file:
+
+```
+<file>.snapshots/NNN-<slug>.<stream>.golden
+```
+
+- `NNN` is the canonical **1-based instance number** — the same number the CLI prints in
+  `ok N -` and the JSON report's `index` — zero-padded to three digits.
+- `<slug>` derives from the instance's display name (desc — or the command when there is no
+  desc — plus the matrix label): lowercased, runs of characters outside `[a-z0-9]` become
+  single dashes, trimmed, truncated to 60 characters, with `test` as the fallback for a name
+  that slugs to nothing.
+- `<stream>` is `stdout` or `stderr`.
+
+Names derive from position and name, so **renaming, reordering, or removing tests changes
+the expected golden names** — re-bless with `--update`, which writes the new files and
+prunes the now-stale ones.
+
+A **matrix** test snapshots per instance: every combination gets its own golden (the matrix
+label is part of the slug), e.g. `003-greets-who-alice.stdout.golden` and
+`004-greets-who-bob.stdout.golden`.
+
+### Comparison and Normalization
+
+Comparison is **byte-exact after normalization**: before comparing (or writing), the
+framework's temp paths in the output are replaced with stable tokens, longest path first —
+
+| Text in output | Token |
+|----------------|-------|
+| the instance's test directory (`/tmp/dats-xxxxxx/test-N`) | `{testdir}` |
+| the file's shared directory (`/tmp/dats-xxxxxx/shared`) | `{shareddir}` |
+| the per-run temp root (`/tmp/dats-xxxxxx`) | `{tmproot}` |
+
+— so a command that prints an `{inputs.X}` path produces a golden containing
+`{testdir}/inputs/X`, reproducible across runs and machines. Everything else is compared
+byte for byte: **trailing newlines are significant** (the common echo-vs-printf slip is
+called out specially as `output differs only by a trailing newline`). Known limitation:
+output that *literally* contains `{testdir}`, `{shareddir}`, or `{tmproot}` is
+indistinguishable from a normalized path in the golden.
+
+Without `--update`, a missing golden is a failure:
+
+```
+# snapshot: stdout: golden file demo.snapshots/001-renders.stdout.golden does not exist (run with --update to create it)
+```
+
+and a mismatch names the first difference (0-indexed lines, matching the line-check
+convention):
+
+```
+# snapshot: stdout: output does not match golden file demo.snapshots/001-renders.stdout.golden (line 2: expected "total 4", got "total 5")
+```
+
+Like every other assertion, snapshots are skipped when the command did not run to
+completion — a timeout reports only `command timed out after X`.
+
+### Updating Goldens (--update)
+
+`dats --update <files>` rewrites goldens from actual output instead of failing:
+
+- A golden is written only when it is **missing or differs**; an up-to-date golden is not
+  rewritten (no mtime churn) and not listed.
+- Goldens **never update from a failing instance**: if the instance has any other failure
+  (wrong exit code, a failed pattern check, ...), its goldens are neither written nor
+  compared — fix the test first.
+- Stale `*.golden` files in the file's snapshot directory — instances or streams that no
+  longer exist — are **pruned** (after a clean file setup only), and the directory itself is
+  removed when pruning empties it. Non-`.golden` files are never touched.
+- Every write and prune is listed on stdout (`# updated golden: ...`,
+  `# pruned stale golden: ...`), with an end-of-run summary line
+  (`Updated 2 golden file(s), pruned 1 stale`).
+
+See [CLI Usage](cli.md#updating-snapshots---update) for a worked example.
+
+### Scope Notes
+
+- Only the two output **streams** can be snapshotted. A `files` variant is deliberately
+  rejected for v1: `outputs.files` `match`/`notMatch` already asserts file contents, and a
+  files variant would multiply the naming scheme (per instance × per declared file) —
+  revisit if demanded.
+- Snapshots compose with `-j` — golden files are per-instance unique, results are
+  deterministic, and output stays byte-identical to a serial run — and appear in
+  `--report-junit`/`--report-json` as ordinary assertion failures (no report format
+  change).
+
+---
+
 ## Complete Field Reference
 
 ```yaml
@@ -706,5 +823,6 @@ tests:
           exists: bool
           match: []
           notMatch: []
+      snapshot: bool|{}    # golden-file assertion: true = stdout, or {stdout: bool, stderr: bool}
       json_output: any     # expected JSON value of the whole stdout
 ```

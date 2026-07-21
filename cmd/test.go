@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -29,25 +30,31 @@ recursively finds and runs all .dats files in the current directory tree.`,
 }
 
 // runTestsCommand is the shared RunE of the root command and the test
-// subcommand: it resolves the -j/--jobs flag and runs the given files.
+// subcommand: it resolves the -j/--jobs flag and runs the given files. It
+// passes context.Background() -- plain `dats test` installs no signal
+// handling and behaves exactly as before; only `dats watch` passes a
+// cancelable context.
 func runTestsCommand(cmd *cobra.Command, args []string) error {
 	jobs, err := resolveJobs(cmd.Flags())
 	if err != nil {
 		return err
 	}
-	return runTests(args, os.Stdout, jobs)
+	return runTests(context.Background(), args, os.Stdout, jobs)
 }
 
 // runTests runs every resolved file: serially when jobs is 0 (the historical
 // code path, unchanged), or with up to jobs concurrently-running commands
 // when jobs >= 1. Both modes report identical totals and exit status.
-func runTests(args []string, out io.Writer, jobs int) error {
+// Canceling ctx kills in-flight commands (teardown still runs) and the
+// aborted instances report as failures.
+func runTests(ctx context.Context, args []string, out io.Writer, jobs int) error {
 	files, err := resolveFiles(args)
 	if err != nil {
 		return err
 	}
 
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
+	r.Update = updateGoldens
 
 	// Wall time of the execution phase, consumed only by the report files;
 	// stdout output never mentions it. Hard errors below abort the run
@@ -56,14 +63,14 @@ func runTests(args []string, out io.Writer, jobs int) error {
 
 	var results []*runner.FileResult
 	if jobs > 0 {
-		results, err = r.RunFilesParallel(files, jobs)
+		results, err = r.RunFilesParallel(ctx, files, jobs)
 		if err != nil {
 			// Already carries the "running <path>:" context.
 			return err
 		}
 	} else {
 		for _, path := range files {
-			result, err := r.RunFile(path)
+			result, err := r.RunFile(ctx, path)
 			if err != nil {
 				return fmt.Errorf("running %s: %w", path, err)
 			}
@@ -93,6 +100,25 @@ func runTests(args []string, out io.Writer, jobs int) error {
 			fmt.Fprintf(out, ", %d failed", totalFailed)
 		}
 		fmt.Fprintln(out)
+	}
+
+	// Under --update, summarize the golden churn (writes and prunes were
+	// already listed per file). Silent when nothing changed.
+	if updateGoldens {
+		updated, pruned := 0, 0
+		for _, result := range results {
+			for i := range result.Results {
+				updated += len(result.Results[i].UpdatedGoldens)
+			}
+			pruned += len(result.PrunedGoldens)
+		}
+		if updated+pruned > 0 {
+			fmt.Fprintf(out, "\nUpdated %d golden file(s)", updated)
+			if pruned > 0 {
+				fmt.Fprintf(out, ", pruned %d stale", pruned)
+			}
+			fmt.Fprintln(out)
+		}
 	}
 
 	// Reports are written whenever the run executed -- especially when tests

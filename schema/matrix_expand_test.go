@@ -279,3 +279,28 @@ tests:
 	require.Nil(t, err)
 	assert.Equal(t, []any{"v{matrix.i}", "v{matrix.i}"}, original)
 }
+
+func TestExpandMatrix_SnapshotIntactOnEveryInstance(t *testing.T) {
+	// The snapshot block holds no strings, so it is outside the matrix
+	// substitution scope; expansion must carry it verbatim onto every
+	// instance (copyTest copies OutputBlock by value, SnapshotCheck
+	// included).
+	tf, err := ParseFile(writeTempDats(t, `
+tests:
+  - desc: snap {matrix.who}
+    cmd: echo {matrix.who}
+    matrix:
+      who: [alice, bob]
+    outputs:
+      snapshot:
+        stdout: true
+        stderr: true
+`))
+	require.Nil(t, err)
+	instances := ExpandMatrix(&tf.Tests[0])
+	require.Len(t, instances, 2)
+	want := SnapshotCheck{Enabled: true, Stdout: true, Stderr: true}
+	for i := range instances {
+		assert.Equal(t, want, instances[i].Test.Outputs.Snapshot, "instance %d", i)
+	}
+}

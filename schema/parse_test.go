@@ -385,6 +385,70 @@ tests:
 	}
 }
 
+func TestParseFile_SnapshotForms(t *testing.T) {
+	// Both accepted shapes parse through the full file path: the boolean
+	// shorthand (stdout only) and the per-stream mapping. `snapshot: false`
+	// is the documented toggle-off, identical to omitting the key.
+	path := writeTempDats(t, `
+tests:
+  - desc: shorthand
+    cmd: echo hi
+    outputs:
+      snapshot: true
+  - desc: toggled off
+    cmd: echo hi
+    outputs:
+      snapshot: false
+  - desc: stderr only
+    cmd: echo err >&2
+    outputs:
+      snapshot:
+        stderr: true
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	require.Equal(t, 3, len(tf.Tests))
+	assert.Equal(t, SnapshotCheck{Enabled: true, Stdout: true}, tf.Tests[0].Outputs.Snapshot)
+	assert.Equal(t, SnapshotCheck{}, tf.Tests[1].Outputs.Snapshot)
+	assert.Equal(t, SnapshotCheck{Enabled: true, Stderr: true}, tf.Tests[2].Outputs.Snapshot)
+}
+
+func TestParseFile_SnapshotRejected(t *testing.T) {
+	// The unmarshaler's errors surface through ParseFile, so `dats syntax`
+	// catches a malformed snapshot key without running anything.
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"unknown stream key": {`
+tests:
+  - cmd: echo hi
+    outputs:
+      snapshot:
+        files: true
+`, `snapshot: unknown key "files" (allowed: stdout, stderr)`},
+		"nothing enabled": {`
+tests:
+  - cmd: echo hi
+    outputs:
+      snapshot: {}
+`, "snapshot: must enable at least one of stdout, stderr"},
+		"non-bool scalar": {`
+tests:
+  - cmd: echo hi
+    outputs:
+      snapshot: everything
+`, "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestParseFile_NestedLocalFileNamesAllowed(t *testing.T) {
 	// Nested relative names like sub/file.txt are local and stay accepted.
 	path := writeTempDats(t, `

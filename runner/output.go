@@ -14,10 +14,20 @@ type TestResult struct {
 	Passed   bool
 	Duration time.Duration
 	Failures []string
+	// UpdatedGoldens lists the snapshot golden files rewritten from this
+	// instance's actual output under --update (missing or differing goldens
+	// only; up-to-date goldens are never rewritten or listed).
+	UpdatedGoldens []string
 	// Verbose output
 	Command string
 	Stdout  string
 	Stderr  string
+
+	// ranToCompletion is true when the command actually ran and exited on
+	// its own (not a fixture-setup failure, spawn failure, or timeout).
+	// Snapshot assertions apply only to completed runs, mirroring how a
+	// timeout skips every other assertion.
+	ranToCompletion bool
 }
 
 // FileResult contains the results of running all tests in a file
@@ -35,6 +45,10 @@ type FileResult struct {
 	// any entry here marks the whole file failed, even when every test
 	// passed.
 	TeardownFailures []CommandFailure
+	// PrunedGoldens lists the stale snapshot golden files removed from the
+	// file's snapshot directory under --update (sorted). Empty on ordinary
+	// runs.
+	PrunedGoldens []string
 }
 
 // Ok reports whether the file run passed as a whole: every test passed, setup
@@ -77,8 +91,20 @@ func (f *Formatter) PrintResult(r *TestResult) {
 		}
 	}
 
+	for _, path := range r.UpdatedGoldens {
+		fmt.Fprintf(f.Writer, "  # updated golden: %s\n", path)
+	}
+
 	if f.Verbose {
 		f.printVerboseDetails(r)
+	}
+}
+
+// PrintPrunedGoldens prints one line per stale snapshot golden file removed
+// under --update. Nothing is printed on ordinary runs (the list is empty).
+func (f *Formatter) PrintPrunedGoldens(fr *FileResult) {
+	for _, path := range fr.PrunedGoldens {
+		fmt.Fprintf(f.Writer, "# pruned stale golden: %s\n", path)
 	}
 }
 

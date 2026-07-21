@@ -6,6 +6,7 @@ package runner
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,7 +35,7 @@ func TestRunTestTimeoutSkipsOtherAssertions(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.Len(t, result.Failures, 1, "failures: %v", result.Failures)
 	assert.Contains(t, result.Failures[0], "timed out after")
@@ -48,7 +49,7 @@ func TestRunTestSignalDeathMessage(t *testing.T) {
 	tmp := t.TempDir()
 
 	test := &schema.Test{Cmd: "kill -KILL $$"}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.NotEmpty(t, result.Failures)
 	assert.Contains(t, result.Failures[0], "expected exit code 0, got -1 (killed by signal: killed)")
@@ -65,7 +66,7 @@ func TestRunTestRejectsTraversalInputName(t *testing.T) {
 			Files: map[string]string{"../../evil.txt": "pwned"},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.NotEmpty(t, result.Failures)
 	assert.Contains(t, result.Failures[0], "fixture setup:")
@@ -89,7 +90,7 @@ func TestRunTestRejectsTraversalOutputName(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.NotEmpty(t, result.Failures)
 	assert.Contains(t, result.Failures[0], "output file name")
@@ -114,7 +115,7 @@ func TestRunTestNestedOutputFile(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
@@ -132,7 +133,7 @@ func TestRunTestEmptyFileCheckIsImplicitExists(t *testing.T) {
 				Files: map[string]schema.FileCheck{"never-written.txt": {}},
 			},
 		}
-		result := r.RunTest(test, t.TempDir(), 0)
+		result := r.RunTest(context.Background(), test, t.TempDir(), 0)
 		assert.False(t, result.Passed)
 		require.Len(t, result.Failures, 1, "failures: %v", result.Failures)
 		assert.Contains(t, result.Failures[0], "file never-written.txt")
@@ -146,7 +147,7 @@ func TestRunTestEmptyFileCheckIsImplicitExists(t *testing.T) {
 				Files: map[string]schema.FileCheck{"present.txt": {}},
 			},
 		}
-		result := r.RunTest(test, t.TempDir(), 0)
+		result := r.RunTest(context.Background(), test, t.TempDir(), 0)
 		assert.True(t, result.Passed, "failures: %v", result.Failures)
 	})
 }
@@ -163,7 +164,7 @@ func TestRunTestEmptyNotFileCheckIsImplicitNotExists(t *testing.T) {
 				NotFiles: map[string]schema.FileCheck{"never-written.txt": {}},
 			},
 		}
-		result := r.RunTest(test, t.TempDir(), 0)
+		result := r.RunTest(context.Background(), test, t.TempDir(), 0)
 		assert.True(t, result.Passed, "failures: %v", result.Failures)
 	})
 
@@ -174,7 +175,7 @@ func TestRunTestEmptyNotFileCheckIsImplicitNotExists(t *testing.T) {
 				NotFiles: map[string]schema.FileCheck{"present.txt": {}},
 			},
 		}
-		result := r.RunTest(test, t.TempDir(), 0)
+		result := r.RunTest(context.Background(), test, t.TempDir(), 0)
 		assert.False(t, result.Passed)
 		require.Len(t, result.Failures, 1, "failures: %v", result.Failures)
 		assert.Contains(t, result.Failures[0], "!file present.txt")
@@ -199,7 +200,7 @@ func TestRunTestEnvVarVisibleToCommand(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{"hello"}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
@@ -220,7 +221,7 @@ func TestRunTestEnvValueExpandsPlaceholders(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{`{"mode":"test"}`}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
@@ -241,7 +242,7 @@ func TestRunTestEnvCombinesWithCoverDir(t *testing.T) {
 			Stdout: schema.OutputCheck{Patterns: []string{"combo " + coverDir}},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
 }
 
@@ -265,7 +266,7 @@ func TestRunTestFileFailuresSortedByName(t *testing.T) {
 			},
 		},
 	}
-	result := r.RunTest(test, tmp, 0)
+	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.False(t, result.Passed)
 	require.Len(t, result.Failures, 5)
 	for i, name := range []string{"aaa.txt", "bbb.txt", "ccc.txt", "ddd.txt", "eee.txt"} {

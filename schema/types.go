@@ -241,6 +241,10 @@ type OutputBlock struct {
 	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
 	Files     map[string]FileCheck `yaml:"files,omitempty"`
 	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
+	// Snapshot configures golden-file assertions for the test's output
+	// streams (snapshot key). A value type so matrix expansion's copyTest
+	// duplicates it by plain value copy.
+	Snapshot SnapshotCheck `yaml:"snapshot,omitempty"`
 	// JSONOutput is the expected JSON value of the whole stdout (json_output
 	// key). Stored as a yaml.Node so an explicit null expectation is
 	// distinguishable from an omitted key (zero node Kind).
@@ -318,6 +322,71 @@ func (o *OutputCheck) UnmarshalYAML(node *yaml.Node) error {
 // IsEmpty returns true if no checks are defined
 func (o OutputCheck) IsEmpty() bool {
 	return len(o.Patterns) == 0 && len(o.LineChecks) == 0
+}
+
+// SnapshotCheck configures golden-file (snapshot) assertions for a test's
+// output streams. Zero value = no snapshot assertion.
+type SnapshotCheck struct {
+	// Enabled distinguishes a present snapshot key from an absent one:
+	// `snapshot: false` and an omitted key are both the zero value.
+	Enabled bool
+	Stdout  bool
+	Stderr  bool
+}
+
+// UnmarshalYAML decodes the two accepted snapshot shapes: a scalar boolean
+// (`snapshot: true` snapshots stdout; `snapshot: false` is the documented
+// toggle-off, identical to omitting the key) or a mapping of stream names
+// (stdout, stderr) to booleans, of which at least one must be true. The
+// mapping node is iterated directly, which bypasses yaml.v3's own
+// duplicate-key detection, so duplicates are detected here, mirroring
+// OutputCheck's line-map handling.
+func (s *SnapshotCheck) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var enabled bool
+		if err := node.Decode(&enabled); err != nil {
+			return fmt.Errorf("snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)")
+		}
+		if enabled {
+			*s = SnapshotCheck{Enabled: true, Stdout: true}
+		} else {
+			*s = SnapshotCheck{}
+		}
+		return nil
+	case yaml.MappingNode:
+		check := SnapshotCheck{}
+		seen := make(map[string]bool, len(node.Content)/2)
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode, valNode := node.Content[i], node.Content[i+1]
+			key := keyNode.Value
+			if key != "stdout" && key != "stderr" {
+				return fmt.Errorf("snapshot: unknown key %q (allowed: stdout, stderr)", key)
+			}
+			if seen[key] {
+				return fmt.Errorf("snapshot: %s declared more than once", key)
+			}
+			seen[key] = true
+			var enabled bool
+			if valNode.Kind != yaml.ScalarNode || valNode.Decode(&enabled) != nil {
+				return fmt.Errorf("snapshot: %s must be a boolean", key)
+			}
+			if key == "stdout" {
+				check.Stdout = enabled
+			} else {
+				check.Stderr = enabled
+			}
+		}
+		// A mapping that enables nothing (empty, or explicit falses) can only
+		// be a mistake: it looks like an assertion but asserts nothing.
+		if !check.Stdout && !check.Stderr {
+			return fmt.Errorf("snapshot: must enable at least one of stdout, stderr")
+		}
+		check.Enabled = true
+		*s = check
+		return nil
+	}
+	return fmt.Errorf("snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)")
 }
 
 // FileCheck defines validation for an output file
