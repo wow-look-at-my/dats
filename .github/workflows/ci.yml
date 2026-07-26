@@ -18,6 +18,11 @@ jobs:
       checks: read
     steps:
       - uses: actions/checkout@v4
+      # The sandbox integration tests skip themselves when no backend is
+      # usable, so without bubblewrap installed CI would report green while
+      # testing none of the isolation. (The docker-backend tests use the
+      # runner's own daemon, which is always present.)
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true

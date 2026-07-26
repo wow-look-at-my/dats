@@ -21,6 +21,8 @@ var syntaxCmd = &cobra.Command{
 If no files are specified, recursively finds and validates all .dats files
 in the current directory tree.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// The sandbox flags are inherited but inert here, exactly like
+		// --update: syntax runs no commands, so there is nothing to sandbox.
 		files, err := resolveFiles(args)
 		if err != nil {
 			return err

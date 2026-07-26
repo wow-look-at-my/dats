@@ -244,6 +244,51 @@ tests:
 
 ---
 
+## Sandboxing
+
+Test commands are sandboxed by default, and ordinary tests need no changes for it: fixtures,
+`{outputs.X}` and `{shared.X}` all live in the sandbox's writable temp directory.
+
+### Narrowing the sandbox for one file
+
+```yaml
+sandbox:
+  network: false        # these commands need no network, so they get none
+  writable:             # ...but they do need to write to this host path
+    - /var/lib/example
+tests:
+  - desc: writes its cache to a declared host path
+    cmd: mytool --cache /var/lib/example build
+```
+
+### Opting a file out
+
+For commands that genuinely need the host -- driving the local docker daemon, installing
+packages, writing outside the temp tree:
+
+```yaml
+sandbox: false
+tests:
+  - desc: the docker daemon is reachable
+    cmd: docker info
+```
+
+### Picking the image for the docker backend
+
+Only used when the docker backend is selected (bubblewrap runs commands against the host's
+own filesystem and ignores this). The image must ship bash:
+
+```yaml
+sandbox:
+  image: golang:1.24
+tests:
+  - desc: builds with the toolchain from the image
+    cmd: go build -o {outputs.bin} ./...
+```
+
+See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates and how to opt a
+whole run out (`--no-sandbox`).
+
 ## Common Patterns
 
 ### Testing CLI Tools
