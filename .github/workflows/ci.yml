@@ -17,8 +17,12 @@ jobs:
       actions: read
       checks: read
       # Publishing records what buildhost stored on the org's linked
-      # artifacts page; without this the release step fails with HTTP 404.
+      # artifacts page and registers a GitHub Deployment for the release;
+      # without these the publish step fails (HTTP 404 / "Resource not
+      # accessible by integration"). Job-level permissions REPLACE
+      # workflow-level ones, so they belong here alongside the rest.
       artifact-metadata: write
+      deployments: write
     steps:
       - uses: actions/checkout@v4
       # The sandbox integration tests skip themselves when no backend is
