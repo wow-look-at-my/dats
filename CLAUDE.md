@@ -198,7 +198,7 @@ tests:
 ## CI/CD
 
 GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with two jobs:
-- `test` - installs bubblewrap (so the sandbox integration tests actually run instead of silently skipping; the docker-backend tests use the runner's own daemon), builds the Go binary (multi-platform), runs tests via `wow-look-at-my/go-toolchain`, and creates releases on master pushes
+- `test` - installs bubblewrap, clears ubuntu-24.04's `kernel.apparmor_restrict_unprivileged_userns` (which otherwise denies bwrap the user namespace it needs, silently turning every bwrap test into a skip) and runs the bwrap probe as its own step so an unusable backend fails with its own error; then builds the Go binary (multi-platform), runs tests via `wow-look-at-my/go-toolchain`, and creates releases on master pushes. `DATS_REQUIRE_SANDBOX=1` is set job-wide: the sandbox integration tests are skippable by design (a dev machine may have no backend) but MUST fail rather than skip in CI -- a skip there is green-while-testing-nothing. The docker tests honor it for the daemon; an unfetchable image stays a skip (a registry outage says nothing about the code). `artifact-metadata: write` is required by the publish step (job-level permissions REPLACE workflow-level ones)
 - `schema` - validates `testdata/schema/*.json` fixtures against `schema.json` using the `wow-look-at-my/json-validator` action, guarding against schema drift
 
 ## JSON Schema

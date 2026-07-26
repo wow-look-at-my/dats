@@ -16,13 +16,27 @@ jobs:
       contents: write
       actions: read
       checks: read
+      # Publishing records what buildhost stored on the org's linked
+      # artifacts page; without this the release step fails with HTTP 404.
+      artifact-metadata: write
+    env:
+      # Make the sandbox integration tests FAIL rather than skip when a
+      # backend is missing. They are skippable by design (a dev machine may
+      # have neither), but a skip here would report green while testing none
+      # of the isolation.
+      DATS_REQUIRE_SANDBOX: 1
     steps:
       - uses: actions/checkout@v4
-      # The sandbox integration tests skip themselves when no backend is
-      # usable, so without bubblewrap installed CI would report green while
-      # testing none of the isolation. (The docker-backend tests use the
-      # runner's own daemon, which is always present.)
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      # The docker backend uses the runner's own daemon; bubblewrap has to be
+      # installed, and ubuntu-24.04 additionally denies unprivileged user
+      # namespaces by default -- which is exactly what bwrap needs, and which
+      # silently turned every bwrap test into a skip. The probe runs here too,
+      # so an unusable bwrap fails loudly with its own error message instead
+      # of disappearing into a skip.
+      - run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true
