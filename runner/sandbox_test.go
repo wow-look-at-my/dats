@@ -5,7 +5,6 @@ package runner
 // a real bubblewrap, skipped when the host cannot provide one.
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -14,19 +13,18 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// requireSandboxEnv makes a missing backend fatal instead of skippable. CI
-// sets it, because a skipped isolation test is the worst possible outcome
-// there: the run reports green while none of the isolation was exercised.
-const requireSandboxEnv = "DATS_REQUIRE_SANDBOX"
-
 // requireBwrap skips a test that needs real isolation when bubblewrap is
-// missing or the kernel denies it (containers routinely do) -- unless
-// DATS_REQUIRE_SANDBOX is set, where that is a failure.
+// missing or the kernel denies it (containers routinely do).
+//
+// A skip must never be how CI reports "isolation works", so CI does not rely
+// on this: .github/workflows/ci.yml installs bubblewrap, clears the
+// ubuntu-24.04 user-namespace restriction, and runs this same probe as its
+// own step. An unusable backend fails the build there, before a single test
+// runs -- which is what keeps these tests from quietly skipping themselves
+// into a green build.
 func requireBwrap(t *testing.T) {
 	t.Helper()
 	if err := probeBwrap(); err != nil {
-		require.Emptyf(t, os.Getenv(requireSandboxEnv),
-			"%s is set but bubblewrap is not usable: %v", requireSandboxEnv, err)
 		t.Skipf("bubblewrap not usable here: %v", err)
 	}
 }
