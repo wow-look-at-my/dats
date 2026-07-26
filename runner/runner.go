@@ -21,6 +21,19 @@ type Runner struct {
 	// Update rewrites snapshot golden files from actual output instead of
 	// failing mismatches, and prunes stale goldens (the --update flag).
 	Update bool
+	// Sandbox selects the sandbox every command runs under (the --sandbox
+	// flags). Nil -- the default for a Runner built directly, as library
+	// callers do -- runs commands on the host; the CLI always sets one.
+	// Backend detection inside it is memoized, so sharing one config across
+	// files and workers probes the host at most once.
+	Sandbox *SandboxConfig
+
+	// plan is the resolved sandbox for the file currently being run, set by
+	// RunFile/runFileParallel before any of that file's commands execute (nil
+	// = run on the host). Per-file rather than per-run because the sandbox is
+	// a file-level declaration; safe to hold on the Runner because a Runner
+	// only ever runs one file at a time -- jobs mode gives each file its own.
+	plan *sandboxPlan
 
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
@@ -78,6 +91,13 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 		}
 	}
 
+	// Resolve the file's sandbox before anything runs: a file that must be
+	// sandboxed and cannot be fails outright, rather than quietly running its
+	// commands on the host.
+	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
+		return nil, err
+	}
+
 	// Expand every test into its matrix instances up front, so instance
 	// numbering, per-instance temp directories, the header's test count, the
 	// summary counts, and setup-failure reporting all operate on the expanded
@@ -87,6 +107,7 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 		instances = append(instances, schema.ExpandMatrix(&testFile.Tests[i])...)
 	}
 
+	r.Formatter.PrintSandbox(r.plan.describe())
 	r.Formatter.PrintHeader(path, len(instances))
 
 	result := &FileResult{
@@ -199,7 +220,14 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir string) *CommandFailure {
 	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	execResult, err := execute(ctx, cmd, "", r.commandEnv(), 0, r.lowPriority)
+	env, added := r.commandEnv()
+	execResult, err := execute(ctx, execRequest{
+		Cmd:         cmd,
+		Env:         env,
+		EnvExtra:    added,
+		LowPriority: r.lowPriority,
+		Sandbox:     r.plan,
+	})
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
 	}
@@ -217,19 +245,25 @@ func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir str
 // commandEnv builds the child environment for an executed command -- the one
 // env-construction path shared by test commands and file-level setup/teardown
 // commands. Execute replaces the child's environment entirely when given one,
-// so a non-nil result always starts from os.Environ(); nil (no extra entries
-// and no --coverdir) means plain inheritance. The extra entries are appended
+// so a non-nil env always starts from os.Environ(); nil (no extra entries and
+// no --coverdir) means plain inheritance. The extra entries are appended
 // first and GOCOVERDIR last, so --coverdir wins even over an extra entry's
 // own GOCOVERDIR value.
-func (r *Runner) commandEnv(extra ...string) []string {
+//
+// added returns just the entries dats contributed, in the same order. A
+// container sandbox starts the command from its image's environment rather
+// than from ours, so those entries -- and only those -- are forwarded into
+// it: the host's own PATH, HOME and the rest would be wrong inside.
+func (r *Runner) commandEnv(extra ...string) (env []string, added []string) {
 	if len(extra) == 0 && r.CoverDir == "" {
-		return nil
+		return nil, nil
 	}
-	env := append(os.Environ(), extra...)
+	added = extra
 	if r.CoverDir != "" {
-		env = append(env, "GOCOVERDIR="+r.CoverDir)
+		// Copied rather than appended in place: extra belongs to the caller.
+		added = append(append([]string{}, extra...), "GOCOVERDIR="+r.CoverDir)
 	}
-	return env
+	return append(os.Environ(), added...), added
 }
 
 // signalSuffix names the signal that killed the command, e.g.
@@ -294,10 +328,18 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	for _, key := range sortedStringKeys(test.Inputs.Env) {
 		extra = append(extra, key+"="+ExpandPlaceholders(test.Inputs.Env[key], fixtures))
 	}
-	env := r.commandEnv(extra...)
+	env, added := r.commandEnv(extra...)
 
 	// Execute the command
-	execResult, err := execute(ctx, cmd, test.Inputs.Stdin, env, test.Timeout.Value, r.lowPriority)
+	execResult, err := execute(ctx, execRequest{
+		Cmd:         cmd,
+		Stdin:       test.Inputs.Stdin,
+		Env:         env,
+		EnvExtra:    added,
+		Timeout:     test.Timeout.Value,
+		LowPriority: r.lowPriority,
+		Sandbox:     r.plan,
+	})
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)

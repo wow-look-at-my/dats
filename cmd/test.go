@@ -39,15 +39,20 @@ func runTestsCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runTests(context.Background(), args, os.Stdout, jobs)
+	sandbox, err := resolveSandbox(cmd.Flags())
+	if err != nil {
+		return err
+	}
+	return runTests(context.Background(), args, os.Stdout, jobs, sandbox)
 }
 
 // runTests runs every resolved file: serially when jobs is 0 (the historical
 // code path, unchanged), or with up to jobs concurrently-running commands
 // when jobs >= 1. Both modes report identical totals and exit status.
 // Canceling ctx kills in-flight commands (teardown still runs) and the
-// aborted instances report as failures.
-func runTests(ctx context.Context, args []string, out io.Writer, jobs int) error {
+// aborted instances report as failures. A nil sandbox runs commands directly
+// on the host; the CLI passes one unless the run opted out.
+func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandbox *runner.SandboxConfig) error {
 	files, err := resolveFiles(args)
 	if err != nil {
 		return err
@@ -55,6 +60,7 @@ func runTests(ctx context.Context, args []string, out io.Writer, jobs int) error
 
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
 	r.Update = updateGoldens
+	r.Sandbox = sandbox
 
 	// Wall time of the execution phase, consumed only by the report files;
 	// stdout output never mentions it. Hard errors below abort the run
