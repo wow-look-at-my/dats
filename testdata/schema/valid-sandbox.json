@@ -1,0 +1,17 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "network": false,
+    "image": "alpine:3.20",
+    "writable": [
+      "/var/lib/example",
+      "relative/path"
+    ]
+  },
+  "tests": [
+    {
+      "desc": "runs with no network and an extra writable host path",
+      "cmd": "echo produced > /var/lib/example/out.txt"
+    }
+  ]
+}

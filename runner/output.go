@@ -80,6 +80,17 @@ func (f *Formatter) PrintHeader(path string, testCount int) {
 	fmt.Fprintf(f.Writer, "Running %s (%d tests)\n\n", path, testCount)
 }
 
+// PrintSandbox announces, ahead of a file's header, the sandbox that file's
+// commands run under -- desc comes from the resolved plan and is empty when
+// the commands run directly on the host, so an unsandboxed run's output stays
+// byte-for-byte what it has always been.
+func (f *Formatter) PrintSandbox(desc string) {
+	if desc == "" {
+		return
+	}
+	fmt.Fprintf(f.Writer, "# sandbox: %s\n", desc)
+}
+
 // PrintResult prints a single test result
 func (f *Formatter) PrintResult(r *TestResult) {
 	if r.Passed {

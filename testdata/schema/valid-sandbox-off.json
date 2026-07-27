@@ -1,0 +1,9 @@
+{
+  "sandbox": false,
+  "tests": [
+    {
+      "desc": "needs the host, so this file opts out",
+      "cmd": "docker ps"
+    }
+  ]
+}

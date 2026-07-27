@@ -46,6 +46,9 @@ the current directory tree.
 | `--report-junit <path>` | Write a JUnit XML report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--report-json <path>` | Write a JSON report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--update` | Rewrite snapshot golden files from actual output instead of failing, and prune stale ones (see [Updating Snapshots](#updating-snapshots---update)) |
+| `--sandbox <mode>` | Sandbox backend for test commands: `auto` (default — bwrap, then docker), `bwrap`, `docker`, or `none` (see [Sandboxing](#sandboxing---sandbox)) |
+| `--no-sandbox` | Run test commands directly on the host; same as `--sandbox=none`. Combining it with a different `--sandbox` value is an error |
+| `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
@@ -96,6 +99,72 @@ dats --version
 dats -h
 dats <command> -h
 ```
+
+## Sandboxing (--sandbox)
+
+**Test commands are sandboxed by default.** A `.dats` file is a list of shell commands from
+whoever wrote the file; running them straight on your machine is a choice, so dats makes you
+make it. `--sandbox=auto` (the default) uses bubblewrap when it works and falls back to
+docker.
+
+Every command a file runs is sandboxed — test instances **and** the file-level
+`setup`/`teardown` hooks. A file cannot use its hooks as an unsandboxed side door.
+
+### Backends
+
+| | `bwrap` (preferred) | `docker` (fallback) |
+|---|---|---|
+| Filesystem | the host's, bound **read-only** | the **image's**, writable but discarded on exit |
+| Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + declared extras | same, bind-mounted from the host |
+| Working directory | the host's, read-only | the host's, bind-mounted read-only, and `-w` into it |
+| Available tools | the host's — a sandboxed run behaves like an unsandboxed one minus the writes | the image's only; host binaries and libraries are **not** there |
+| Environment | inherited as usual | the image's, plus this run's `inputs.env` values and `GOCOVERDIR` |
+| Processes | own PID namespace, dies with dats | own container, killed when the command is |
+| Overhead | ~5 ms per command | ~350 ms per command |
+
+Both bind the file's temp directory read-write, so fixtures, `{outputs.X}` assertions and
+snapshots work unchanged. The differences that bite: under bwrap a write to any host path
+outside the temp directory fails with `Read-only file system`; under docker it "succeeds"
+into the container's own throwaway filesystem and never reaches the host.
+
+### Selection and failure
+
+Detection is lazy and cached — probed at most once per run, and only when a file actually
+needs a sandbox, so a corpus whose files all opt out runs on a machine with neither backend
+installed. Both probes exercise what they will use: bubblewrap is routinely installed on
+kernels that deny it the user namespace it needs, and the docker CLI is routinely installed
+with no daemon behind it.
+
+When no backend can be provided, the run **fails** — it never quietly falls back to the host:
+
+```
+Error: running tests.dats: no usable sandbox backend: bwrap: not found in $PATH; docker: not found in $PATH
+install bubblewrap or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)
+```
+
+An explicitly requested backend never falls back either: `--sandbox=bwrap` gets bubblewrap or
+an error.
+
+### Opting out
+
+- `--no-sandbox` (or `--sandbox=none`) for a whole run.
+- `sandbox: false` in a file whose commands genuinely need the host — see
+  [file-format.md](file-format.md#sandbox). The same block can also cut the network, pick the
+  docker image, or declare extra writable host paths.
+
+The flag is the outer bound: a file can narrow what the CLI selected, never widen it. Under
+`--no-sandbox`, a file's `sandbox:` block is inert.
+
+### What it does and does not isolate
+
+- **Writes** are confined to the file's temp directory (plus anything declared writable).
+- **Reads are not restricted**: under bwrap the whole host filesystem stays readable,
+  including your home directory and its secrets. This protects your machine from a test, not
+  your secrets from one.
+- **The network is shared** unless a file sets `network: false`.
+- A command killed by a signal inside bwrap is reported as exit `128+N` rather than as a
+  signal death, because bwrap exits that way on its child's behalf. Timeouts are unaffected —
+  they kill through the sandbox and still report as timeouts.
 
 ## Parallel Execution (-j)
 
@@ -276,6 +345,7 @@ may not trigger re-runs.
 Results are printed in a TAP-like format:
 
 ```
+# sandbox: bwrap
 Running test.dats (3 tests)
 
 ok 1 - echo test
@@ -285,6 +355,11 @@ ok 3 - exit code test
 
 2/3 passed, 1 failed
 ```
+
+The `# sandbox:` line precedes each file's header and names the backend that file's commands
+ran under (`# sandbox: docker debian:stable-slim`, plus ` (no network)` when the file cut the
+network). A file whose commands ran on the host prints no such line, so an unsandboxed run's
+output is byte-for-byte what it has always been.
 
 The process exits `0` when all tests pass and `1` when any test fails. When multiple files are
 run, a combined total is printed at the end.

@@ -58,6 +58,10 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	sandbox, err := resolveSandbox(cmd.Flags())
+	if err != nil {
+		return err
+	}
 	// A hard resolution error at startup (nonexistent argument, no .dats
 	// files found, wrong extension) exits like dats test would. Every cycle
 	// below re-resolves from scratch so scope changes are picked up.
@@ -69,11 +73,12 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	w := &watchSession{
-		args:   args,
-		jobs:   jobs,
-		out:    os.Stdout,
-		isTTY:  stdoutIsTTY(),
-		events: make(chan watchEvent, 64),
+		args:    args,
+		jobs:    jobs,
+		sandbox: sandbox,
+		out:     os.Stdout,
+		isTTY:   stdoutIsTTY(),
+		events:  make(chan watchEvent, 64),
 	}
 	defer w.closeWatcher()
 
@@ -139,10 +144,11 @@ func watchLoop(ctx context.Context, events <-chan watchEvent, cycle func(ctx con
 // argument scope, the last successfully resolved file list, and the current
 // fsnotify watcher feeding the shared event channel.
 type watchSession struct {
-	args  []string
-	jobs  int
-	out   io.Writer
-	isTTY bool
+	args    []string
+	jobs    int
+	sandbox *runner.SandboxConfig
+	out     io.Writer
+	isTTY   bool
 
 	run     int      // completed-run counter (1-based in headers)
 	files   []string // last successfully resolved file list
@@ -177,7 +183,7 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 	w.run++
 	w.printHeader(changed)
 
-	runErr := runTests(ctx, w.args, w.out, w.jobs)
+	runErr := runTests(ctx, w.args, w.out, w.jobs, w.sandbox)
 	if ctx.Err() != nil {
 		// Interrupted mid-run: the outcome is discarded and watch is about
 		// to exit -- no footer, no error reporting for the aborted run.
@@ -464,7 +470,8 @@ func stdoutIsTTY() bool {
 
 func init() {
 	// watch inherits every persistent flag (-v, -j/--jobs, --report-junit/
-	// --report-json, --update, --keep-temp, --coverdir) and adds none of its
+	// --report-json, --update, --keep-temp, --coverdir, --sandbox/
+	// --no-sandbox/--sandbox-image) and adds none of its
 	// own -- in particular no filtering or narrowing flags: dats always runs
 	// everything in scope.
 	rootCmd.AddCommand(watchCmd)

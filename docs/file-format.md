@@ -3,12 +3,13 @@
 ## Root Structure
 
 A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`,
-`setup`, and `teardown` keys:
+`setup`, `teardown`, and `sandbox` keys:
 
 ```yaml
 shared:      # optional file-level fixture files
 setup:       # optional command(s) run once before the tests
 teardown:    # optional command(s) always run once after the tests
+sandbox:     # optional: narrow or opt out of the sandbox for this file
 tests:
   - # test 1
   - # test 2
@@ -96,6 +97,51 @@ completes, and teardown starts only after the file's last test finishes. Tests s
 the shared directory as **read-only**; tests that mutate shared state are undefined under
 parallelism. Setup/teardown of different files may overlap in parallel mode — do not assume
 exclusive access to global resources.
+
+## Sandbox
+
+Test commands are sandboxed by default (`--sandbox=auto`: bubblewrap, falling back to
+docker — see [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The
+optional file-level `sandbox` key narrows that for one file, and is the declarative way to
+opt out:
+
+```yaml
+sandbox: false        # this file's commands need the host; run them there
+```
+
+```yaml
+sandbox:
+  enabled: true       # default; `false` is the same as `sandbox: false`
+  network: false      # default true; false runs commands with no network
+  image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash)
+  writable:           # host paths writable on top of the file's temp directory
+    - /var/lib/example
+```
+
+The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks
+alike. It is file-level, not per-test: one file's commands share one temp directory, one
+shared directory, and one hook lifecycle, so a per-test sandbox would make those shared paths
+mean different things to different tests.
+
+The CLI's choice is the outer bound. A file can narrow it (opt out, cut the network) or
+adjust it (image, extra writable paths), never widen it: under `--no-sandbox` the whole block
+is inert, and `sandbox: true` does not force a sandbox onto a run that opted out.
+
+Both shapes are validated strictly: unknown or duplicate keys, a non-boolean `enabled` or
+`network`, an empty `image`, an empty `writable` list, and an empty mapping are all parse
+errors — a misspelled key must never silently disable isolation. `sandbox:` with no value at
+all is the same as omitting it. `{matrix.X}` is rejected in `image` and `writable`: the
+sandbox is resolved once per file, before any matrix instance exists.
+
+### What a sandboxed file can rely on
+
+- Fixtures, `{inputs.X}`, `{outputs.X}`, `{shared.X}`, `inputs.env`, `inputs.stdin`, output
+  files and snapshots all work unchanged — the file's temp directory is writable inside the
+  sandbox.
+- Writes anywhere else fail (bwrap) or vanish with the container (docker). A test that must
+  write to a host path declares it under `writable`.
+- Under the docker backend the command runs inside the image, so the tools available are the
+  image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
 
 ## Test Object
 
@@ -284,6 +330,13 @@ namespaces changes meaning.
 Text that only *resembles* a placeholder without being one — a non-local name like
 `{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`),
 or any other brace construct — still passes through verbatim.
+
+Sandboxing changes runtime behavior rather than parsing, and it applies to files that
+declare nothing: commands that used to write anywhere on the host now write only inside
+their temp directory, and a machine with neither backend installed fails the run instead of
+executing it. Existing files keep passing as long as their commands stay inside `{outputs.X}`
+/`{shared.X}` (the whole point of those placeholders). A file that legitimately needs the
+host declares `sandbox: false`; a whole run opts out with `--no-sandbox`.
 
 ---
 

@@ -16,8 +16,33 @@ jobs:
       contents: write
       actions: read
       checks: read
+      # Publishing records what buildhost stored on the org's linked
+      # artifacts page and registers a GitHub Deployment for the release;
+      # without these the publish step fails (HTTP 404 / "Resource not
+      # accessible by integration"). Job-level permissions REPLACE
+      # workflow-level ones, so they belong here alongside the rest.
+      artifact-metadata: write
+      deployments: write
     steps:
       - uses: actions/checkout@v4
+      # The sandbox integration tests skip themselves when no backend is
+      # usable, so this step is what makes them mean something here: the
+      # docker backend uses the runner's own daemon, while bubblewrap has to
+      # be installed AND allowed a user namespace -- ubuntu-24.04 denies that
+      # by default, which silently turned every bwrap test into a skip. The
+      # probe below is the gate: an unusable bwrap fails the build with its
+      # own error, before a single test runs.
+      - run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Logged before it is cleared: this records, per run, whether the
+          # restriction was actually in force -- the reason the next line
+          # exists at all. A kernel without the knob prints nothing.
+          echo "apparmor_restrict_unprivileged_userns before: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo '<absent>')"
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true \
+            && echo "bwrap works without clearing the restriction" \
+            || echo "bwrap blocked with the restriction in force (see error above)"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true

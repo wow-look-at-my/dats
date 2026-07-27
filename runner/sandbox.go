@@ -1,0 +1,433 @@
+package runner
+
+// Sandboxed command execution. Every command a .dats file runs -- test
+// instances and file-level setup/teardown hooks alike -- can be wrapped in an
+// OS-level sandbox instead of being handed straight to the host's bash.
+//
+// Two backends are supported, in preference order:
+//
+//	bwrap   bubblewrap: the whole host filesystem is bound read-only, the
+//	        file's temp directory (and any declared extra paths) writable,
+//	        /tmp is a private tmpfs, and the command runs in its own PID
+//	        namespace. Commands still see the host's tools, so this is the
+//	        backend that behaves like an unsandboxed run minus the writes.
+//	docker  the command runs inside a container instead: the file's temp
+//	        directory is bind-mounted read-write and the working directory
+//	        read-only, but the tools available are the IMAGE's, not the
+//	        host's. A fallback for machines without bubblewrap, not an
+//	        equivalent.
+//
+// Backend selection is lazy and cached: the probe runs at most once per
+// process, and only when a file actually needs a sandbox -- so a corpus whose
+// files all opt out never needs a backend installed at all.
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/wow-look-at-my/dats/schema"
+)
+
+// SandboxMode is the requested sandbox backend: a concrete backend, automatic
+// selection, or no sandbox at all.
+type SandboxMode string
+
+const (
+	// SandboxAuto picks the first usable backend: bwrap, then docker.
+	SandboxAuto SandboxMode = "auto"
+	// SandboxBwrap requires bubblewrap; an unusable bwrap is an error rather
+	// than a silent fallback.
+	SandboxBwrap SandboxMode = "bwrap"
+	// SandboxDocker requires a reachable docker daemon, likewise.
+	SandboxDocker SandboxMode = "docker"
+	// SandboxNone runs commands directly on the host -- the opt-out.
+	SandboxNone SandboxMode = "none"
+)
+
+// DefaultSandboxImage is the container image the docker backend runs commands
+// in when neither the CLI nor the file names one. It is a small image that
+// still ships bash (the shell every command is run through) and coreutils.
+const DefaultSandboxImage = "debian:stable-slim"
+
+// probeTimeout bounds each backend probe: a missing tool fails instantly, but
+// an unresponsive docker daemon must not hang the run before a single test
+// has started.
+const probeTimeout = 20 * time.Second
+
+// ParseSandboxMode converts the --sandbox flag's value into a SandboxMode,
+// naming the accepted values on anything else.
+func ParseSandboxMode(s string) (SandboxMode, error) {
+	switch SandboxMode(s) {
+	case SandboxAuto, SandboxBwrap, SandboxDocker, SandboxNone:
+		return SandboxMode(s), nil
+	}
+	return "", fmt.Errorf("unknown sandbox mode %q (use auto, bwrap, docker, or none)", s)
+}
+
+// SandboxConfig is the run-wide sandbox selection: which backend to use and,
+// for docker, which image. A nil *SandboxConfig means no sandboxing -- the
+// zero-configuration default for library callers, who construct a Runner
+// directly; the CLI always builds one.
+//
+// Backend resolution is memoized: Backend probes at most once per config, no
+// matter how many files or how many concurrent workers ask for it.
+type SandboxConfig struct {
+	Mode  SandboxMode
+	Image string
+
+	once    sync.Once
+	backend SandboxMode
+	err     error
+
+	// probe reports whether a concrete backend is usable here. Swapped out by
+	// tests, which must not depend on the host having bwrap or docker.
+	probe func(SandboxMode) error
+}
+
+// NewSandboxConfig builds a config for mode. An empty image means the default
+// image; the value is only ever consulted by the docker backend.
+func NewSandboxConfig(mode SandboxMode, image string) *SandboxConfig {
+	if image == "" {
+		image = DefaultSandboxImage
+	}
+	return &SandboxConfig{Mode: mode, Image: image, probe: probeBackend}
+}
+
+// Backend resolves the mode into the concrete backend to use, probing the
+// host on the first call and reusing the answer afterwards. It returns an
+// error when the requested backend is unusable (or, under auto, when no
+// backend is) -- deliberately an error rather than a silent unsandboxed run:
+// running unsandboxed is a choice the operator makes, never one the tool
+// makes on their behalf.
+func (c *SandboxConfig) Backend() (SandboxMode, error) {
+	c.once.Do(func() {
+		probe := c.probe
+		if probe == nil {
+			probe = probeBackend
+		}
+		switch c.Mode {
+		case SandboxNone, "":
+			c.backend = SandboxNone
+		case SandboxBwrap, SandboxDocker:
+			if err := probe(c.Mode); err != nil {
+				c.err = fmt.Errorf("--sandbox=%s is not usable here: %w\n%s", c.Mode, err, sandboxOptOutHint)
+				return
+			}
+			c.backend = c.Mode
+		default: // SandboxAuto
+			bwrapErr := probe(SandboxBwrap)
+			if bwrapErr == nil {
+				c.backend = SandboxBwrap
+				return
+			}
+			dockerErr := probe(SandboxDocker)
+			if dockerErr == nil {
+				c.backend = SandboxDocker
+				return
+			}
+			c.err = fmt.Errorf("no usable sandbox backend: %v; %v\n%s", bwrapErr, dockerErr, sandboxOptOutHint)
+		}
+	})
+	return c.backend, c.err
+}
+
+// sandboxOptOutHint is appended to every backend-resolution failure: the
+// error is only actionable if it says how to run without a sandbox.
+const sandboxOptOutHint = "install bubblewrap or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)"
+
+// probeBackend reports whether backend is usable on this host. Presence on
+// $PATH is not enough for either backend -- bwrap is routinely installed on
+// systems whose kernel denies it the user namespace it needs, and the docker
+// CLI is routinely installed with no daemon to talk to -- so both probes
+// actually exercise the thing they will later depend on.
+func probeBackend(backend SandboxMode) error {
+	switch backend {
+	case SandboxBwrap:
+		return probeBwrap()
+	case SandboxDocker:
+		return probeDocker()
+	}
+	return fmt.Errorf("%s: not a concrete sandbox backend", backend)
+}
+
+func probeBwrap() error {
+	path, err := exec.LookPath("bwrap")
+	if err != nil {
+		return fmt.Errorf("bwrap: not found in $PATH")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	// The probe uses the same isolation primitives a real run does (the
+	// namespace setup is what fails on a locked-down kernel), minus the
+	// per-file binds.
+	args := append(bwrapIsolationArgs(), "true")
+	if out, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("bwrap: %s", probeFailure(out, err))
+	}
+	return nil
+}
+
+func probeDocker() error {
+	path, err := exec.LookPath("docker")
+	if err != nil {
+		return fmt.Errorf("docker: not found in $PATH")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	// Server-side format: the client alone answers `docker version` even with
+	// no daemon behind it, and a client without a daemon cannot run anything.
+	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}}").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker: %s", probeFailure(out, err))
+	}
+	return nil
+}
+
+// probeFailure renders a probe's failure as one line: the tool's own first
+// line of output when it said anything, else the process error.
+func probeFailure(out []byte, err error) string {
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return err.Error()
+}
+
+// sandboxPlan is a resolved sandbox for one .dats file: the backend to run
+// under, what the file may write, and whether it keeps the network. Nil means
+// the file's commands run directly on the host.
+type sandboxPlan struct {
+	backend SandboxMode
+	image   string // docker only
+	network bool
+	// work is the file's temp directory -- the shared directory and every
+	// per-instance test directory live under it, so binding it read-write is
+	// exactly the access a passing test needs.
+	work string
+	// writable holds extra host paths made writable on top of work: the
+	// file's `sandbox.writable` entries plus --coverdir, which is a host path
+	// outside work that instrumented binaries must be able to write.
+	writable []string
+	// workdir is the process working directory, exposed to the command so
+	// relative paths keep resolving as they do on the host (read-only under
+	// docker; already covered by the read-only root under bwrap).
+	workdir string
+}
+
+// describe renders the plan for the run's output: the backend, the image it
+// runs commands in when that is a choice (docker), and any narrowing the file
+// asked for. Empty for a nil plan -- there is nothing to announce when
+// commands run on the host.
+func (p *sandboxPlan) describe() string {
+	if p == nil {
+		return ""
+	}
+	desc := string(p.backend)
+	if p.backend == SandboxDocker {
+		desc += " " + p.image
+	}
+	if !p.network {
+		desc += " (no network)"
+	}
+	return desc
+}
+
+// newSandboxPlan resolves the run-wide config and one file's sandbox block
+// into the plan for that file, or nil when the file's commands run on the
+// host. It returns an error only when a sandbox is required but no backend
+// can provide it -- the file then fails outright rather than quietly running
+// unsandboxed.
+//
+// The CLI's choice is the outer bound: --sandbox=none disables sandboxing for
+// every file, including one whose block asks for it. A file's block can
+// narrow that choice (opt out, cut the network) or adjust it (image, extra
+// writable paths), never widen it.
+func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sandboxPlan, error) {
+	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
+		return nil, nil
+	}
+	if !spec.IsEnabled() {
+		return nil, nil
+	}
+	backend, err := r.Sandbox.Backend()
+	if err != nil {
+		return nil, err
+	}
+	if backend == SandboxNone {
+		return nil, nil
+	}
+
+	plan := &sandboxPlan{
+		backend: backend,
+		image:   r.Sandbox.Image,
+		network: spec.NetworkEnabled(),
+		work:    workDir,
+	}
+	if plan.image == "" {
+		plan.image = DefaultSandboxImage
+	}
+	if spec != nil && spec.Image != "" {
+		plan.image = spec.Image
+	}
+	if spec != nil {
+		for _, path := range spec.Writable {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return nil, fmt.Errorf("sandbox: resolving writable path %q: %w", path, err)
+			}
+			plan.writable = append(plan.writable, abs)
+		}
+	}
+	// Coverage data is written by the sandboxed process itself, into a host
+	// directory that is deliberately outside the temp tree.
+	if r.CoverDir != "" {
+		abs, err := filepath.Abs(r.CoverDir)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox: resolving coverage directory %q: %w", r.CoverDir, err)
+		}
+		plan.writable = append(plan.writable, abs)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		plan.workdir = wd
+	}
+	return plan, nil
+}
+
+// sandboxCommand is a command rewritten to run under a sandbox: the argv to
+// spawn, plus an optional kill hook for backends whose workload outlives the
+// process we spawned (docker's client is not the container).
+type sandboxCommand struct {
+	Argv []string
+	Kill func()
+}
+
+// containerSeq numbers the docker containers this process starts, so each one
+// gets a name we can kill by even when many run concurrently.
+var containerSeq atomic.Uint64
+
+// command rewrites `bash -c <cmd>` into the sandboxed argv that runs it.
+// extraEnv holds the environment entries dats adds on top of the parent
+// environment (a test's inputs.env, plus GOCOVERDIR): under bwrap the child
+// inherits the environment as usual, but a container starts from the image's
+// environment, so those entries have to be handed over explicitly.
+func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
+	if p == nil {
+		return sandboxCommand{Argv: []string{"bash", "-c", cmd}}
+	}
+	if p.backend == SandboxDocker {
+		name := fmt.Sprintf("dats-%d-%d", os.Getpid(), containerSeq.Add(1))
+		return sandboxCommand{
+			Argv: p.dockerArgv(name, cmd, extraEnv),
+			Kill: func() { killContainer(name) },
+		}
+	}
+	return sandboxCommand{Argv: p.bwrapArgv(cmd)}
+}
+
+// bwrapIsolationArgs are the backend's fixed arguments, shared by the probe
+// and by every sandboxed command:
+//
+//	--ro-bind / /      the host filesystem, readable but not writable, so
+//	                   commands still find the tools and data they expect
+//	--dev /dev         a minimal device tree (null, zero, random, tty)
+//	--proc /proc       a fresh procfs for the new PID namespace
+//	--tmpfs /tmp       a private /tmp, so temp files never touch the host's
+//	--unshare-pid      commands cannot see or signal host processes
+//	--die-with-parent  the sandbox dies with dats, never outliving the run
+//
+// Order matters and is load-bearing: the read-only root comes first and the
+// overlays after it, and per-file binds are appended after these so a
+// writable path under /tmp survives the tmpfs.
+func bwrapIsolationArgs() []string {
+	return []string{
+		"--ro-bind", "/", "/",
+		"--dev", "/dev",
+		"--proc", "/proc",
+		"--tmpfs", "/tmp",
+		"--unshare-pid",
+		"--die-with-parent",
+	}
+}
+
+// bwrapArgv builds the full bwrap invocation for cmd.
+func (p *sandboxPlan) bwrapArgv(cmd string) []string {
+	argv := append([]string{"bwrap"}, bwrapIsolationArgs()...)
+	if !p.network {
+		argv = append(argv, "--unshare-net")
+	}
+	for _, dir := range p.writablePaths() {
+		argv = append(argv, "--bind", dir, dir)
+	}
+	return append(argv, "bash", "-c", cmd)
+}
+
+// dockerArgv builds the `docker run` invocation for cmd. The container is
+// named so a timeout or a Ctrl-C can kill it: killing the client we spawned
+// would otherwise leave the workload running.
+func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
+	argv := []string{
+		"docker", "run",
+		"--rm",   // no container corpses after the run
+		"-i",     // stdin is a first-class input for a test command
+		"--init", // reap whatever the command forks and abandons
+		"--name", name,
+	}
+	if !p.network {
+		argv = append(argv, "--network", "none")
+	}
+	// Run as the invoking user so files landing in the bind-mounted temp
+	// directory are owned by them, not by root.
+	if uid := os.Getuid(); uid >= 0 {
+		argv = append(argv, "--user", strconv.Itoa(uid)+":"+strconv.Itoa(os.Getgid()))
+	}
+	// Mount targets are deduplicated by path, read-write winning: an explicit
+	// writable path that happens to be (or contain) the working directory
+	// must not be demoted to the read-only working-directory mount, and a
+	// repeated path would make docker refuse to start at all.
+	seen := make(map[string]bool)
+	for _, dir := range p.writablePaths() {
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		argv = append(argv, "-v", dir+":"+dir)
+	}
+	if p.workdir != "" {
+		if !seen[p.workdir] {
+			argv = append(argv, "-v", p.workdir+":"+p.workdir+":ro")
+		}
+		argv = append(argv, "-w", p.workdir)
+	}
+	for _, entry := range extraEnv {
+		argv = append(argv, "-e", entry)
+	}
+	return append(argv, p.image, "bash", "-c", cmd)
+}
+
+// writablePaths returns the paths the sandbox must expose read-write, the
+// file's temp directory first and the declared extras after it, in order.
+func (p *sandboxPlan) writablePaths() []string {
+	paths := make([]string, 0, 1+len(p.writable))
+	if p.work != "" {
+		paths = append(paths, p.work)
+	}
+	return append(paths, p.writable...)
+}
+
+// killContainer stops a container started by this process, best-effort: the
+// command that owned it is already being torn down (timeout, cancellation),
+// and a container that has exited on its own is not an error worth surfacing.
+func killContainer(name string) {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "docker", "kill", name).Run()
+}
