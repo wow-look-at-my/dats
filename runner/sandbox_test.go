@@ -5,6 +5,8 @@ package runner
 // a real bubblewrap, skipped when the host cannot provide one.
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,14 +44,14 @@ func probeAlways(err error) func(SandboxMode) error {
 }
 
 func TestParseSandboxMode(t *testing.T) {
-	for _, name := range []string{"auto", "bwrap", "docker", "none"} {
+	for _, name := range []string{"auto", "bwrap", "seatbelt", "docker", "none"} {
 		mode, err := ParseSandboxMode(name)
 		require.Nil(t, err)
 		assert.Equal(t, SandboxMode(name), mode)
 	}
 	_, err := ParseSandboxMode("firejail")
 	require.NotNil(t, err)
-	assert.Contains(t, err.Error(), "auto, bwrap, docker, or none")
+	assert.Contains(t, err.Error(), "auto, bwrap, seatbelt, docker, or none")
 }
 
 func TestSandboxBackendAutoPrefersBwrap(t *testing.T) {
@@ -59,12 +61,27 @@ func TestSandboxBackendAutoPrefersBwrap(t *testing.T) {
 	assert.Equal(t, SandboxBwrap, backend)
 }
 
-func TestSandboxBackendAutoFallsBackToDocker(t *testing.T) {
+func TestSandboxBackendAutoPrefersSeatbeltOverDocker(t *testing.T) {
+	// On a mac bwrap is simply absent, and the native backend must win over
+	// the container fallback -- seatbelt keeps the host's own tools, docker
+	// does not.
 	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) error {
 		if mode == SandboxBwrap {
 			return assertError("bwrap: not found in $PATH")
 		}
 		return nil
+	})
+	backend, err := cfg.Backend()
+	require.Nil(t, err)
+	assert.Equal(t, SandboxSeatbelt, backend)
+}
+
+func TestSandboxBackendAutoFallsBackToDocker(t *testing.T) {
+	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) error {
+		if mode == SandboxDocker {
+			return nil
+		}
+		return assertError(string(mode) + ": not found in $PATH")
 	})
 	backend, err := cfg.Backend()
 	require.Nil(t, err)
@@ -81,6 +98,7 @@ func TestSandboxBackendAutoWithNoBackendErrorsAndNamesTheOptOut(t *testing.T) {
 	_, err := cfg.Backend()
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "bwrap: unavailable")
+	assert.Contains(t, err.Error(), "seatbelt: unavailable")
 	assert.Contains(t, err.Error(), "docker: unavailable")
 	assert.Contains(t, err.Error(), "--no-sandbox")
 	assert.Contains(t, err.Error(), "sandbox: false")
@@ -264,3 +282,81 @@ func TestSandboxPlanDescribe(t *testing.T) {
 type assertError string
 
 func (e assertError) Error() string { return string(e) }
+
+func TestSeatbeltArgv(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: "/tmp/dats-1"}
+	argv := plan.seatbeltArgv("echo hi")
+
+	require.Len(t, argv, 6)
+	assert.Equal(t, "sandbox-exec", argv[0])
+	assert.Equal(t, "-p", argv[1], "the profile is passed inline, not through a temp file")
+	assert.Contains(t, argv[2], "(version 1)")
+	assert.Contains(t, argv[2], `(subpath "/tmp/dats-1")`)
+	assert.Equal(t, []string{"bash", "-c", "echo hi"}, argv[3:])
+}
+
+func TestSeatbeltProfileShape(t *testing.T) {
+	profile := seatbeltProfile([]string{"/tmp/dats-1", "/var/data"}, true)
+
+	assert.Contains(t, profile, "(version 1)")
+	assert.Contains(t, profile, `(subpath "/tmp/dats-1")`)
+	assert.Contains(t, profile, `(subpath "/var/data")`)
+	assert.Contains(t, profile, `(literal "/dev/null")`, "a shell that cannot write /dev/null is not a usable shell")
+	assert.NotContains(t, profile, "(deny network*)", "the network stays on unless a file turns it off")
+
+	// SBPL is last-match-wins, so this order IS the policy: allow everything,
+	// deny all writes, then re-allow the file's own directories. Any other
+	// order either denies everything or allows every write.
+	allowAll := strings.Index(profile, "(allow default)")
+	denyWrites := strings.Index(profile, "(deny file-write*)")
+	allowWrites := strings.Index(profile, "(allow file-write*")
+	assert.Less(t, allowAll, denyWrites)
+	assert.Less(t, denyWrites, allowWrites)
+}
+
+func TestSeatbeltProfileNetworkOff(t *testing.T) {
+	profile := seatbeltProfile([]string{"/tmp/dats-1"}, false)
+	assert.Contains(t, profile, "(deny network*)")
+	// The deny must not land after the write rules, where it would be fine,
+	// nor before (allow default), where it would be overridden.
+	assert.Less(t, strings.Index(profile, "(allow default)"), strings.Index(profile, "(deny network*)"))
+}
+
+func TestSeatbeltProfileEscapesPaths(t *testing.T) {
+	// A quote in a declared writable path would otherwise end the literal
+	// early and change which paths the profile allows.
+	profile := seatbeltProfile([]string{`/tmp/we"ird\path`}, true)
+	assert.Contains(t, profile, `(subpath "/tmp/we\"ird\\path")`)
+}
+
+func TestSeatbeltWritablePathsResolveSymlinks(t *testing.T) {
+	// The macOS trap this exists for: the sandbox matches the REAL path, but
+	// dats' own temp dirs routinely arrive through symlinks (/tmp ->
+	// /private/tmp). An unresolved subpath rule matches nothing and every
+	// fixture write is denied.
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	require.Nil(t, os.Symlink(real, link))
+
+	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: link}
+	paths := plan.seatbeltWritablePaths()
+
+	realResolved, err := filepath.EvalSymlinks(real)
+	require.Nil(t, err)
+	assert.Contains(t, paths, realResolved, "the resolved path is what the sandbox matches")
+	assert.Contains(t, paths, link, "the unresolved form is kept too: commands may address either")
+}
+
+func TestSeatbeltWritablePathsKeepsUnresolvablePaths(t *testing.T) {
+	// A path that does not exist yet must not vanish from the profile: a
+	// dropped rule silently widens nothing but denies the write it was
+	// declared for, and a missing rule is far harder to diagnose than a
+	// denial.
+	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: "/definitely/not/here"}
+	assert.Contains(t, plan.seatbeltWritablePaths(), "/definitely/not/here")
+}
+
+func TestSandboxPlanDescribeSeatbelt(t *testing.T) {
+	assert.Equal(t, "seatbelt", (&sandboxPlan{backend: SandboxSeatbelt, network: true}).describe())
+	assert.Equal(t, "seatbelt (no network)", (&sandboxPlan{backend: SandboxSeatbelt}).describe())
+}

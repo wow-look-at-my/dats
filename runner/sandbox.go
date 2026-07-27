@@ -4,18 +4,24 @@ package runner
 // instances and file-level setup/teardown hooks alike -- can be wrapped in an
 // OS-level sandbox instead of being handed straight to the host's bash.
 //
-// Two backends are supported, in preference order:
+// Three backends are supported, in preference order:
 //
-//	bwrap   bubblewrap: the whole host filesystem is bound read-only, the
-//	        file's temp directory (and any declared extra paths) writable,
-//	        /tmp is a private tmpfs, and the command runs in its own PID
-//	        namespace. Commands still see the host's tools, so this is the
-//	        backend that behaves like an unsandboxed run minus the writes.
-//	docker  the command runs inside a container instead: the file's temp
-//	        directory is bind-mounted read-write and the working directory
-//	        read-only, but the tools available are the IMAGE's, not the
-//	        host's. A fallback for machines without bubblewrap, not an
-//	        equivalent.
+//	bwrap     bubblewrap (Linux): the whole host filesystem is bound
+//	          read-only, the file's temp directory (and any declared extra
+//	          paths) writable, /tmp is a private tmpfs, and the command runs
+//	          in its own PID namespace. Commands still see the host's tools,
+//	          so this is the backend that behaves like an unsandboxed run
+//	          minus the writes.
+//	seatbelt  sandbox-exec (macOS): the same shape, enforced by a generated
+//	          SBPL profile instead of namespaces -- reads unrestricted,
+//	          writes confined to the same directories. The macOS counterpart
+//	          of bwrap; the two are mutually exclusive in practice, since
+//	          each tool exists on exactly one of the platforms.
+//	docker    the command runs inside a container instead: the file's temp
+//	          directory is bind-mounted read-write and the working directory
+//	          read-only, but the tools available are the IMAGE's, not the
+//	          host's. A fallback for machines with neither native backend,
+//	          not an equivalent.
 //
 // Backend selection is lazy and cached: the probe runs at most once per
 // process, and only when a file actually needs a sandbox -- so a corpus whose
@@ -41,11 +47,15 @@ import (
 type SandboxMode string
 
 const (
-	// SandboxAuto picks the first usable backend: bwrap, then docker.
+	// SandboxAuto picks the first usable backend: bwrap, then seatbelt, then
+	// docker. The two native backends are platform-exclusive, so in practice
+	// this reads as "the native sandbox for this OS, else docker".
 	SandboxAuto SandboxMode = "auto"
 	// SandboxBwrap requires bubblewrap; an unusable bwrap is an error rather
 	// than a silent fallback.
 	SandboxBwrap SandboxMode = "bwrap"
+	// SandboxSeatbelt requires macOS's sandbox-exec, likewise.
+	SandboxSeatbelt SandboxMode = "seatbelt"
 	// SandboxDocker requires a reachable docker daemon, likewise.
 	SandboxDocker SandboxMode = "docker"
 	// SandboxNone runs commands directly on the host -- the opt-out.
@@ -66,10 +76,10 @@ const probeTimeout = 20 * time.Second
 // naming the accepted values on anything else.
 func ParseSandboxMode(s string) (SandboxMode, error) {
 	switch SandboxMode(s) {
-	case SandboxAuto, SandboxBwrap, SandboxDocker, SandboxNone:
+	case SandboxAuto, SandboxBwrap, SandboxSeatbelt, SandboxDocker, SandboxNone:
 		return SandboxMode(s), nil
 	}
-	return "", fmt.Errorf("unknown sandbox mode %q (use auto, bwrap, docker, or none)", s)
+	return "", fmt.Errorf("unknown sandbox mode %q (use auto, bwrap, seatbelt, docker, or none)", s)
 }
 
 // SandboxConfig is the run-wide sandbox selection: which backend to use and,
@@ -116,24 +126,28 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 		switch c.Mode {
 		case SandboxNone, "":
 			c.backend = SandboxNone
-		case SandboxBwrap, SandboxDocker:
+		case SandboxBwrap, SandboxSeatbelt, SandboxDocker:
 			if err := probe(c.Mode); err != nil {
 				c.err = fmt.Errorf("--sandbox=%s is not usable here: %w\n%s", c.Mode, err, sandboxOptOutHint)
 				return
 			}
 			c.backend = c.Mode
 		default: // SandboxAuto
-			bwrapErr := probe(SandboxBwrap)
-			if bwrapErr == nil {
-				c.backend = SandboxBwrap
-				return
+			// Native backends first, in the order they can possibly succeed:
+			// bwrap and seatbelt are platform-exclusive, so at most one of
+			// them can pass anywhere, and each fails instantly (its tool is
+			// simply absent) on the other platform. Docker is last: it is the
+			// heaviest and the least equivalent.
+			var failures []string
+			for _, backend := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
+				err := probe(backend)
+				if err == nil {
+					c.backend = backend
+					return
+				}
+				failures = append(failures, err.Error())
 			}
-			dockerErr := probe(SandboxDocker)
-			if dockerErr == nil {
-				c.backend = SandboxDocker
-				return
-			}
-			c.err = fmt.Errorf("no usable sandbox backend: %v; %v\n%s", bwrapErr, dockerErr, sandboxOptOutHint)
+			c.err = fmt.Errorf("no usable sandbox backend: %s\n%s", strings.Join(failures, "; "), sandboxOptOutHint)
 		}
 	})
 	return c.backend, c.err
@@ -141,17 +155,20 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 
 // sandboxOptOutHint is appended to every backend-resolution failure: the
 // error is only actionable if it says how to run without a sandbox.
-const sandboxOptOutHint = "install bubblewrap or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)"
+const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)"
 
 // probeBackend reports whether backend is usable on this host. Presence on
-// $PATH is not enough for either backend -- bwrap is routinely installed on
-// systems whose kernel denies it the user namespace it needs, and the docker
-// CLI is routinely installed with no daemon to talk to -- so both probes
-// actually exercise the thing they will later depend on.
+// $PATH is not enough for any of them -- bwrap is routinely installed on
+// systems whose kernel denies it the user namespace it needs, sandbox-exec
+// ships on every mac but is refused inside some hardened contexts, and the
+// docker CLI is routinely installed with no daemon to talk to -- so every
+// probe actually exercises the thing it will later depend on.
 func probeBackend(backend SandboxMode) error {
 	switch backend {
 	case SandboxBwrap:
 		return probeBwrap()
+	case SandboxSeatbelt:
+		return probeSeatbelt()
 	case SandboxDocker:
 		return probeDocker()
 	}
@@ -323,12 +340,15 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 	if p == nil {
 		return sandboxCommand{Argv: []string{"bash", "-c", cmd}}
 	}
-	if p.backend == SandboxDocker {
+	switch p.backend {
+	case SandboxDocker:
 		name := fmt.Sprintf("dats-%d-%d", os.Getpid(), containerSeq.Add(1))
 		return sandboxCommand{
 			Argv: p.dockerArgv(name, cmd, extraEnv),
 			Kill: func() { killContainer(name) },
 		}
+	case SandboxSeatbelt:
+		return sandboxCommand{Argv: p.seatbeltArgv(cmd)}
 	}
 	return sandboxCommand{Argv: p.bwrapArgv(cmd)}
 }
