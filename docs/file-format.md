@@ -100,8 +100,9 @@ exclusive access to global resources.
 
 ## Sandbox
 
-Test commands are sandboxed by default (`--sandbox=auto`: bubblewrap, falling back to
-docker — see [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The
+Test commands are sandboxed by default (`--sandbox=auto`: the platform's native sandbox —
+bubblewrap on Linux, `sandbox-exec` on macOS — falling back to docker; see
+[cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The
 optional file-level `sandbox` key narrows that for one file, and is the declarative way to
 opt out:
 
@@ -113,7 +114,8 @@ sandbox: false        # this file's commands need the host; run them there
 sandbox:
   enabled: true       # default; `false` is the same as `sandbox: false`
   network: false      # default true; false runs commands with no network
-  image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash)
+  image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
+                      # Ignored by bwrap and seatbelt, which use the host's own filesystem
   writable:           # host paths writable on top of the file's temp directory
     - /var/lib/example
 ```
@@ -138,8 +140,8 @@ sandbox is resolved once per file, before any matrix instance exists.
 - Fixtures, `{inputs.X}`, `{outputs.X}`, `{shared.X}`, `inputs.env`, `inputs.stdin`, output
   files and snapshots all work unchanged — the file's temp directory is writable inside the
   sandbox.
-- Writes anywhere else fail (bwrap) or vanish with the container (docker). A test that must
-  write to a host path declares it under `writable`.
+- Writes anywhere else fail (bwrap, seatbelt) or vanish with the container (docker). A test
+  that must write to a host path declares it under `writable`.
 - Under the docker backend the command runs inside the image, so the tools available are the
   image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
 

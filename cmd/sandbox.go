@@ -21,7 +21,7 @@ import (
 // consequential invites exactly the typo nobody notices.
 func registerSandboxFlags(flags *pflag.FlagSet) {
 	flags.String("sandbox", string(runner.SandboxAuto),
-		"sandbox test commands: auto (bwrap, then docker), bwrap, docker, or none")
+		"sandbox test commands: auto (bwrap, then seatbelt, then docker), bwrap, seatbelt, docker, or none")
 	flags.Bool("no-sandbox", false,
 		"run test commands directly on the host (same as --sandbox=none)")
 	flags.String("sandbox-image", runner.DefaultSandboxImage,
