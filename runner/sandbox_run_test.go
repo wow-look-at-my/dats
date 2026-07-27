@@ -254,3 +254,77 @@ tests:
 	assert.Equal(t, 2, strings.Count(buf.String(), "# sandbox: bwrap"))
 	assert.NoFileExists(t, "/etc/dats-parallel-probe")
 }
+
+// requireSeatbelt skips a test that needs a real macOS sandbox. On Linux
+// sandbox-exec simply does not exist, so this skips everywhere except a mac --
+// which is the point: the assertions below are the only thing that can prove
+// the generated profile is actually accepted and enforced, and they must run
+// on the platform that has the enforcer.
+func requireSeatbelt(t *testing.T) {
+	t.Helper()
+	if err := probeSeatbelt(); err != nil {
+		t.Skipf("sandbox-exec not usable here: %v", err)
+	}
+}
+
+func TestRunFileSeatbeltSandbox(t *testing.T) {
+	requireSeatbelt(t)
+	// /etc is present and root-owned on macOS too, and the sandbox is what
+	// must refuse the write -- exactly the bwrap assertion, one platform over.
+	probe := filepath.Join("/etc", "dats-seatbelt-probe.txt")
+	t.Cleanup(func() { _ = os.Remove(probe) })
+
+	path := writeRunnerDats(t, `
+tests:
+  - desc: the host filesystem is read-only
+    cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+    outputs:
+      stdout:
+        - BLOCKED
+  - desc: fixtures, outputs and stdin still work
+    cmd: 'cat {inputs.in.txt} > {outputs.result.txt}; cat'
+    inputs:
+      stdin: from-stdin
+      files:
+        in.txt: input-content
+    outputs:
+      stdout:
+        - from-stdin
+      files:
+        result.txt:
+          match:
+            - input-content
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	r.Sandbox = NewSandboxConfig(SandboxSeatbelt, "")
+
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
+	assert.NoFileExists(t, probe, "the sandboxed write must not reach the host")
+	assert.Contains(t, buf.String(), "# sandbox: seatbelt")
+}
+
+func TestRunFileSeatbeltWritablePath(t *testing.T) {
+	requireSeatbelt(t)
+	hostDir := t.TempDir()
+	probe := filepath.Join(hostDir, "written.txt")
+
+	path := writeRunnerDats(t, `
+sandbox:
+  writable:
+    - `+hostDir+`
+tests:
+  - desc: a declared host path stays writable
+    cmd: echo produced > `+probe+`
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	r.Sandbox = NewSandboxConfig(SandboxSeatbelt, "")
+
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
+	assert.FileExists(t, probe)
+}
