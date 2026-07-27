@@ -84,6 +84,7 @@ func (r *Runner) RunFilesParallel(ctx context.Context, paths []string, jobs int)
 				KeepTemp:    r.KeepTemp,
 				CoverDir:    r.CoverDir,
 				Update:      r.Update,
+				Sandbox:     r.Sandbox,
 				Formatter:   &Formatter{Writer: &buffers[i], Verbose: r.Verbose},
 				lowPriority: true,
 			}
@@ -134,11 +135,18 @@ func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *sch
 		}
 	}
 
+	// Identical to serial: the file's sandbox is resolved before anything
+	// runs, and a file that must be sandboxed and cannot be fails outright.
+	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
+		return nil, err
+	}
+
 	instances := make([]schema.TestInstance, 0, len(testFile.Tests))
 	for i := range testFile.Tests {
 		instances = append(instances, schema.ExpandMatrix(&testFile.Tests[i])...)
 	}
 
+	r.Formatter.PrintSandbox(r.plan.describe())
 	r.Formatter.PrintHeader(path, len(instances))
 
 	result := &FileResult{

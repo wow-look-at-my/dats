@@ -2,6 +2,8 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
+Test commands are **sandboxed by default** (bubblewrap, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out — `--no-sandbox`, or `sandbox: false` in a file that needs it. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+
 ## Installation
 
 ```bash
@@ -40,6 +42,9 @@ dats --update test tests/
 # Watch mode: run everything, then re-run the complete scope on file changes
 dats watch tests/
 
+# Run commands on the host instead of in a sandbox (sandboxing is the default)
+dats --no-sandbox test.dats
+
 # Keep temp directory for debugging
 dats test --keep-temp tests.dats
 
@@ -76,6 +81,9 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
 | `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
 | `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
+| `--sandbox <mode>` | Global | Sandbox backend for test commands: `auto` (default — bwrap, then docker), `bwrap`, `docker`, `none`. See [docs/cli.md](docs/cli.md#sandboxing---sandbox) |
+| `--no-sandbox` | Global | Run test commands directly on the host (same as `--sandbox=none`) |
+| `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`) |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
@@ -226,6 +234,7 @@ tests:
 | `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
 | `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
 | `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
+| `sandbox` | No | `false` opts this file's commands out of the sandbox, or a mapping (`enabled`, `network`, `image`, `writable`) narrows it. Covers the tests AND the setup/teardown hooks. See [docs/file-format.md](docs/file-format.md#sandbox) |
 
 Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
 concurrently within and across files, but no test in a file starts before

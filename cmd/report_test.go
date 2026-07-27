@@ -104,7 +104,7 @@ func runCorpusWithReports(t *testing.T, dir string, files []string, jobs int) (j
 
 	t.Chdir(dir)
 	var out bytes.Buffer
-	runErr = runTests(context.Background(), files, &out, jobs)
+	runErr = runTests(context.Background(), files, &out, jobs, nil)
 
 	var err error
 	junitRaw, err = os.ReadFile(junitPath)
@@ -188,7 +188,7 @@ func TestReportsCreateParentDirectories(t *testing.T) {
 	setReportFlags(t, junitPath, jsonPath)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil))
 	_, err := os.Stat(junitPath)
 	assert.Nil(t, err, "missing parent directories must be created")
 	_, err = os.Stat(jsonPath)
@@ -206,7 +206,7 @@ func TestReportsWrittenWhenRunFails(t *testing.T) {
 	setReportFlags(t, junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0)
+	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil)
 	assert.ErrorIs(t, err, errTestsFailed, "exit-code semantics stay unchanged")
 
 	raw, readErr := os.ReadFile(jsonPath)
@@ -238,7 +238,7 @@ func TestReportsUnwritablePathFailsTheRun(t *testing.T) {
 	setReportFlags(t, junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0)
+	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil)
 	require.NotNil(t, err, "a report write failure must fail the run even when all tests passed")
 	assert.NotErrorIs(t, err, errTestsFailed, "the error must surface on stderr, not exit silently")
 	assert.Contains(t, err.Error(), jsonPath)
@@ -262,7 +262,7 @@ func TestReportsControlCharsStayParseable(t *testing.T) {
 	setReportFlags(t, junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0)
+	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil)
 	assert.ErrorIs(t, err, errTestsFailed)
 
 	junitRaw, readErr := os.ReadFile(junitPath)

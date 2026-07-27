@@ -78,6 +78,19 @@ func ParseFile(path string) (*TestFile, error) {
 			}
 		}
 	}
+	// The sandbox block is file-level too: it is resolved once, before any
+	// instance exists, so a {matrix.X} in its image or writable paths could
+	// never resolve either.
+	if testFile.Sandbox != nil {
+		if name, found := findMatrixPlaceholder(testFile.Sandbox.Image); found {
+			return nil, fmt.Errorf("sandbox image: {matrix.%s} is not available outside tests", name)
+		}
+		for i, path := range testFile.Sandbox.Writable {
+			if name, found := findMatrixPlaceholder(path); found {
+				return nil, fmt.Errorf("sandbox writable path %d: {matrix.%s} is not available outside tests", i+1, name)
+			}
+		}
+	}
 
 	for i, test := range testFile.Tests {
 		if test.Cmd == "" {

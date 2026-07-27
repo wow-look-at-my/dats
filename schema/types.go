@@ -33,7 +33,11 @@ type TestFile struct {
 	// Shared declares fixture files written once per file into the shared
 	// directory; nil when the file has no shared block.
 	Shared *Shared `yaml:"shared,omitempty"`
-	Tests  []Test  `yaml:"tests"`
+	// Sandbox refines (or opts out of) the sandbox the CLI selected for this
+	// file's commands; nil when the file has no sandbox block, leaving every
+	// decision to the CLI.
+	Sandbox *SandboxSpec `yaml:"sandbox,omitempty"`
+	Tests   []Test       `yaml:"tests"`
 }
 
 // CommandList is an ordered list of shell commands: the value shape of the

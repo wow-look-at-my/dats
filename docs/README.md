@@ -44,3 +44,5 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
 - **Negated checks** (`!stdout`, `!stderr`, `!files`) assert patterns/files do NOT appear
 - **Snapshots** (`snapshot`) byte-compare stdout/stderr against golden files stored next to
   the `.dats` file; `dats --update` rewrites them from actual output
+- **Sandboxing** is on by default (bubblewrap, falling back to docker): commands may only
+  write inside their temp directory. Opt out with `--no-sandbox` or `sandbox: false`
