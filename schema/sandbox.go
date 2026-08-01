@@ -34,12 +34,15 @@ type SandboxSpec struct {
 	// commands in. Empty means "not stated" (the CLI's image is used); it has
 	// no effect under the bwrap backend.
 	Image string
-	// Writable is the `writable` key: host paths that stay writable inside
-	// the sandbox, on top of the file's own temp directory. Paths are used as
-	// written (relative ones resolve against the working directory when the
-	// sandbox is built).
-	Writable []string
 }
+
+// There is deliberately no way to declare extra writable HOST paths. A command
+// that needs somewhere to write has the file's temp directory (a real
+// filesystem inside every backend, and the one place fixtures, {outputs.X} and
+// snapshots already live); a command that genuinely needs the host is not a
+// sandboxed command, and says so with `sandbox: false`. A per-path escape
+// hatch is neither, and each one is a hole in the isolation the file's own
+// author cannot see the consequences of.
 
 // IsEnabled reports whether the file wants its commands sandboxed. A nil spec
 // and an unstated `enabled` key both mean yes -- the CLI decides whether a
@@ -72,7 +75,7 @@ func (s *SandboxSpec) UnmarshalYAML(node *yaml.Node) error {
 	case yaml.ScalarNode:
 		var enabled bool
 		if err := node.Decode(&enabled); err != nil {
-			return fmt.Errorf("sandbox: must be true, false, or a mapping (enabled, network, image, writable)")
+			return fmt.Errorf("sandbox: must be true, false, or a mapping (enabled, network, image)")
 		}
 		*s = SandboxSpec{Enabled: &enabled}
 		return nil
@@ -83,9 +86,9 @@ func (s *SandboxSpec) UnmarshalYAML(node *yaml.Node) error {
 			keyNode, valNode := node.Content[i], node.Content[i+1]
 			key := keyNode.Value
 			switch key {
-			case "enabled", "network", "image", "writable":
+			case "enabled", "network", "image":
 			default:
-				return fmt.Errorf("sandbox: unknown key %q (allowed: enabled, network, image, writable)", key)
+				return fmt.Errorf("sandbox: unknown key %q (allowed: enabled, network, image)", key)
 			}
 			if seen[key] {
 				return fmt.Errorf("sandbox: %s declared more than once", key)
@@ -108,25 +111,15 @@ func (s *SandboxSpec) UnmarshalYAML(node *yaml.Node) error {
 					return fmt.Errorf("sandbox: image must be a non-empty string")
 				}
 				spec.Image = valNode.Value
-			case "writable":
-				if valNode.Kind != yaml.SequenceNode || len(valNode.Content) == 0 {
-					return fmt.Errorf("sandbox: writable must list at least one path")
-				}
-				for j, item := range valNode.Content {
-					if item.Kind != yaml.ScalarNode || item.Tag != "!!str" || item.Value == "" {
-						return fmt.Errorf("sandbox: writable path %d must be a non-empty string", j+1)
-					}
-					spec.Writable = append(spec.Writable, item.Value)
-				}
 			}
 		}
 		// A mapping that states nothing looks like configuration but
 		// configures nothing -- it can only be a mistake.
 		if len(seen) == 0 {
-			return fmt.Errorf("sandbox: mapping must set at least one of enabled, network, image, writable")
+			return fmt.Errorf("sandbox: mapping must set at least one of enabled, network, image")
 		}
 		*s = spec
 		return nil
 	}
-	return fmt.Errorf("sandbox: must be true, false, or a mapping (enabled, network, image, writable)")
+	return fmt.Errorf("sandbox: must be true, false, or a mapping (enabled, network, image)")
 }

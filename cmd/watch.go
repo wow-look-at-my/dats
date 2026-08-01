@@ -26,6 +26,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/runner"
+
+	dats "github.com/wow-look-at-my/dats"
+	"github.com/wow-look-at-my/dats/internal/paths"
 )
 
 // watchDebounce is how long the watcher waits after the LAST relevant event
@@ -65,7 +68,7 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 	// A hard resolution error at startup (nonexistent argument, no .dats
 	// files found, wrong extension) exits like dats test would. Every cycle
 	// below re-resolves from scratch so scope changes are picked up.
-	if _, err := resolveFiles(args); err != nil {
+	if _, err := dats.FindFiles(args); err != nil {
 		return err
 	}
 
@@ -136,7 +139,7 @@ func watchLoop(ctx context.Context, events <-chan watchEvent, cycle func(ctx con
 				break debouncing
 			}
 		}
-		cycle(ctx, dedupePaths(changed))
+		cycle(ctx, paths.Dedupe(changed))
 	}
 }
 
@@ -165,7 +168,7 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 	// file was deleted), report once, keep the previous resolved list and
 	// watch set, and skip the run -- runTests would only repeat the same
 	// resolution error, and the fix will trigger the next cycle.
-	files, err := resolveFiles(w.args)
+	files, err := dats.FindFiles(w.args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		w.printFooter()
@@ -425,7 +428,7 @@ func computeWatchDirs(files, dirTrees []string) []string {
 			return nil
 		})
 	}
-	return dedupePaths(dirs)
+	return paths.Dedupe(dirs)
 }
 
 // underDir reports whether path lies strictly below dir (both should be

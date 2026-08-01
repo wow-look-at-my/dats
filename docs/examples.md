@@ -254,12 +254,14 @@ Test commands are sandboxed by default, and ordinary tests need no changes for i
 ```yaml
 sandbox:
   network: false        # these commands need no network, so they get none
-  writable:             # ...but they do need to write to this host path
-    - /var/lib/example
+  image: golang:1.25    # ...and the docker backend needs a Go in the image
 tests:
-  - desc: writes its cache to a declared host path
-    cmd: mytool --cache /var/lib/example build
+  - desc: builds offline
+    cmd: go build ./...
 ```
+
+Scratch space is the temp directory, never a host path: there is no way to declare a host
+path writable. A command that must write outside it is a `sandbox: false` file.
 
 ### Opting a file out
 

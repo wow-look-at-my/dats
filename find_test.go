@@ -1,4 +1,4 @@
-package cmd
+package dats
 
 import (
 	"bytes"
@@ -11,75 +11,75 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveFilesWithArgs(t *testing.T) {
+func TestFindFilesWithArgs(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte("tests:\n  - cmd: echo hi\n"), 0644))
 
-	files, err := resolveFiles([]string{datsFile})
+	files, err := FindFiles([]string{datsFile})
 	require.Nil(t, err)
 	assert.Equal(t, []string{datsFile}, files)
 }
 
-func TestResolveFilesWrongExtension(t *testing.T) {
+func TestFindFilesWrongExtension(t *testing.T) {
 	yamlFile := filepath.Join(t.TempDir(), "test.yaml")
 	require.Nil(t, os.WriteFile(yamlFile, []byte(""), 0644))
 
-	_, err := resolveFiles([]string{yamlFile})
+	_, err := FindFiles([]string{yamlFile})
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), ".dats extension")
 }
 
-func TestResolveFilesNonexistent(t *testing.T) {
-	_, err := resolveFiles([]string{"/nonexistent/test.dats"})
+func TestFindFilesNonexistent(t *testing.T) {
+	_, err := FindFiles([]string{"/nonexistent/test.dats"})
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "cannot access /nonexistent/test.dats")
 }
 
-func TestResolveFilesStatError(t *testing.T) {
+func TestFindFilesStatError(t *testing.T) {
 	// A path with a regular file as an intermediate component fails Stat with
 	// ENOTDIR rather than ENOENT; it must be reported, not silently accepted.
 	tmp := t.TempDir()
 	blocker := filepath.Join(tmp, "blocker")
 	require.Nil(t, os.WriteFile(blocker, []byte(""), 0644))
 
-	_, err := resolveFiles([]string{filepath.Join(blocker, "test.dats")})
+	_, err := FindFiles([]string{filepath.Join(blocker, "test.dats")})
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "cannot access")
 }
 
-func TestResolveFilesExplicitHiddenFile(t *testing.T) {
+func TestFindFilesExplicitHiddenFile(t *testing.T) {
 	// Explicitly named files are exempt from the hidden-file discovery rule.
 	tmp := t.TempDir()
 	hidden := filepath.Join(tmp, ".hidden.dats")
 	require.Nil(t, os.WriteFile(hidden, []byte(""), 0644))
 
-	files, err := resolveFiles([]string{hidden})
+	files, err := FindFiles([]string{hidden})
 	require.Nil(t, err)
 	assert.Equal(t, []string{hidden}, files)
 }
 
-func TestResolveFilesDiscovery(t *testing.T) {
+func TestFindFilesDiscovery(t *testing.T) {
 	tmp := t.TempDir()
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "a.dats"), []byte(""), 0644))
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "b.dats"), []byte(""), 0644))
 
 	t.Chdir(tmp)
 
-	files, err := resolveFiles(nil)
+	files, err := FindFiles(nil)
 	require.Nil(t, err)
 	assert.Len(t, files, 2)
 }
 
-func TestResolveFilesDiscoveryNone(t *testing.T) {
+func TestFindFilesDiscoveryNone(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	_, err := resolveFiles(nil)
+	_, err := FindFiles(nil)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "no .dats files found")
 }
 
-func TestResolveFilesDirectoryArg(t *testing.T) {
+func TestFindFilesDirectoryArg(t *testing.T) {
 	tmp := t.TempDir()
 	subDir := filepath.Join(tmp, "sub")
 	hiddenDir := filepath.Join(tmp, ".hidden")
@@ -89,7 +89,7 @@ func TestResolveFilesDirectoryArg(t *testing.T) {
 	require.Nil(t, os.WriteFile(filepath.Join(subDir, "nested.dats"), []byte(""), 0644))
 	require.Nil(t, os.WriteFile(filepath.Join(hiddenDir, "skipped.dats"), []byte(""), 0644))
 
-	files, err := resolveFiles([]string{tmp})
+	files, err := FindFiles([]string{tmp})
 	require.Nil(t, err)
 	assert.ElementsMatch(t, []string{
 		filepath.Join(tmp, "root.dats"),
@@ -97,15 +97,15 @@ func TestResolveFilesDirectoryArg(t *testing.T) {
 	}, files)
 }
 
-func TestResolveFilesDirectoryArgEmpty(t *testing.T) {
+func TestFindFilesDirectoryArgEmpty(t *testing.T) {
 	tmp := t.TempDir()
 
-	_, err := resolveFiles([]string{tmp})
+	_, err := FindFiles([]string{tmp})
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "no .dats files found in "+tmp)
 }
 
-func TestResolveFilesSymlinkedDirArg(t *testing.T) {
+func TestFindFilesSymlinkedDirArg(t *testing.T) {
 	// A symlink to a directory stats as a directory, but filepath.WalkDir does
 	// not follow a symlink root; without resolving the root first the walk
 	// yields nothing and the arg errors with "no .dats files found".
@@ -119,31 +119,31 @@ func TestResolveFilesSymlinkedDirArg(t *testing.T) {
 		t.Skipf("symlinks not supported: %v", err)
 	}
 
-	files, err := resolveFiles([]string{link})
+	files, err := FindFiles([]string{link})
 	require.Nil(t, err)
 	require.Len(t, files, 1)
 	assert.Equal(t, "linked.dats", filepath.Base(files[0]))
 }
 
-func TestResolveFilesDedupe(t *testing.T) {
+func TestFindFilesDedupe(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte(""), 0644))
 
 	// The same file named twice explicitly, plus covered by a directory arg,
 	// must run exactly once. First-seen order (and spelling) is preserved.
-	files, err := resolveFiles([]string{datsFile, tmp, datsFile})
+	files, err := FindFiles([]string{datsFile, tmp, datsFile})
 	require.Nil(t, err)
 	assert.Equal(t, []string{datsFile}, files)
 }
 
-func TestResolveFilesDedupeRelativeAndAbsolute(t *testing.T) {
+func TestFindFilesDedupeRelativeAndAbsolute(t *testing.T) {
 	tmp := t.TempDir()
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "test.dats"), []byte(""), 0644))
 
 	t.Chdir(tmp)
 
-	files, err := resolveFiles([]string{"test.dats", filepath.Join(tmp, "test.dats")})
+	files, err := FindFiles([]string{"test.dats", filepath.Join(tmp, "test.dats")})
 	require.Nil(t, err)
 	assert.Equal(t, []string{"test.dats"}, files)
 }

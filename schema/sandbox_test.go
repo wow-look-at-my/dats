@@ -53,16 +53,22 @@ func TestParseSandboxMapping(t *testing.T) {
   enabled: true
   network: false
   image: alpine:3.20
-  writable:
-    - /var/data
-    - relative/path
 `)
 	require.Nil(t, err)
 	require.NotNil(t, tf.Sandbox)
 	assert.True(t, tf.Sandbox.IsEnabled())
 	assert.False(t, tf.Sandbox.NetworkEnabled())
 	assert.Equal(t, "alpine:3.20", tf.Sandbox.Image)
-	assert.Equal(t, []string{"/var/data", "relative/path"}, tf.Sandbox.Writable)
+}
+
+// TestParseSandboxRejectsWritableKey pins the removal: declaring extra
+// writable HOST paths is not a thing a file can do. Somewhere to write is the
+// file's temp directory; needing the host itself is `sandbox: false`.
+func TestParseSandboxRejectsWritableKey(t *testing.T) {
+	_, err := parseSandbox(t, "sandbox:\n  writable:\n    - /var/data\n")
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), `unknown key "writable"`)
+	assert.Contains(t, err.Error(), "allowed: enabled, network, image")
 }
 
 func TestParseSandboxErrors(t *testing.T) {
@@ -77,9 +83,6 @@ func TestParseSandboxErrors(t *testing.T) {
 		{"non-bool network", "sandbox:\n  network: [1]\n", "network must be a boolean"},
 		{"empty image", "sandbox:\n  image: \"\"\n", "image must be a non-empty string"},
 		{"non-string image", "sandbox:\n  image: 42\n", "image must be a non-empty string"},
-		{"empty writable", "sandbox:\n  writable: []\n", "writable must list at least one path"},
-		{"non-sequence writable", "sandbox:\n  writable: /var/data\n", "writable must list at least one path"},
-		{"empty writable entry", "sandbox:\n  writable:\n    - \"\"\n", "writable path 1 must be a non-empty string"},
 		{"empty mapping", "sandbox: {}\n", "must set at least one of"},
 		{"wrong kind", "sandbox:\n  - false\n", "must be true, false, or a mapping"},
 		{"scalar not bool", "sandbox: maybe\n", "must be true, false, or a mapping"},
@@ -100,8 +103,4 @@ func TestParseSandboxRejectsMatrixPlaceholders(t *testing.T) {
 	_, err := parseSandbox(t, "sandbox:\n  image: img:{matrix.tag}\n")
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sandbox image: {matrix.tag} is not available outside tests")
-
-	_, err = parseSandbox(t, "sandbox:\n  writable:\n    - /data/{matrix.name}\n")
-	require.NotNil(t, err)
-	assert.Contains(t, err.Error(), "sandbox writable path 1: {matrix.name} is not available outside tests")
 }

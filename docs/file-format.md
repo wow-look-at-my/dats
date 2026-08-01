@@ -116,9 +116,12 @@ sandbox:
   network: false      # default true; false runs commands with no network
   image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
                       # Ignored by bwrap and seatbelt, which use the host's own filesystem
-  writable:           # host paths writable on top of the file's temp directory
-    - /var/lib/example
 ```
+
+There is no key for extra writable host paths, and that is deliberate. Somewhere to write is
+the file's temp directory, which every backend gives you; a command that genuinely needs the
+host is not a sandboxed command and says `sandbox: false`. A per-path hole is neither, and
+its consequences are invisible to the person reading the file.
 
 The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks
 alike. It is file-level, not per-test: one file's commands share one temp directory, one
@@ -126,13 +129,13 @@ shared directory, and one hook lifecycle, so a per-test sandbox would make those
 mean different things to different tests.
 
 The CLI's choice is the outer bound. A file can narrow it (opt out, cut the network) or
-adjust it (image, extra writable paths), never widen it: under `--no-sandbox` the whole block
+adjust it (image), never widen it: under `--no-sandbox` the whole block
 is inert, and `sandbox: true` does not force a sandbox onto a run that opted out.
 
 Both shapes are validated strictly: unknown or duplicate keys, a non-boolean `enabled` or
-`network`, an empty `image`, an empty `writable` list, and an empty mapping are all parse
+`network`, an empty `image`, and an empty mapping are all parse
 errors — a misspelled key must never silently disable isolation. `sandbox:` with no value at
-all is the same as omitting it. `{matrix.X}` is rejected in `image` and `writable`: the
+all is the same as omitting it. `{matrix.X}` is rejected in `image`: the
 sandbox is resolved once per file, before any matrix instance exists.
 
 ### What a sandboxed file can rely on
@@ -141,7 +144,12 @@ sandbox is resolved once per file, before any matrix instance exists.
   files and snapshots all work unchanged — the file's temp directory is writable inside the
   sandbox.
 - Writes anywhere else fail (bwrap, seatbelt) or vanish with the container (docker). A test
-  that must write to a host path declares it under `writable`.
+  with something to write puts it in the temp directory (`{outputs.X}`, `{shared.X}`, or its
+  own `mktemp -d` under the private /tmp).
+- Under bwrap and docker a host path outside the working directory is not READABLE either:
+  those backends expose the same confined set. A file that has to reach the rest of the
+  machine runs unsandboxed (`sandbox: false`) — a decision the file states in one line,
+  rather than a list of paths that quietly adds up to the same thing.
 - Under the docker backend the command runs inside the image, so the tools available are the
   image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
 

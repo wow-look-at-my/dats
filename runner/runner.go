@@ -21,12 +21,21 @@ type Runner struct {
 	// Update rewrites snapshot golden files from actual output instead of
 	// failing mismatches, and prunes stale goldens (the --update flag).
 	Update bool
-	// Sandbox selects the sandbox every command runs under (the --sandbox
-	// flags). Nil -- the default for a Runner built directly, as library
-	// callers do -- runs commands on the host; the CLI always sets one.
+	// Sandbox selects the sandbox every command runs under. Nil runs
+	// commands on the host: this is the raw runner, so the safe default
+	// lives one layer up -- both the CLI and dats.Run pass a config unless
+	// the caller explicitly opted out.
 	// Backend detection inside it is memoized, so sharing one config across
 	// files and workers probes the host at most once.
 	Sandbox *SandboxConfig
+
+	// Env are extra KEY=VALUE entries applied to every command this runner
+	// executes -- test instances and file-level hooks alike -- on top of the
+	// inherited environment. A test's own inputs.env entries are applied
+	// after these, so a file can still override what the caller set. An
+	// entry with an empty value clears the inherited variable, which is how
+	// a caller strips plumbing its children must not inherit.
+	Env []string
 
 	// plan is the resolved sandbox for the file currently being run, set by
 	// RunFile/runFileParallel before any of that file's commands execute (nil
@@ -255,13 +264,14 @@ func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir str
 // than from ours, so those entries -- and only those -- are forwarded into
 // it: the host's own PATH, HOME and the rest would be wrong inside.
 func (r *Runner) commandEnv(extra ...string) (env []string, added []string) {
-	if len(extra) == 0 && r.CoverDir == "" {
+	if len(extra) == 0 && len(r.Env) == 0 && r.CoverDir == "" {
 		return nil, nil
 	}
-	added = extra
+	// Copied rather than appended in place: both slices belong to callers.
+	// Runner.Env comes first so a test's own inputs.env wins over it.
+	added = append(append([]string{}, r.Env...), extra...)
 	if r.CoverDir != "" {
-		// Copied rather than appended in place: extra belongs to the caller.
-		added = append(append([]string{}, extra...), "GOCOVERDIR="+r.CoverDir)
+		added = append(added, "GOCOVERDIR="+r.CoverDir)
 	}
 	return append(os.Environ(), added...), added
 }

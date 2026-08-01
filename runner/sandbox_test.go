@@ -141,22 +141,143 @@ func TestSandboxBackendNoneNeedsNoProbe(t *testing.T) {
 }
 
 func TestBwrapArgvOrderAndBinds(t *testing.T) {
-	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", writable: []string{"/var/data"}}
+	plan := &sandboxPlan{
+		backend:  SandboxBwrap,
+		network:  true,
+		work:     "/tmp/dats-1",
+		coverDir: "/srv/coverage",
+		workdir:  "/home/user/project",
+	}
 	argv := plan.bwrapArgv("echo hi")
 
 	assert.Equal(t, "bwrap", argv[0])
 	assert.Equal(t, []string{"bash", "-c", "echo hi"}, argv[len(argv)-3:])
 	joined := strings.Join(argv, " ")
-	assert.Contains(t, joined, "--ro-bind / /")
+	assert.Contains(t, joined, "--ro-bind-try /usr /usr")
+	assert.Contains(t, joined, "--ro-bind-try /home/user/project /home/user/project")
 	assert.Contains(t, joined, "--bind /tmp/dats-1 /tmp/dats-1")
-	assert.Contains(t, joined, "--bind /var/data /var/data")
+	assert.Contains(t, joined, "--bind /srv/coverage /srv/coverage")
+	assert.Contains(t, joined, "--chdir /home/user/project")
+	assert.Equal(t, 1, strings.Count(joined, "--chdir"),
+		"more than one --chdir makes bwrap warn on stderr, into the command's captured output")
 	assert.Contains(t, joined, "--die-with-parent")
 	assert.NotContains(t, joined, "--unshare-net")
 	// Order is load-bearing: the private /tmp must be mounted before the
 	// work-directory bind, or a work directory under /tmp (the usual case)
 	// would be buried by the tmpfs and every fixture would vanish.
 	assert.Less(t, strings.Index(joined, "--tmpfs /tmp"), strings.Index(joined, "--bind /tmp/dats-1"))
-	assert.Less(t, strings.Index(joined, "--ro-bind / /"), strings.Index(joined, "--tmpfs /tmp"))
+	assert.Less(t, strings.Index(joined, "--ro-bind-try /usr /usr"), strings.Index(joined, "--tmpfs /tmp"))
+	// The working directory is bound before the writable paths, so a writable
+	// path inside it wins -- the precedence docker's mount dedup gives it too.
+	assert.Less(t, strings.Index(joined, "--ro-bind-try /home/user/project"), strings.Index(joined, "--bind /srv/coverage"))
+	// ...and the --chdir into it comes after the bind that creates it.
+	assert.Less(t, strings.Index(joined, "--ro-bind-try /home/user/project"), strings.Index(joined, "--chdir /home/user/project"))
+}
+
+// TestBwrapArgvNeverBindsTheHostRoot is the regression test for the bypass
+// this backend used to have: `--ro-bind / /` handed every command the whole
+// host -- $HOME and its credentials, /var, every other checkout on the machine
+// -- and made bwrap expose a completely different filesystem than docker.
+func TestBwrapArgvNeverBindsTheHostRoot(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/home/user/project"}
+	argv := plan.bwrapArgv("true")
+
+	assert.NotContains(t, strings.Join(argv, " "), "--ro-bind / /")
+	for i, arg := range argv {
+		switch arg {
+		case "--ro-bind", "--ro-bind-try", "--bind":
+			require.Less(t, i+1, len(argv))
+			src := argv[i+1]
+			assert.NotEqual(t, "/", src, "the host root must never be bound")
+			resolvConf, _ := resolvConfTarget()
+			if underToolTree(src) || src == plan.work || src == plan.workdir || src == resolvConf {
+				continue
+			}
+			// The only other allowance is the resolv.conf target on
+			// systemd-resolved hosts: one FILE, not a host data tree.
+			assert.False(t, strings.HasPrefix(src, "/home/") || strings.HasPrefix(src, "/root"),
+				"bwrap bound host data path %q", src)
+		}
+	}
+}
+
+// TestBwrapAndDockerExposeTheSameHostPaths pins the property the backends must
+// share: of the HOST, a command sees the working directory read-only and the
+// file's temp directory read-write, and nothing else. (System tools differ by
+// construction -- the image under docker, the tool tree under bwrap.)
+func TestBwrapAndDockerExposeTheSameHostPaths(t *testing.T) {
+	plan := &sandboxPlan{
+		backend:  SandboxBwrap,
+		image:    "img",
+		network:  true,
+		work:     "/tmp/dats-1",
+		coverDir: "/srv/coverage",
+		workdir:  "/home/user/project",
+	}
+
+	// The resolver's config file is the documented single exception: bwrap
+	// binds it so a sandboxed command has DNS at all, where docker gets it
+	// from the container runtime.
+	resolvConf, _ := resolvConfTarget()
+
+	bwrapRO, bwrapRW := map[string]bool{}, map[string]bool{}
+	argv := plan.bwrapArgv("true")
+	for i, arg := range argv {
+		if i+1 >= len(argv) || underToolTree(argv[i+1]) || argv[i+1] == resolvConf {
+			continue
+		}
+		switch arg {
+		case "--ro-bind", "--ro-bind-try":
+			bwrapRO[argv[i+1]] = true
+		case "--bind":
+			bwrapRW[argv[i+1]] = true
+		}
+	}
+
+	dockerRO, dockerRW := map[string]bool{}, map[string]bool{}
+	dargv := plan.dockerArgv("n", "true", nil)
+	for i, arg := range dargv {
+		if arg != "-v" || i+1 >= len(dargv) {
+			continue
+		}
+		src, rest, _ := strings.Cut(dargv[i+1], ":")
+		if strings.HasSuffix(rest, ":ro") {
+			dockerRO[src] = true
+		} else {
+			dockerRW[src] = true
+		}
+	}
+
+	assert.Equal(t, dockerRO, bwrapRO, "read-only host paths must match between backends")
+	assert.Equal(t, dockerRW, bwrapRW, "read-write host paths must match between backends")
+}
+
+func TestInheritedEnvCarriesCallerVarsButNotImageOwnedOnes(t *testing.T) {
+	t.Setenv("DATS_TEST_CALLER_VAR", "carried")
+	t.Setenv("HOME", "/host/home")
+
+	env := inheritedEnv()
+	assert.Contains(t, env, "DATS_TEST_CALLER_VAR=carried")
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		assert.NotContains(t, []string{"PATH", "HOME", "TMPDIR", "PWD"}, name,
+			"%s belongs to the image, not the caller", name)
+	}
+}
+
+func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
+	// The bwrap child inherits the run's environment; the container must be
+	// handed the same variables, or one suite reads them under one backend and
+	// reads empty strings under the other.
+	t.Setenv("DATS_TEST_HANDOFF_DIR", "/home/user/project/build/.stage")
+	plan := &sandboxPlan{backend: SandboxDocker, image: "img", network: true, work: "/tmp/dats-1"}
+	joined := strings.Join(plan.dockerArgv("n", "true", []string{"FOO=bar"}), " ")
+
+	assert.Contains(t, joined, "-e DATS_TEST_HANDOFF_DIR=/home/user/project/build/.stage")
+	assert.Contains(t, joined, "-e FOO=bar")
+	// dats' own additions come last, so a test's inputs.env wins over an
+	// inherited variable of the same name.
+	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
 }
 
 func TestBwrapArgvUnshareNetWhenNetworkOff(t *testing.T) {
@@ -200,7 +321,7 @@ func TestDockerArgvWritableWorkdirIsNotRemountedReadOnly(t *testing.T) {
 		image:    "img",
 		network:  true,
 		work:     "/tmp/dats-1",
-		writable: []string{"/home/user/project"},
+		coverDir: "/home/user/project",
 		workdir:  "/home/user/project",
 	}
 	joined := strings.Join(plan.dockerArgv("n", "true", nil), " ")
@@ -255,9 +376,8 @@ func TestNewSandboxPlanFields(t *testing.T) {
 	}
 	r.Sandbox.Image = "custom:tag"
 	plan, err := r.newSandboxPlan(&schema.SandboxSpec{
-		Network:  &network,
-		Image:    "file:tag",
-		Writable: []string{"/var/data"},
+		Network: &network,
+		Image:   "file:tag",
 	}, "/tmp/dats-2")
 	require.Nil(t, err)
 	require.NotNil(t, plan)
@@ -266,10 +386,9 @@ func TestNewSandboxPlanFields(t *testing.T) {
 	assert.Equal(t, "file:tag", plan.image, "the file's image overrides the CLI's")
 	assert.False(t, plan.network)
 	assert.Equal(t, "/tmp/dats-2", plan.work)
-	assert.Contains(t, plan.writable, "/var/data")
 	// Coverage data is written by the sandboxed process into a host directory
 	// outside the temp tree, so it has to be writable too.
-	assert.Contains(t, plan.writable, r.CoverDir)
+	assert.Contains(t, plan.writablePaths(), r.CoverDir)
 	assert.Equal(t, "docker file:tag (no network)", plan.describe())
 }
 
@@ -323,8 +442,8 @@ func TestSeatbeltProfileNetworkOff(t *testing.T) {
 }
 
 func TestSeatbeltProfileEscapesPaths(t *testing.T) {
-	// A quote in a declared writable path would otherwise end the literal
-	// early and change which paths the profile allows.
+	// A quote in a writable path would otherwise end the literal early and
+	// change which paths the profile allows.
 	profile := seatbeltProfile([]string{`/tmp/we"ird\path`}, true)
 	assert.Contains(t, profile, `(subpath "/tmp/we\"ird\\path")`)
 }
@@ -349,9 +468,8 @@ func TestSeatbeltWritablePathsResolveSymlinks(t *testing.T) {
 
 func TestSeatbeltWritablePathsKeepsUnresolvablePaths(t *testing.T) {
 	// A path that does not exist yet must not vanish from the profile: a
-	// dropped rule silently widens nothing but denies the write it was
-	// declared for, and a missing rule is far harder to diagnose than a
-	// denial.
+	// dropped rule silently widens nothing but denies the write it exists for,
+	// and a missing rule is far harder to diagnose than a denial.
 	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: "/definitely/not/here"}
 	assert.Contains(t, plan.seatbeltWritablePaths(), "/definitely/not/here")
 }
@@ -359,4 +477,62 @@ func TestSeatbeltWritablePathsKeepsUnresolvablePaths(t *testing.T) {
 func TestSandboxPlanDescribeSeatbelt(t *testing.T) {
 	assert.Equal(t, "seatbelt", (&sandboxPlan{backend: SandboxSeatbelt, network: true}).describe())
 	assert.Equal(t, "seatbelt (no network)", (&sandboxPlan{backend: SandboxSeatbelt}).describe())
+}
+
+func TestResolvConfTargetIsAFileOutsideTheToolTree(t *testing.T) {
+	target, ok := resolvConfTarget()
+	if !ok {
+		// A host whose /etc/resolv.conf is a regular file needs no extra bind:
+		// /etc is already in the tool tree.
+		return
+	}
+	assert.False(t, underToolTree(target), "a target inside the tool tree needs no bind of its own")
+	info, err := os.Stat(target)
+	require.Nil(t, err)
+	assert.False(t, info.IsDir(), "the exception is one file, never a host directory tree")
+}
+
+func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
+	// Forces the systemd-resolved shape: /etc/resolv.conf symlinked into /run,
+	// which is what CI runners have and what made the first version of the
+	// equality test fail there.
+	orig := resolvConfTarget
+	t.Cleanup(func() { resolvConfTarget = orig })
+	const stub = "/run/systemd/resolve/stub-resolv.conf"
+	resolvConfTarget = func() (string, bool) { return stub, true }
+
+	plan := &sandboxPlan{
+		backend: SandboxBwrap, image: "img", network: true,
+		work: "/tmp/dats-1", workdir: "/home/user/project",
+	}
+	joined := strings.Join(plan.bwrapArgv("true"), " ")
+	assert.Contains(t, joined, "--ro-bind-try "+stub+" "+stub,
+		"without it a sandboxed command has no DNS at all on a systemd-resolved host")
+
+	// ...and it is the one allowance: everything else still matches docker.
+	hostBinds := map[string]bool{}
+	argv := plan.bwrapArgv("true")
+	for i, arg := range argv {
+		if i+1 >= len(argv) || underToolTree(argv[i+1]) || argv[i+1] == stub {
+			continue
+		}
+		if arg == "--ro-bind" || arg == "--ro-bind-try" || arg == "--bind" {
+			hostBinds[argv[i+1]] = true
+		}
+	}
+	assert.Equal(t, map[string]bool{"/tmp/dats-1": true, "/home/user/project": true}, hostBinds)
+}
+
+// TestSandboxPlanExposesOnlyTempDirAndCoverDir pins the whole writable
+// surface: the file's temp directory, and --coverdir when the run collects
+// coverage. There is no third entry and no way to add one -- scratch goes in
+// the temp directory (a real filesystem inside every backend), and a command
+// that needs the host is a `sandbox: false` file, not a hole in a sandboxed
+// one.
+func TestSandboxPlanExposesOnlyTempDirAndCoverDir(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/repo"}
+	assert.Equal(t, []string{"/tmp/dats-1"}, plan.writablePaths())
+
+	plan.coverDir = "/repo/coverage"
+	assert.Equal(t, []string{"/tmp/dats-1", "/repo/coverage"}, plan.writablePaths())
 }
