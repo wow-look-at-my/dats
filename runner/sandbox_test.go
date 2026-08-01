@@ -189,7 +189,8 @@ func TestBwrapArgvNeverBindsTheHostRoot(t *testing.T) {
 			require.Less(t, i+1, len(argv))
 			src := argv[i+1]
 			assert.NotEqual(t, "/", src, "the host root must never be bound")
-			if underToolTree(src) || src == plan.work || src == plan.workdir {
+			resolvConf, _ := resolvConfTarget()
+			if underToolTree(src) || src == plan.work || src == plan.workdir || src == resolvConf {
 				continue
 			}
 			// The only other allowance is the resolv.conf target on
@@ -214,10 +215,15 @@ func TestBwrapAndDockerExposeTheSameHostPaths(t *testing.T) {
 		workdir:  "/home/user/project",
 	}
 
+	// The resolver's config file is the documented single exception: bwrap
+	// binds it so a sandboxed command has DNS at all, where docker gets it
+	// from the container runtime.
+	resolvConf, _ := resolvConfTarget()
+
 	bwrapRO, bwrapRW := map[string]bool{}, map[string]bool{}
 	argv := plan.bwrapArgv("true")
 	for i, arg := range argv {
-		if i+1 >= len(argv) || underToolTree(argv[i+1]) {
+		if i+1 >= len(argv) || underToolTree(argv[i+1]) || argv[i+1] == resolvConf {
 			continue
 		}
 		switch arg {
@@ -501,4 +507,48 @@ func TestNewSandboxPlanExpandsWritablePaths(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, plan)
 	assert.Contains(t, plan.writable, filepath.Join(home, ".cache/dats-test"))
+}
+
+func TestResolvConfTargetIsAFileOutsideTheToolTree(t *testing.T) {
+	target, ok := resolvConfTarget()
+	if !ok {
+		// A host whose /etc/resolv.conf is a regular file needs no extra bind:
+		// /etc is already in the tool tree.
+		return
+	}
+	assert.False(t, underToolTree(target), "a target inside the tool tree needs no bind of its own")
+	info, err := os.Stat(target)
+	require.Nil(t, err)
+	assert.False(t, info.IsDir(), "the exception is one file, never a host directory tree")
+}
+
+func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
+	// Forces the systemd-resolved shape: /etc/resolv.conf symlinked into /run,
+	// which is what CI runners have and what made the first version of the
+	// equality test fail there.
+	orig := resolvConfTarget
+	t.Cleanup(func() { resolvConfTarget = orig })
+	const stub = "/run/systemd/resolve/stub-resolv.conf"
+	resolvConfTarget = func() (string, bool) { return stub, true }
+
+	plan := &sandboxPlan{
+		backend: SandboxBwrap, image: "img", network: true,
+		work: "/tmp/dats-1", workdir: "/home/user/project",
+	}
+	joined := strings.Join(plan.bwrapArgv("true"), " ")
+	assert.Contains(t, joined, "--ro-bind-try "+stub+" "+stub,
+		"without it a sandboxed command has no DNS at all on a systemd-resolved host")
+
+	// ...and it is the one allowance: everything else still matches docker.
+	hostBinds := map[string]bool{}
+	argv := plan.bwrapArgv("true")
+	for i, arg := range argv {
+		if i+1 >= len(argv) || underToolTree(argv[i+1]) || argv[i+1] == stub {
+			continue
+		}
+		if arg == "--ro-bind" || arg == "--ro-bind-try" || arg == "--bind" {
+			hostBinds[argv[i+1]] = true
+		}
+	}
+	assert.Equal(t, map[string]bool{"/tmp/dats-1": true, "/home/user/project": true}, hostBinds)
 }

@@ -397,12 +397,8 @@ func bwrapIsolationArgs() []string {
 	for _, dir := range toolTreePaths {
 		args = append(args, "--ro-bind-try", dir, dir)
 	}
-	// /etc/resolv.conf is a symlink into /run on systemd-resolved hosts, and a
-	// dangling one resolves to no DNS at all. Bind what it really points at
-	// when that target sits outside the tree above -- the one file the
-	// resolver reads, not the host directory it happens to live in.
-	if real, err := filepath.EvalSymlinks("/etc/resolv.conf"); err == nil && !underToolTree(real) {
-		args = append(args, "--ro-bind-try", real, real)
+	if target, ok := resolvConfTarget(); ok {
+		args = append(args, "--ro-bind-try", target, target)
 	}
 	return append(args,
 		"--dev", "/dev",
@@ -411,6 +407,24 @@ func bwrapIsolationArgs() []string {
 		"--unshare-pid",
 		"--die-with-parent",
 	)
+}
+
+// resolvConfTarget returns the file /etc/resolv.conf really points at, when
+// that target sits outside the tool tree -- on systemd-resolved hosts it is a
+// symlink into /run, and a dangling one leaves the sandbox with no DNS at all.
+// It is the ONE host path bound beyond the tool tree and the file's own set,
+// and it is a single FILE, not a directory tree: the resolver's configuration,
+// which the docker backend gets from the container runtime instead.
+// resolvConfTarget is a seam: tests drive the systemd-resolved shape (a
+// symlink into /run) on a host whose /etc/resolv.conf is a plain file.
+var resolvConfTarget = resolvConfTargetFS
+
+func resolvConfTargetFS() (string, bool) {
+	real, err := filepath.EvalSymlinks("/etc/resolv.conf")
+	if err != nil || underToolTree(real) {
+		return "", false
+	}
+	return real, true
 }
 
 // underToolTree reports whether path is already covered by a tool-tree bind.
