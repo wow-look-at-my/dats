@@ -6,22 +6,24 @@ package runner
 //
 // Three backends are supported, in preference order:
 //
-//	bwrap     bubblewrap (Linux): the whole host filesystem is bound
-//	          read-only, the file's temp directory (and any declared extra
-//	          paths) writable, /tmp is a private tmpfs, and the command runs
-//	          in its own PID namespace. Commands still see the host's tools,
-//	          so this is the backend that behaves like an unsandboxed run
-//	          minus the writes.
-//	seatbelt  sandbox-exec (macOS): the same shape, enforced by a generated
-//	          SBPL profile instead of namespaces -- reads unrestricted,
-//	          writes confined to the same directories. The macOS counterpart
-//	          of bwrap; the two are mutually exclusive in practice, since
-//	          each tool exists on exactly one of the platforms.
-//	docker    the command runs inside a container instead: the file's temp
-//	          directory is bind-mounted read-write and the working directory
-//	          read-only, but the tools available are the IMAGE's, not the
-//	          host's. A fallback for machines with neither native backend,
-//	          not an equivalent.
+//	bwrap     bubblewrap (Linux): the OS's tool tree is bound read-only, the
+//	          working directory read-only, the file's temp directory (and any
+//	          declared extra paths) writable, /tmp is a private tmpfs, and the
+//	          command runs in its own PID namespace. Of the HOST it exposes
+//	          exactly what the docker backend exposes -- the working directory
+//	          and the file's declared paths -- so a suite reaches the same
+//	          places under either one.
+//	seatbelt  sandbox-exec (macOS): a generated SBPL profile instead of
+//	          namespaces -- writes confined to the same directories, but reads
+//	          NOT yet restricted, so it does not confine the host the way the
+//	          other two now do (see docs/cli.md#sandboxing---sandbox). The
+//	          macOS counterpart of bwrap; the two are mutually exclusive in
+//	          practice, since each tool exists on exactly one platform.
+//	docker    the command runs inside a container instead: the same host
+//	          paths are mounted (temp directory read-write, working directory
+//	          read-only) and the run's environment is forwarded, but the tools
+//	          available are the IMAGE's, not the host's. A fallback for
+//	          machines with neither native backend, not an equivalent.
 //
 // Backend selection is lazy and cached: the probe runs at most once per
 // process, and only when a file actually needs a sandbox -- so a corpus whose
@@ -184,8 +186,10 @@ func probeBwrap() error {
 	defer cancel()
 	// The probe uses the same isolation primitives a real run does (the
 	// namespace setup is what fails on a locked-down kernel), minus the
-	// per-file binds.
-	args := append(bwrapIsolationArgs(), "true")
+	// per-file binds. It chdirs to `/` because dats' own working directory is
+	// one of those per-file binds: without it bwrap would refuse to enter an
+	// inherited cwd that the confined mount set does not contain.
+	args := append(bwrapIsolationArgs(), "--chdir", "/", "true")
 	if out, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("bwrap: %s", probeFailure(out, err))
 	}
@@ -297,7 +301,7 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	}
 	if spec != nil {
 		for _, path := range spec.Writable {
-			abs, err := filepath.Abs(path)
+			abs, err := filepath.Abs(expandHomeAndEnv(path))
 			if err != nil {
 				return nil, fmt.Errorf("sandbox: resolving writable path %q: %w", path, err)
 			}
@@ -353,40 +357,100 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 	return sandboxCommand{Argv: p.bwrapArgv(cmd)}
 }
 
+// toolTreePaths is the OS tree a bwrap command runs against: the directories
+// holding the system's executables, libraries and their configuration, and
+// nothing else. It is the bwrap counterpart of the docker backend's IMAGE --
+// where the tools come from -- and it is deliberately a LIST, not `/`.
+//
+// Binding `/` read-only, as this backend used to, is not a sandbox: it hands
+// every command the whole host -- $HOME and its credentials, /var, every other
+// checkout on the machine -- and it makes the two backends expose completely
+// different filesystems, so a suite passing under one can be reading something
+// under the other that does not exist there at all. What a command reaches is
+// now the same set on both: this tool tree (the image, under docker) plus the
+// working directory and the file's declared paths, and nothing else.
+//
+// Missing entries are fine -- each bind is a `-try` -- so one list covers
+// merged-/usr and split-/usr distributions alike, and /nix covers NixOS, where
+// the tools live nowhere else.
+var toolTreePaths = []string{
+	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix",
+}
+
 // bwrapIsolationArgs are the backend's fixed arguments, shared by the probe
 // and by every sandboxed command:
 //
-//	--ro-bind / /      the host filesystem, readable but not writable, so
-//	                   commands still find the tools and data they expect
-//	--dev /dev         a minimal device tree (null, zero, random, tty)
-//	--proc /proc       a fresh procfs for the new PID namespace
-//	--tmpfs /tmp       a private /tmp, so temp files never touch the host's
-//	--unshare-pid      commands cannot see or signal host processes
-//	--die-with-parent  the sandbox dies with dats, never outliving the run
+//	--ro-bind-try <tool tree>  the OS's executables, libraries and config,
+//	                           readable but not writable -- and NOTHING else
+//	                           of the host (see toolTreePaths)
+//	--dev /dev                 a minimal device tree (null, zero, random, tty)
+//	--proc /proc               a fresh procfs for the new PID namespace
+//	--tmpfs /tmp               a private /tmp, so temp files never touch the host's
+//	--unshare-pid              commands cannot see or signal host processes
+//	--die-with-parent          the sandbox dies with dats, never outliving the run
 //
-// Order matters and is load-bearing: the read-only root comes first and the
-// overlays after it, and per-file binds are appended after these so a
-// writable path under /tmp survives the tmpfs.
+// Order matters and is load-bearing: the read-only tree comes first and the
+// overlays after it, and per-file binds are appended after these so a writable
+// path under /tmp survives the tmpfs.
 func bwrapIsolationArgs() []string {
-	return []string{
-		"--ro-bind", "/", "/",
+	args := make([]string, 0, 3*len(toolTreePaths)+16)
+	for _, dir := range toolTreePaths {
+		args = append(args, "--ro-bind-try", dir, dir)
+	}
+	// /etc/resolv.conf is a symlink into /run on systemd-resolved hosts, and a
+	// dangling one resolves to no DNS at all. Bind what it really points at
+	// when that target sits outside the tree above -- the one file the
+	// resolver reads, not the host directory it happens to live in.
+	if real, err := filepath.EvalSymlinks("/etc/resolv.conf"); err == nil && !underToolTree(real) {
+		args = append(args, "--ro-bind-try", real, real)
+	}
+	return append(args,
 		"--dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
 		"--unshare-pid",
 		"--die-with-parent",
-	}
+	)
 }
 
-// bwrapArgv builds the full bwrap invocation for cmd.
+// underToolTree reports whether path is already covered by a tool-tree bind.
+func underToolTree(path string) bool {
+	for _, dir := range toolTreePaths {
+		if path == dir || strings.HasPrefix(path, dir+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// bwrapArgv builds the full bwrap invocation for cmd. Beyond the fixed
+// isolation args it exposes exactly what the docker backend exposes of the
+// host and nothing more: the working directory read-only, and the file's
+// writable paths read-write. The writable binds come last so a path that is
+// (or is inside) the working directory ends up writable instead of pinned
+// read-only -- the same precedence docker's mount dedup gives it.
 func (p *sandboxPlan) bwrapArgv(cmd string) []string {
 	argv := append([]string{"bwrap"}, bwrapIsolationArgs()...)
 	if !p.network {
 		argv = append(argv, "--unshare-net")
 	}
+	if p.workdir != "" {
+		argv = append(argv, "--ro-bind-try", p.workdir, p.workdir)
+	}
 	for _, dir := range p.writablePaths() {
 		argv = append(argv, "--bind", dir, dir)
 	}
+	// The counterpart of docker's `-w`: relative paths resolve as they do on
+	// the host. It comes after the binds that create the directory, and there
+	// is exactly ONE --chdir in the argv -- bwrap warns on stderr about every
+	// earlier one, which lands in the command's captured output and breaks
+	// stderr assertions. Without a working directory, `/` is the one path
+	// guaranteed to exist inside the sandbox.
+	chdir := p.workdir
+	if chdir == "" {
+		chdir = "/"
+	}
+	argv = append(argv, "--chdir", chdir)
 	return append(argv, "bash", "-c", cmd)
 }
 
@@ -427,10 +491,59 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 		}
 		argv = append(argv, "-w", p.workdir)
 	}
+	// The run's environment, then dats' own additions on top. A command must
+	// see the same variables under both backends -- bwrap's child inherits
+	// them as a matter of course, and a container that started from the
+	// image's environment alone made every caller-exported variable read as
+	// empty under docker and non-empty under bwrap, from the same suite.
+	for _, entry := range inheritedEnv() {
+		argv = append(argv, "-e", entry)
+	}
 	for _, entry := range extraEnv {
 		argv = append(argv, "-e", entry)
 	}
 	return append(argv, p.image, "bash", "-c", cmd)
+}
+
+// expandHomeAndEnv resolves a leading `~` and any $VAR / ${VAR} in a declared
+// path. A writable path names a location on whatever machine the suite runs
+// on, and the interesting ones are per-user (a cache under $HOME, a runner's
+// workspace) -- without expansion a suite has to hardcode one machine's
+// absolute path, which is how a declaration ends up silently matching nothing
+// somewhere else. An unset variable expands to empty, exactly as in a shell.
+func expandHomeAndEnv(path string) string {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+		}
+	}
+	return os.ExpandEnv(path)
+}
+
+// imageOwnedEnv are the variables a container defines for itself. Forwarding
+// the host's values would point the container's shell at paths that exist only
+// outside it -- a host PATH with no matching binaries, a $HOME nobody mounted
+// -- so the image's own values win. Everything else the run exported is the
+// caller's data and travels.
+var imageOwnedEnv = map[string]bool{
+	"PATH": true, "HOME": true, "HOSTNAME": true, "PWD": true, "OLDPWD": true,
+	"SHLVL": true, "TMPDIR": true, "USER": true, "LOGNAME": true, "_": true,
+}
+
+// inheritedEnv is the parent environment minus the image-owned names, as
+// KEY=VALUE entries, so the docker backend can hand a command the same
+// variables the bwrap backend gives it by inheritance.
+func inheritedEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, entry := range env {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || imageOwnedEnv[name] {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
 }
 
 // writablePaths returns the paths the sandbox must expose read-write, the

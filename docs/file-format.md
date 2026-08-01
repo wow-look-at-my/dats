@@ -116,8 +116,9 @@ sandbox:
   network: false      # default true; false runs commands with no network
   image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
                       # Ignored by bwrap and seatbelt, which use the host's own filesystem
-  writable:           # host paths writable on top of the file's temp directory
-    - /var/lib/example
+  writable:           # host paths writable on top of the file's temp directory.
+    - /var/lib/example  # `~` and $VAR / ${VAR} expand, so a per-user path
+    - ~/.cache/mytool   # (a cache, a runner's workspace) stays portable
 ```
 
 The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks
@@ -142,6 +143,9 @@ sandbox is resolved once per file, before any matrix instance exists.
   sandbox.
 - Writes anywhere else fail (bwrap, seatbelt) or vanish with the container (docker). A test
   that must write to a host path declares it under `writable`.
+- Under bwrap and docker a host path outside the working directory is not READABLE either
+  unless it is declared: those backends expose the same confined set, so a suite that reads
+  a cache or a fixture tree elsewhere on the machine declares it under `writable` too.
 - Under the docker backend the command runs inside the image, so the tools available are the
   image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
 
