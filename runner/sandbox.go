@@ -84,9 +84,9 @@ func ParseSandboxMode(s string) (SandboxMode, error) {
 }
 
 // SandboxConfig is the run-wide sandbox selection: which backend to use and,
-// for docker, which image. A nil *SandboxConfig means no sandboxing -- the
-// zero-configuration default for library callers, who construct a Runner
-// directly; the CLI always builds one.
+// for docker, which image. A nil *SandboxConfig means no sandboxing -- an
+// explicit opt-out, never a default anyone falls into: dats.Run and the CLI
+// both pass a config unless the caller asked for none.
 //
 // Backend resolution is memoized: Backend probes at most once per config, no
 // matter how many files or how many concurrent workers ask for it.

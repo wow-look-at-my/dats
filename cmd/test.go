@@ -3,13 +3,13 @@ package cmd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/runner"
+
+	dats "github.com/wow-look-at-my/dats"
 )
 
 var (
@@ -46,96 +46,44 @@ func runTestsCommand(cmd *cobra.Command, args []string) error {
 	return runTests(context.Background(), args, os.Stdout, jobs, sandbox)
 }
 
-// runTests runs every resolved file: serially when jobs is 0 (the historical
-// code path, unchanged), or with up to jobs concurrently-running commands
-// when jobs >= 1. Both modes report identical totals and exit status.
-// Canceling ctx kills in-flight commands (teardown still runs) and the
-// aborted instances report as failures. A nil sandbox runs commands directly
-// on the host; the CLI passes one unless the run opted out.
+// runTests is the CLI's thin layer over dats.Run: it maps the parsed flags
+// onto Options, writes the requested report files, and turns a red run into
+// the silent errTestsFailed sentinel Execute exits 1 on. Everything else --
+// file resolution, execution, the human-readable output and its totals --
+// belongs to the library, so a caller that links dats gets byte-identical
+// behavior instead of a reimplementation.
+//
+// A nil sandbox means the run opted out; the library's zero Sandbox is auto,
+// so opting out has to be spelled explicitly here.
 func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandbox *runner.SandboxConfig) error {
-	files, err := resolveFiles(args)
+	opts := dats.Options{
+		Paths:    args,
+		Output:   out,
+		Jobs:     jobs,
+		Verbose:  verbose,
+		Update:   updateGoldens,
+		KeepTemp: keepTemp,
+		CoverDir: coverDir,
+		Sandbox:  dats.Sandbox{Mode: runner.SandboxNone},
+	}
+	if sandbox != nil {
+		opts.Sandbox = dats.Sandbox{Mode: sandbox.Mode, Image: sandbox.Image}
+	}
+
+	result, err := dats.Run(ctx, opts)
 	if err != nil {
 		return err
-	}
-
-	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
-	r.Update = updateGoldens
-	r.Sandbox = sandbox
-
-	// Wall time of the execution phase, consumed only by the report files;
-	// stdout output never mentions it. Hard errors below abort the run
-	// without writing reports (today's control flow, unchanged).
-	start := time.Now()
-
-	var results []*runner.FileResult
-	if jobs > 0 {
-		results, err = r.RunFilesParallel(ctx, files, jobs)
-		if err != nil {
-			// Already carries the "running <path>:" context.
-			return err
-		}
-	} else {
-		for _, path := range files {
-			result, err := r.RunFile(ctx, path)
-			if err != nil {
-				return fmt.Errorf("running %s: %w", path, err)
-			}
-			results = append(results, result)
-		}
-	}
-
-	wall := time.Since(start)
-
-	totalPassed := 0
-	totalFailed := 0
-	anyFailed := false
-
-	for _, result := range results {
-		totalPassed += result.Passed
-		totalFailed += result.Failed
-		if !result.Ok() {
-			// Covers failing tests and teardown failures, which fail the
-			// file even when every test passed.
-			anyFailed = true
-		}
-	}
-
-	if len(files) > 1 {
-		fmt.Fprintf(out, "\nTotal: %d/%d passed", totalPassed, totalPassed+totalFailed)
-		if totalFailed > 0 {
-			fmt.Fprintf(out, ", %d failed", totalFailed)
-		}
-		fmt.Fprintln(out)
-	}
-
-	// Under --update, summarize the golden churn (writes and prunes were
-	// already listed per file). Silent when nothing changed.
-	if updateGoldens {
-		updated, pruned := 0, 0
-		for _, result := range results {
-			for i := range result.Results {
-				updated += len(result.Results[i].UpdatedGoldens)
-			}
-			pruned += len(result.PrunedGoldens)
-		}
-		if updated+pruned > 0 {
-			fmt.Fprintf(out, "\nUpdated %d golden file(s)", updated)
-			if pruned > 0 {
-				fmt.Fprintf(out, ", pruned %d stale", pruned)
-			}
-			fmt.Fprintln(out)
-		}
 	}
 
 	// Reports are written whenever the run executed -- especially when tests
 	// failed and the run is about to exit 1. A report that cannot be written
 	// is a real error (stderr message, exit 1) even when every test passed,
 	// so it takes precedence over the silent errTestsFailed sentinel.
-	if err := writeReports(results, wall); err != nil {
+	if err := writeReports(result.Files, result.Wall); err != nil {
 		return err
 	}
 
-	if anyFailed {
+	if !result.Ok() {
 		return errTestsFailed
 	}
 

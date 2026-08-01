@@ -85,6 +85,7 @@ func (r *Runner) RunFilesParallel(ctx context.Context, paths []string, jobs int)
 				CoverDir:    r.CoverDir,
 				Update:      r.Update,
 				Sandbox:     r.Sandbox,
+				Env:         r.Env,
 				Formatter:   &Formatter{Writer: &buffers[i], Verbose: r.Verbose},
 				lowPriority: true,
 			}
