@@ -201,6 +201,24 @@ func TestBwrapArgvNeverBindsTheHostRoot(t *testing.T) {
 	}
 }
 
+// TestToolTreeCoversAddOnToolchains pins /opt in the tool tree. A workflow
+// that runs actions/setup-go (or -node, or -python) puts the toolchain under
+// /opt/hostedtoolcache and puts it on PATH; if the sandbox does not expose it,
+// every sandboxed command loses the interpreter the workflow just installed,
+// and the failure surfaces far from anything mentioning a sandbox -- as a tool
+// "not found in PATH" inside a suite that passes locally.
+func TestToolTreeCoversAddOnToolchains(t *testing.T) {
+	assert.Contains(t, toolTreePaths, "/opt")
+
+	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/home/user/project"}
+	assert.Contains(t, strings.Join(plan.bwrapArgv("true"), " "), "--ro-bind-try /opt /opt")
+
+	// It stays a tool tree, not a second host: read-only, and never a bind of
+	// anything holding user data.
+	assert.True(t, underToolTree("/opt/hostedtoolcache/go/1.25.0/x64/bin/go"))
+	assert.False(t, underToolTree("/home/runner/work"))
+}
+
 // TestBwrapAndDockerExposeTheSameHostPaths pins the property the backends must
 // share: of the HOST, a command sees the working directory read-only and the
 // file's temp directory read-write, and nothing else. (System tools differ by
