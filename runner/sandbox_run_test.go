@@ -139,18 +139,39 @@ tests:
 	assert.Contains(t, buf.String(), "# sandbox: bwrap (no network)")
 }
 
-func TestRunFileSandboxWritablePath(t *testing.T) {
+// TestRunFileSandboxScratchGoesInTheTempDir is the replacement for the
+// removed writable-path declaration: a command with something to write has the
+// file's own temp directory, on every backend, and a host path it was not
+// given stays refused. There is no third option by design -- an escape hatch
+// per path is a hole in the isolation whose consequences the file's author
+// cannot see, and a command that truly needs the host says `sandbox: false`.
+func TestRunFileSandboxScratchGoesInTheTempDir(t *testing.T) {
 	requireBwrap(t)
 	hostDir := t.TempDir()
 	probe := filepath.Join(hostDir, "written.txt")
 
 	path := writeRunnerDats(t, `
-sandbox:
-  writable:
-    - `+hostDir+`
 tests:
-  - desc: declared host path stays writable
-    cmd: echo produced > `+probe+`
+  - desc: scratch goes in the private tmpfs
+    cmd: |
+      d="$(mktemp -d)"
+      echo produced > "$d/scratch.txt"
+      cat "$d/scratch.txt"
+    outputs:
+      stdout:
+        - produced
+  - desc: ...or in the test's own outputs directory
+    cmd: echo produced > {outputs.result.txt}
+    outputs:
+      files:
+        result.txt:
+          match:
+            - produced
+  - desc: an undeclared host path is not
+    cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+    outputs:
+      stdout:
+        - BLOCKED
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -158,8 +179,8 @@ tests:
 
 	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
-	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
-	assert.FileExists(t, probe)
+	assert.Equal(t, 3, result.Passed, "output:\n%s", buf.String())
+	assert.NoFileExists(t, probe, "no file may declare its way onto the host")
 }
 
 func TestRunFileSandboxTimeoutStillTimesOut(t *testing.T) {

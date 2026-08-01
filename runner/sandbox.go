@@ -7,12 +7,11 @@ package runner
 // Three backends are supported, in preference order:
 //
 //	bwrap     bubblewrap (Linux): the OS's tool tree is bound read-only, the
-//	          working directory read-only, the file's temp directory (and any
-//	          declared extra paths) writable, /tmp is a private tmpfs, and the
-//	          command runs in its own PID namespace. Of the HOST it exposes
-//	          exactly what the docker backend exposes -- the working directory
-//	          and the file's declared paths -- so a suite reaches the same
-//	          places under either one.
+//	          working directory read-only, the file's temp directory writable,
+//	          /tmp is a private tmpfs, and the command runs in its own PID
+//	          namespace. Of the HOST it exposes exactly what the docker
+//	          backend exposes -- the working directory, and the temp directory
+//	          it may write -- so a suite reaches the same places under either.
 //	seatbelt  sandbox-exec (macOS): a generated SBPL profile instead of
 //	          namespaces -- writes confined to the same directories, but reads
 //	          NOT yet restricted, so it does not confine the host the way the
@@ -234,10 +233,12 @@ type sandboxPlan struct {
 	// per-instance test directory live under it, so binding it read-write is
 	// exactly the access a passing test needs.
 	work string
-	// writable holds extra host paths made writable on top of work: the
-	// file's `sandbox.writable` entries plus --coverdir, which is a host path
-	// outside work that instrumented binaries must be able to write.
-	writable []string
+	// coverDir is the one host path made writable on top of work: --coverdir,
+	// where instrumented binaries write coverage data that must SURVIVE the
+	// run. There is deliberately no general "extra writable paths" knob --
+	// scratch belongs in the sandbox's own writable temp directory, and a
+	// command that genuinely needs the host is a `sandbox: false` file.
+	coverDir string
 	// workdir is the process working directory, exposed to the command so
 	// relative paths keep resolving as they do on the host (read-only under
 	// docker; already covered by the read-only root under bwrap).
@@ -270,8 +271,8 @@ func (p *sandboxPlan) describe() string {
 //
 // The CLI's choice is the outer bound: --sandbox=none disables sandboxing for
 // every file, including one whose block asks for it. A file's block can
-// narrow that choice (opt out, cut the network) or adjust it (image, extra
-// writable paths), never widen it.
+// narrow that choice (opt out, cut the network) or adjust it (image), never
+// widen it.
 func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sandboxPlan, error) {
 	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
 		return nil, nil
@@ -299,33 +300,15 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	if spec != nil && spec.Image != "" {
 		plan.image = spec.Image
 	}
-	if spec != nil {
-		for _, path := range spec.Writable {
-			abs, err := filepath.Abs(expandHomeAndEnv(path))
-			if err != nil {
-				return nil, fmt.Errorf("sandbox: resolving writable path %q: %w", path, err)
-			}
-			plan.writable = append(plan.writable, abs)
-		}
-	}
-	// Run-wide writable paths from the CLI, resolved the same way a file's own
-	// are. They are additive to what the file declared: the caller and the file
-	// each know part of what the commands touch.
-	for _, path := range r.Writable {
-		abs, err := filepath.Abs(expandHomeAndEnv(path))
-		if err != nil {
-			return nil, fmt.Errorf("sandbox: resolving writable path %q: %w", path, err)
-		}
-		plan.writable = append(plan.writable, abs)
-	}
 	// Coverage data is written by the sandboxed process itself, into a host
-	// directory that is deliberately outside the temp tree.
+	// directory that is deliberately outside the temp tree -- it has to
+	// outlive the run, which is what separates it from scratch.
 	if r.CoverDir != "" {
 		abs, err := filepath.Abs(r.CoverDir)
 		if err != nil {
 			return nil, fmt.Errorf("sandbox: resolving coverage directory %q: %w", r.CoverDir, err)
 		}
-		plan.writable = append(plan.writable, abs)
+		plan.coverDir = abs
 	}
 	if wd, err := os.Getwd(); err == nil {
 		plan.workdir = wd
@@ -449,10 +432,10 @@ func underToolTree(path string) bool {
 
 // bwrapArgv builds the full bwrap invocation for cmd. Beyond the fixed
 // isolation args it exposes exactly what the docker backend exposes of the
-// host and nothing more: the working directory read-only, and the file's
-// writable paths read-write. The writable binds come last so a path that is
-// (or is inside) the working directory ends up writable instead of pinned
-// read-only -- the same precedence docker's mount dedup gives it.
+// host and nothing more: the working directory read-only, and the file's temp
+// directory (plus --coverdir) read-write. The writable binds come last so a
+// path that is (or is inside) the working directory ends up writable instead
+// of pinned read-only -- the same precedence docker's mount dedup gives it.
 func (p *sandboxPlan) bwrapArgv(cmd string) []string {
 	argv := append([]string{"bwrap"}, bwrapIsolationArgs()...)
 	if !p.network {
@@ -529,21 +512,6 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 	return append(argv, p.image, "bash", "-c", cmd)
 }
 
-// expandHomeAndEnv resolves a leading `~` and any $VAR / ${VAR} in a declared
-// path. A writable path names a location on whatever machine the suite runs
-// on, and the interesting ones are per-user (a cache under $HOME, a runner's
-// workspace) -- without expansion a suite has to hardcode one machine's
-// absolute path, which is how a declaration ends up silently matching nothing
-// somewhere else. An unset variable expands to empty, exactly as in a shell.
-func expandHomeAndEnv(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			path = filepath.Join(home, strings.TrimPrefix(path, "~"))
-		}
-	}
-	return os.ExpandEnv(path)
-}
-
 // imageOwnedEnv are the variables a container defines for itself. Forwarding
 // the host's values would point the container's shell at paths that exist only
 // outside it -- a host PATH with no matching binaries, a $HOME nobody mounted
@@ -570,14 +538,19 @@ func inheritedEnv() []string {
 	return out
 }
 
-// writablePaths returns the paths the sandbox must expose read-write, the
-// file's temp directory first and the declared extras after it, in order.
+// writablePaths returns the paths the sandbox exposes read-write: the file's
+// own temp directory, and --coverdir when the run collects coverage. Nothing
+// else is writable, by design -- a command that needs scratch has the temp
+// directory, and one that needs the host is not a sandboxed command.
 func (p *sandboxPlan) writablePaths() []string {
-	paths := make([]string, 0, 1+len(p.writable))
+	paths := make([]string, 0, 2)
 	if p.work != "" {
 		paths = append(paths, p.work)
 	}
-	return append(paths, p.writable...)
+	if p.coverDir != "" {
+		paths = append(paths, p.coverDir)
+	}
+	return paths
 }
 
 // killContainer stops a container started by this process, best-effort: the

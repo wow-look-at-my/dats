@@ -51,7 +51,6 @@ the current directory tree.
 | `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
-| `--writable <path>` | Host path sandboxed commands may write, repeatable. For a directory the CALLER owns and hands to the suites — a build tool staging binaries into a handoff dir knows that path, and knows whether those binaries must be able to write; the `.dats` file was never told. Additive to the file's own `sandbox.writable`; `~` and `$VAR` expand |
 | `--version` | Print `dats <version>` and exit |
 
 ## Examples
@@ -116,8 +115,8 @@ Every command a file runs is sandboxed — test instances **and** the file-level
 | | `bwrap` (Linux) | `seatbelt` (macOS) | `docker` (fallback) |
 |---|---|---|---|
 | Enforced by | user namespaces + mounts | an SBPL profile via `sandbox-exec` | container isolation |
-| Host paths visible | the working directory (read-only) + the file's writable paths — **nothing else** | reads not restricted (see below) | the same set, bind-mounted |
-| Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + declared extras | same | same, bind-mounted from the host |
+| Host paths visible | the working directory (read-only) + the file's temp dir — **nothing else** | reads not restricted (see below) | the same set, bind-mounted |
+| Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + `--coverdir` | same | same, bind-mounted from the host |
 | Working directory | bind-mounted read-only, and `--chdir` into it | the host's, read-only | bind-mounted read-only, and `-w` into it |
 | Available tools | the host's OS tree (`/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/nix`), read-only | the host's | the image's only; host binaries and libraries are **not** there |
 | Environment | inherited as usual | inherited as usual | inherited too, minus the image-owned names (`PATH`, `HOME`, `TMPDIR`, `PWD`, …), plus `inputs.env` and `GOCOVERDIR` |
@@ -160,21 +159,23 @@ an error — including on macOS, where it can only ever be an error.
 - `--no-sandbox` (or `--sandbox=none`) for a whole run.
 - `sandbox: false` in a file whose commands genuinely need the host — see
   [file-format.md](file-format.md#sandbox). The same block can also cut the network, pick the
-  docker image, or declare extra writable host paths.
+  docker image.
 
 The flag is the outer bound: a file can narrow what the CLI selected, never widen it. Under
 `--no-sandbox`, a file's `sandbox:` block is inert.
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus anything declared writable, by
-  the file or by `--writable`). A binary that rewrites itself on first run — an APE, say —
-  cannot even start from a read-only path, so the caller staging one declares its directory.
+- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to
+  outlive the run). There is deliberately no way to declare additional writable host paths:
+  something to write is the temp directory — a real filesystem inside every backend — and a
+  command that genuinely needs the host is not a sandboxed command, so it says
+  `sandbox: false`. That includes a binary that rewrites itself on first run, such as an APE:
+  copy it into the temp directory and run it from there, or run the file unsandboxed.
 - **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the
   working directory, and the paths the file declared — not `$HOME`, not `/var`, not another
   checkout on the machine. bwrap used to bind `/` read-only, which made every suite a reader
-  of the whole host and made the two backends expose entirely different filesystems; a suite
-  that needs a host path outside the working directory now declares it (`writable:`).
+  of the whole host and made the two backends expose entirely different filesystems.
 - **seatbelt (macOS) still does not restrict reads**: its profile denies writes only, so on a
   mac the host filesystem stays readable. That is a known gap, not the contract.
 - **The network is shared** unless a file sets `network: false`.
