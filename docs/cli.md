@@ -118,7 +118,7 @@ Every command a file runs is sandboxed — test instances **and** the file-level
 | Host paths visible | the working directory (read-only) + the file's temp dir — **nothing else** | reads not restricted (see below) | the same set, bind-mounted |
 | Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + `--coverdir` | same | same, bind-mounted from the host |
 | Working directory | bind-mounted read-only, and `--chdir` into it | the host's, read-only | bind-mounted read-only, and `-w` into it |
-| Available tools | the host's OS tree (`/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/nix`), read-only | the host's | the image's only; host binaries and libraries are **not** there |
+| Available tools | the host's OS tree (`/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/nix`, `/opt`), read-only | the host's | the image's only; host binaries and libraries are **not** there |
 | Environment | inherited as usual | inherited as usual | inherited too, minus the image-owned names (`PATH`, `HOME`, `TMPDIR`, `PWD`, …), plus `inputs.env` and `GOCOVERDIR` |
 | Processes | own PID namespace, dies with dats | not isolated — the profile governs files and network, not the process table | own container, killed when the command is |
 | `sandbox.image` | ignored | ignored | the image commands run in |
