@@ -15,6 +15,9 @@ import (
 var (
 	keepTemp bool
 	coverDir string
+	// writablePaths backs --writable: extra host paths the sandbox exposes
+	// read-write for every file this run executes.
+	writablePaths []string
 )
 
 // errTestsFailed signals that at least one test failed. The runner output has
@@ -61,6 +64,7 @@ func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandb
 	r := runner.NewRunner(out, verbose, keepTemp, coverDir)
 	r.Update = updateGoldens
 	r.Sandbox = sandbox
+	r.Writable = writablePaths
 
 	// Wall time of the execution phase, consumed only by the report files;
 	// stdout output never mentions it. Hard errors below abort the run

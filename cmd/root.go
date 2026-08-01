@@ -47,6 +47,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
 	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")
+	rootCmd.PersistentFlags().StringArrayVar(&writablePaths, "writable", nil,
+		"Host path sandboxed commands may write, repeatable (for directories the CALLER owns, such as a staged-binary handoff dir)")
 	registerJobsFlag(rootCmd.PersistentFlags())
 	registerSandboxFlags(rootCmd.PersistentFlags())
 	registerReportFlags(rootCmd.PersistentFlags())

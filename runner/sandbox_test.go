@@ -552,3 +552,32 @@ func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
 	}
 	assert.Equal(t, map[string]bool{"/tmp/dats-1": true, "/home/user/project": true}, hostBinds)
 }
+
+func TestNewSandboxPlanIncludesRunWideWritablePaths(t *testing.T) {
+	// --writable is for a directory the CALLER owns and hands to the suites: a
+	// build tool that stages binaries somewhere and points $ITS_ENV_VAR at it
+	// knows the path and knows whether those binaries must be able to write
+	// (a self-modifying artifact such as an APE cannot even start read-only).
+	// The .dats file cannot declare what it was never told.
+	r := &Runner{
+		Sandbox:  sandboxConfigWithProbe(SandboxBwrap, probeAlways(nil)),
+		Writable: []string{"/repo/build/.stage", "~/.cache/tool"},
+	}
+	home, err := os.UserHomeDir()
+	require.Nil(t, err)
+
+	plan, err := r.newSandboxPlan(&schema.SandboxSpec{Writable: []string{"/srv/from-file"}}, "/tmp/dats-work")
+	require.Nil(t, err)
+	require.NotNil(t, plan)
+
+	// Additive: the file's declarations and the run's both land, and both
+	// reach the backends as read-write binds.
+	assert.Contains(t, plan.writable, "/srv/from-file")
+	assert.Contains(t, plan.writable, "/repo/build/.stage")
+	assert.Contains(t, plan.writable, filepath.Join(home, ".cache/tool"))
+
+	joined := strings.Join(plan.bwrapArgv("true"), " ")
+	assert.Contains(t, joined, "--bind /repo/build/.stage /repo/build/.stage")
+	dockerJoined := strings.Join(plan.dockerArgv("n", "true", nil), " ")
+	assert.Contains(t, dockerJoined, "-v /repo/build/.stage:/repo/build/.stage")
+}

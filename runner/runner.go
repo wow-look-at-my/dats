@@ -14,9 +14,16 @@ import (
 
 // Runner executes tests from .dats files
 type Runner struct {
-	Verbose   bool
-	KeepTemp  bool   // Keep temp directory for debugging
-	CoverDir  string // Directory for GOCOVERDIR coverage data
+	Verbose  bool
+	KeepTemp bool   // Keep temp directory for debugging
+	CoverDir string // Directory for GOCOVERDIR coverage data
+	// Writable holds run-wide extra writable paths (the --writable flag): host
+	// directories the CALLER owns and hands to the suites, which a .dats file
+	// therefore cannot be expected to declare for itself. The build tool that
+	// stages binaries into a directory and points suites at it is the one that
+	// knows the path -- and knows whether those binaries need to write (a
+	// self-modifying artifact such as an APE cannot even start read-only).
+	Writable  []string
 	Formatter *Formatter
 	// Update rewrites snapshot golden files from actual output instead of
 	// failing mismatches, and prunes stale goldens (the --update flag).

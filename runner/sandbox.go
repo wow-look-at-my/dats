@@ -308,6 +308,16 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 			plan.writable = append(plan.writable, abs)
 		}
 	}
+	// Run-wide writable paths from the CLI, resolved the same way a file's own
+	// are. They are additive to what the file declared: the caller and the file
+	// each know part of what the commands touch.
+	for _, path := range r.Writable {
+		abs, err := filepath.Abs(expandHomeAndEnv(path))
+		if err != nil {
+			return nil, fmt.Errorf("sandbox: resolving writable path %q: %w", path, err)
+		}
+		plan.writable = append(plan.writable, abs)
+	}
 	// Coverage data is written by the sandboxed process itself, into a host
 	// directory that is deliberately outside the temp tree.
 	if r.CoverDir != "" {

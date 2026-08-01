@@ -51,6 +51,7 @@ the current directory tree.
 | `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
+| `--writable <path>` | Host path sandboxed commands may write, repeatable. For a directory the CALLER owns and hands to the suites — a build tool staging binaries into a handoff dir knows that path, and knows whether those binaries must be able to write; the `.dats` file was never told. Additive to the file's own `sandbox.writable`; `~` and `$VAR` expand |
 | `--version` | Print `dats <version>` and exit |
 
 ## Examples
@@ -166,7 +167,9 @@ The flag is the outer bound: a file can narrow what the CLI selected, never wide
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus anything declared writable).
+- **Writes** are confined to the file's temp directory (plus anything declared writable, by
+  the file or by `--writable`). A binary that rewrites itself on first run — an APE, say —
+  cannot even start from a read-only path, so the caller staging one declares its directory.
 - **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the
   working directory, and the paths the file declared — not `$HOME`, not `/var`, not another
   checkout on the machine. bwrap used to bind `/` read-only, which made every suite a reader
