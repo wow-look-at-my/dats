@@ -1,4 +1,4 @@
-package cmd
+package dats
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wow-look-at-my/dats/internal/paths"
 )
 
 // findDatsFiles recursively finds all .dats files under root. Hidden
@@ -49,12 +51,12 @@ func findDatsFiles(root string, warnw io.Writer) ([]string, error) {
 	return files, nil
 }
 
-// resolveFiles expands args into the list of .dats files to process. A file
-// arg must have the .dats extension; a directory arg is searched recursively
-// with the same rules as no-arg discovery and must contain at least one .dats
-// file. Without args, files are discovered from the current directory. The
-// result is deduplicated by absolute path, preserving first-seen order.
-func resolveFiles(args []string) ([]string, error) {
+// FindFiles expands paths into the list of .dats files to run. A file path
+// must have the .dats extension; a directory is searched recursively with the
+// same rules as no-arg discovery and must contain at least one .dats file.
+// With no paths, files are discovered from the current directory. The result
+// is deduplicated by absolute path, preserving first-seen order.
+func FindFiles(args []string) ([]string, error) {
 	if len(args) == 0 {
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -92,24 +94,5 @@ func resolveFiles(args []string) ([]string, error) {
 		}
 		files = append(files, arg)
 	}
-	return dedupePaths(files), nil
-}
-
-// dedupePaths removes duplicate paths, compared by absolute path, keeping the
-// first occurrence (and its original spelling) of each.
-func dedupePaths(paths []string) []string {
-	seen := make(map[string]struct{}, len(paths))
-	out := make([]string, 0, len(paths))
-	for _, p := range paths {
-		key := p
-		if abs, err := filepath.Abs(p); err == nil {
-			key = abs
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		out = append(out, p)
-	}
-	return out
+	return paths.Dedupe(files), nil
 }

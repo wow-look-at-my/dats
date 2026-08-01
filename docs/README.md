@@ -8,6 +8,7 @@ without requiring any external test framework.
 
 - [File Format Reference](file-format.md) - Complete `.dats` YAML schema
 - [CLI Usage](cli.md) - Command-line interface
+- [Go Library API](library.md) - Running suites in-process from Go
 - [Machine-Readable Reports](reports.md) - JUnit XML / JSON report file formats
 - [Examples](examples.md) - Annotated examples
 

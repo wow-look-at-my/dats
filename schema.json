@@ -93,15 +93,6 @@
               "type": "string",
               "minLength": 1,
               "description": "Container image the docker backend runs this file's commands in, overriding --sandbox-image. Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
-            },
-            "writable": {
-              "type": "array",
-              "minItems": 1,
-              "description": "Host paths that stay writable inside the sandbox, on top of the file's own temp directory (which is always writable). Relative paths resolve against the working directory.",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
             }
           }
         }

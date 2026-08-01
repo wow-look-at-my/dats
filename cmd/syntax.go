@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/schema"
+
+	dats "github.com/wow-look-at-my/dats"
 )
 
 // errSyntaxFailed signals that at least one file failed validation. The FAIL
@@ -23,7 +25,7 @@ in the current directory tree.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// The sandbox flags are inherited but inert here, exactly like
 		// --update: syntax runs no commands, so there is nothing to sandbox.
-		files, err := resolveFiles(args)
+		files, err := dats.FindFiles(args)
 		if err != nil {
 			return err
 		}

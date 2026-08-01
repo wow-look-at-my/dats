@@ -115,11 +115,11 @@ Every command a file runs is sandboxed — test instances **and** the file-level
 | | `bwrap` (Linux) | `seatbelt` (macOS) | `docker` (fallback) |
 |---|---|---|---|
 | Enforced by | user namespaces + mounts | an SBPL profile via `sandbox-exec` | container isolation |
-| Filesystem | the host's, bound **read-only** | the host's, **writes denied** | the **image's**, writable but discarded on exit |
-| Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + declared extras | same | same, bind-mounted from the host |
-| Working directory | the host's, read-only | the host's, read-only | the host's, bind-mounted read-only, and `-w` into it |
-| Available tools | the host's — a sandboxed run behaves like an unsandboxed one minus the writes | the host's, same as bwrap | the image's only; host binaries and libraries are **not** there |
-| Environment | inherited as usual | inherited as usual | the image's, plus this run's `inputs.env` values and `GOCOVERDIR` |
+| Host paths visible | the working directory (read-only) + the file's temp dir — **nothing else** | reads not restricted (see below) | the same set, bind-mounted |
+| Writable | the file's temp dir (fixtures, `{outputs.X}`, `{shared.X}`) + `--coverdir` | same | same, bind-mounted from the host |
+| Working directory | bind-mounted read-only, and `--chdir` into it | the host's, read-only | bind-mounted read-only, and `-w` into it |
+| Available tools | the host's OS tree (`/usr`, `/bin`, `/sbin`, `/lib*`, `/etc`, `/nix`), read-only | the host's | the image's only; host binaries and libraries are **not** there |
+| Environment | inherited as usual | inherited as usual | inherited too, minus the image-owned names (`PATH`, `HOME`, `TMPDIR`, `PWD`, …), plus `inputs.env` and `GOCOVERDIR` |
 | Processes | own PID namespace, dies with dats | not isolated — the profile governs files and network, not the process table | own container, killed when the command is |
 | `sandbox.image` | ignored | ignored | the image commands run in |
 | Overhead | ~5 ms per command | ~5 ms per command | ~350 ms per command |
@@ -159,17 +159,25 @@ an error — including on macOS, where it can only ever be an error.
 - `--no-sandbox` (or `--sandbox=none`) for a whole run.
 - `sandbox: false` in a file whose commands genuinely need the host — see
   [file-format.md](file-format.md#sandbox). The same block can also cut the network, pick the
-  docker image, or declare extra writable host paths.
+  docker image.
 
 The flag is the outer bound: a file can narrow what the CLI selected, never widen it. Under
 `--no-sandbox`, a file's `sandbox:` block is inert.
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus anything declared writable).
-- **Reads are not restricted**: under bwrap and seatbelt the whole host filesystem stays
-  readable, including your home directory and its secrets. This protects your machine from a
-  test, not your secrets from one.
+- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to
+  outlive the run). There is deliberately no way to declare additional writable host paths:
+  something to write is the temp directory — a real filesystem inside every backend — and a
+  command that genuinely needs the host is not a sandboxed command, so it says
+  `sandbox: false`. That includes a binary that rewrites itself on first run, such as an APE:
+  copy it into the temp directory and run it from there, or run the file unsandboxed.
+- **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the
+  working directory, and the paths the file declared — not `$HOME`, not `/var`, not another
+  checkout on the machine. bwrap used to bind `/` read-only, which made every suite a reader
+  of the whole host and made the two backends expose entirely different filesystems.
+- **seatbelt (macOS) still does not restrict reads**: its profile denies writes only, so on a
+  mac the host filesystem stays readable. That is a known gap, not the contract.
 - **The network is shared** unless a file sets `network: false`.
 - A command killed by a signal inside bwrap is reported as exit `128+N` rather than as a
   signal death, because bwrap exits that way on its child's behalf. Timeouts are unaffected —
