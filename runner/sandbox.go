@@ -364,10 +364,15 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 // working directory and the file's declared paths, and nothing else.
 //
 // Missing entries are fine -- each bind is a `-try` -- so one list covers
-// merged-/usr and split-/usr distributions alike, and /nix covers NixOS, where
-// the tools live nowhere else.
+// merged-/usr and split-/usr distributions alike. /nix covers NixOS, where the
+// tools live nowhere else, and /opt covers add-on toolchains installed outside
+// the distribution's own tree -- notably GitHub Actions' hosted tool cache
+// (/opt/hostedtoolcache), which is where actions/setup-go, -node and -python
+// put the toolchain they just put on PATH. Leaving it out does not make a
+// command safer, it makes it fail to find the interpreter the workflow
+// installed for it, several steps away from any mention of a sandbox.
 var toolTreePaths = []string{
-	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix",
+	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix", "/opt",
 }
 
 // bwrapIsolationArgs are the backend's fixed arguments, shared by the probe
