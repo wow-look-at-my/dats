@@ -151,8 +151,8 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 		}
 	}
 	if result.SetupFailure == nil {
-		for _, raw := range testFile.Setup {
-			if fail := r.runHookCommand(ctx, "setup", raw, sharedDir); fail != nil {
+		for _, hc := range testFile.Setup {
+			if fail := r.runHookCommand(ctx, "setup", hc, sharedDir); fail != nil {
 				result.SetupFailure = fail
 				r.Formatter.PrintHookFailure("setup", fail)
 				break // remaining setup commands are skipped; every test fails below
@@ -216,8 +216,8 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
 	}
-	for _, raw := range testFile.Teardown {
-		if fail := r.runHookCommand(teardownCtx, "teardown", raw, sharedDir); fail != nil {
+	for _, hc := range testFile.Teardown {
+		if fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir); fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)
 			r.Formatter.PrintHookFailure("teardown", fail)
 		}
@@ -231,23 +231,48 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 // runHookCommand executes one file-level setup or teardown command through
 // the same bash path as test commands (same working directory convention,
 // inherited environment -- including GOCOVERDIR under --coverdir, exactly
-// like test commands -- no stdin, no timeout), expanding only {shared.X}
-// placeholders. It returns nil on success (exit 0) or the failure otherwise.
-// Callers pass the live ctx for setup and a context.WithoutCancel ctx for
-// teardown, which must run even after cancellation.
-func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir string) *CommandFailure {
-	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
+// like test commands -- plus hc's own env and stdin_file), expanding hc.Cmd
+// and hc.Env values through {shared.X} only. The command is bounded by
+// hc.EffectiveTimeout(): unlike a test's timeout, a hook command always has
+// one. It returns nil on success (exit 0) or the failure otherwise. Callers
+// pass the live ctx for setup and a context.WithoutCancel ctx for teardown,
+// which must run even after cancellation.
+func (r *Runner) runHookCommand(ctx context.Context, kind string, hc schema.HookCommand, sharedDir string) *CommandFailure {
+	cmd := ExpandSharedPlaceholders(hc.Cmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	env, added := r.commandEnv()
+
+	var extra []string
+	for _, key := range sortedStringKeys(hc.Env) {
+		extra = append(extra, key+"="+ExpandSharedPlaceholders(hc.Env[key], sharedDir))
+	}
+	env, added := r.commandEnv(extra...)
+
+	var stdin string
+	if hc.StdinFile != "" {
+		data, err := os.ReadFile(resolveSource(hc.StdinFile, r.sourceDir))
+		if err != nil {
+			return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("reading stdin_file: %v", err)}
+		}
+		stdin = string(data)
+	}
+
 	execResult, err := execute(ctx, execRequest{
 		Cmd:         cmd,
+		Stdin:       stdin,
 		Env:         env,
 		EnvExtra:    added,
+		Timeout:     hc.EffectiveTimeout(),
 		LowPriority: r.lowPriority,
 		Sandbox:     r.plan,
 	})
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
+	}
+	if execResult.TimedOut {
+		return &CommandFailure{
+			Command: cmd,
+			Detail:  fmt.Sprintf("command timed out after %s", hc.EffectiveTimeout()),
+		}
 	}
 	if execResult.ExitCode != 0 {
 		return &CommandFailure{

@@ -42,9 +42,31 @@ tests:
   - cmd: cat {shared.generated.txt}
 ```
 
-`setup` and `teardown` each accept either a single command string or a sequence of command
-strings; blank commands, non-string entries, and empty lists are parse errors
-(`setup: must list at least one command`). `shared` must declare at least one fixture across
+`setup` and `teardown` each accept either a single entry or a sequence of entries. An entry is
+either a bare command string, or a mapping with `cmd` plus optional `env`, `stdin_file`, and
+`timeout`:
+
+```yaml
+setup:
+  - cmd: seed the database
+    env:
+      DB_URL: "{shared.db.sock}"
+    stdin_file: fixtures/seed.sql   # relative to this .dats file; raw, unexpanded content
+    timeout: 10s                    # must be > 0; defaults to 30s
+  - echo plain strings still work
+```
+
+`env` values expand `{shared.X}` only, same as `cmd`, and are added on top of the inherited
+environment (and any run-wide entries a library caller set via `Options.Env`) — scoped to that
+one command, not inherited by later hooks or tests. `stdin_file` names a host file piped to the
+command's stdin verbatim (unexpanded); a
+relative path resolves against the directory holding this `.dats` file, like `inputs.copy`.
+`timeout` bounds the command and must be greater than 0 — unlike a test's `timeout` (0/omitted
+= unbounded), a hook command always has a bound, defaulting to 30s when unstated.
+
+Blank commands, non-string/non-mapping entries, an entry missing `cmd`, an unknown mapping key,
+and empty lists are all parse errors (`setup: must list at least one command`). `shared` must
+declare at least one fixture across
 `files` and `copy` combined (`shared: must declare at least one file under files or copy`) —
 see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`. File names in either
 map follow the same locality rule as `inputs.files` names — relative paths that stay inside
@@ -74,9 +96,11 @@ Per file, the runner:
 2. Writes the `shared.files` fixtures into it.
 3. Runs the `setup` commands in declared order — through the same `bash -c` path as test
    commands, in the working directory of the `dats` invocation, with the inherited
-   environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, so
-   coverage captures hook invocations of an instrumented binary too), no stdin, and no
-   timeout, capturing stdout and stderr. Teardown commands run the same way.
+   environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, plus the
+   entry's own `env`), the entry's `stdin_file` content on stdin (or none), and bounded by
+   the entry's `timeout` (30s when unstated), capturing stdout and stderr. On timeout, the
+   command's process group is killed and the entry fails with `command timed out after
+   <duration>`. Teardown commands run the same way.
 4. Runs the tests.
 5. Always runs **all** `teardown` commands in declared order — after the tests, after test
    failures, and even when setup failed. One failing teardown command does not stop the
@@ -957,8 +981,13 @@ shared:                    # optional file-level fixtures
     <name>: string         # filename: content ({shared.X} placeholders expanded)
   copy:
     <name>: string         # filename: host source path (relative to the .dats file)
-setup: string|[]           # optional; command(s) run once before the tests
-teardown: string|[]        # optional; command(s) always run once after the tests
+setup: hookCommand|[]      # optional; command(s) run once before the tests
+teardown: hookCommand|[]   # optional; command(s) always run once after the tests
+# hookCommand = string, or:
+#   cmd: string             # required
+#   env: {name: value}      # optional; {shared.X} only
+#   stdin_file: string      # optional; host path, relative to the .dats file
+#   timeout: int|string     # optional; must be > 0, defaults to 30s
 tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0

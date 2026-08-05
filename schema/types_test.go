@@ -12,11 +12,11 @@ import (
 func TestSetupCommands_UnmarshalYAML_Forms(t *testing.T) {
 	var single SetupCommands
 	require.Nil(t, yaml.Unmarshal([]byte("echo one"), &single))
-	assert.Equal(t, SetupCommands{"echo one"}, single)
+	assert.Equal(t, SetupCommands{{Cmd: "echo one"}}, single)
 
 	var list SetupCommands
 	require.Nil(t, yaml.Unmarshal([]byte("- echo one\n- echo two\n"), &list))
-	assert.Equal(t, SetupCommands{"echo one", "echo two"}, list)
+	assert.Equal(t, SetupCommands{{Cmd: "echo one"}, {Cmd: "echo two"}}, list)
 }
 
 func TestTeardownCommands_UnmarshalYAML_ErrorsNameKey(t *testing.T) {
@@ -30,6 +30,93 @@ func TestTeardownCommands_UnmarshalYAML_ErrorsNameKey(t *testing.T) {
 	err = yaml.Unmarshal([]byte("[]"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "setup: must list at least one command")
+}
+
+func TestHookCommand_MappingForm(t *testing.T) {
+	var s SetupCommands
+	require.Nil(t, yaml.Unmarshal([]byte(`
+- cmd: echo hi
+  env:
+    FOO: bar
+    BAZ: qux
+  stdin_file: fixtures/in.txt
+  timeout: 5
+`), &s))
+	require.Len(t, s, 1)
+	hc := s[0]
+	assert.Equal(t, "echo hi", hc.Cmd)
+	assert.Equal(t, map[string]string{"FOO": "bar", "BAZ": "qux"}, hc.Env)
+	assert.Equal(t, "fixtures/in.txt", hc.StdinFile)
+	require.NotNil(t, hc.Timeout)
+	assert.Equal(t, 5*time.Second, hc.Timeout.Value)
+	assert.Equal(t, 5*time.Second, hc.EffectiveTimeout())
+}
+
+func TestHookCommand_MappingForm_CmdOnlyDefaultsTimeout(t *testing.T) {
+	var s SetupCommands
+	require.Nil(t, yaml.Unmarshal([]byte("- cmd: echo hi\n"), &s))
+	require.Len(t, s, 1)
+	hc := s[0]
+	assert.Equal(t, "echo hi", hc.Cmd)
+	assert.Nil(t, hc.Env)
+	assert.Equal(t, "", hc.StdinFile)
+	assert.Nil(t, hc.Timeout)
+	assert.Equal(t, DefaultHookTimeout, hc.EffectiveTimeout())
+}
+
+func TestHookCommand_BareStringDefaultsTimeout(t *testing.T) {
+	var s SetupCommands
+	require.Nil(t, yaml.Unmarshal([]byte("echo hi"), &s))
+	assert.Equal(t, DefaultHookTimeout, s[0].EffectiveTimeout())
+}
+
+func TestHookCommand_MappingForm_MissingCmd(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- env:\n    FOO: bar\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "setup: command 1: must set cmd")
+}
+
+func TestHookCommand_MappingForm_UnknownKey(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  bogus: 1\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), `unknown key "bogus"`)
+}
+
+func TestHookCommand_MappingForm_DuplicateKey(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  cmd: echo bye\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "cmd declared more than once")
+}
+
+func TestHookCommand_MappingForm_EnvMustBeMapping(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  env: not a mapping\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "env must be a mapping of variable name to value")
+}
+
+func TestHookCommand_MappingForm_StdinFileMustBeNonEmptyString(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  stdin_file: \"\"\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "stdin_file must be a non-empty string")
+}
+
+func TestHookCommand_MappingForm_TimeoutMustBePositive(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  timeout: 0\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "timeout must be greater than 0")
+}
+
+func TestHookCommand_MappingForm_TimeoutRejectsNegative(t *testing.T) {
+	var s SetupCommands
+	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  timeout: -1\n"), &s)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must not be negative")
 }
 
 func TestExitCode_UnmarshalYAML_Int(t *testing.T) {

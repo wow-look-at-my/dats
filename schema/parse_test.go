@@ -230,8 +230,8 @@ tests:
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
-	assert.Equal(t, SetupCommands{"mkdir output", "cp {shared.config.json} output/"}, tf.Setup)
-	assert.Equal(t, TeardownCommands{"echo done"}, tf.Teardown)
+	assert.Equal(t, SetupCommands{{Cmd: "mkdir output"}, {Cmd: "cp {shared.config.json} output/"}}, tf.Setup)
+	assert.Equal(t, TeardownCommands{{Cmd: "echo done"}}, tf.Teardown)
 	require.NotNil(t, tf.Shared)
 	assert.Equal(t, map[string]string{
 		"config.json":    `{"debug": true}`,
@@ -251,8 +251,8 @@ tests:
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
-	assert.Equal(t, SetupCommands{"echo one command"}, tf.Setup)
-	assert.Equal(t, TeardownCommands{"echo first", "echo second"}, tf.Teardown)
+	assert.Equal(t, SetupCommands{{Cmd: "echo one command"}}, tf.Setup)
+	assert.Equal(t, TeardownCommands{{Cmd: "echo first"}, {Cmd: "echo second"}}, tf.Teardown)
 }
 
 func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
@@ -307,7 +307,7 @@ setup:
   - [not, a, string]
 tests:
   - cmd: true
-`, "setup: command 2 must be a string"},
+`, "setup: command 2 must be a command string or a mapping"},
 		"setup numeric element": {`
 setup:
   - echo ok
@@ -315,12 +315,12 @@ setup:
 tests:
   - cmd: true
 `, "setup: command 2 must be a string"},
-		"teardown map element": {`
+		"teardown map element unknown key": {`
 teardown:
-  - cmd: nope
+  - foo: nope
 tests:
   - cmd: true
-`, "teardown: command 1 must be a string"},
+`, `teardown: command 1: unknown key "foo"`},
 		"setup map node": {`
 setup:
   cmd: nope

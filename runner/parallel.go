@@ -173,9 +173,9 @@ func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *sch
 		}
 	}
 	if result.SetupFailure == nil {
-		for _, raw := range testFile.Setup {
+		for _, hc := range testFile.Setup {
 			pool.acquire()
-			fail := r.runHookCommand(ctx, "setup", raw, sharedDir)
+			fail := r.runHookCommand(ctx, "setup", hc, sharedDir)
 			pool.release()
 			if fail != nil {
 				result.SetupFailure = fail
@@ -256,9 +256,9 @@ func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *sch
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
 	}
-	for _, raw := range testFile.Teardown {
+	for _, hc := range testFile.Teardown {
 		pool.acquire()
-		fail := r.runHookCommand(teardownCtx, "teardown", raw, sharedDir)
+		fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir)
 		pool.release()
 		if fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)

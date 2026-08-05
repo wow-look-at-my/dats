@@ -62,17 +62,27 @@ func ParseFile(path string) (*TestFile, error) {
 
 	// {matrix.X} belongs to a single test instance; setup and teardown
 	// commands and shared file contents run once per file, where no instance
-	// exists, so a matrix placeholder there can never resolve.
+	// exists, so a matrix placeholder there can never resolve. A hook
+	// command's cmd, its env values, and its stdin_file are all file-level
+	// too, so all three are scanned.
 	for _, hook := range []struct {
 		kind string
-		cmds []string
+		cmds []HookCommand
 	}{
 		{"setup", testFile.Setup},
 		{"teardown", testFile.Teardown},
 	} {
-		for i, cmd := range hook.cmds {
-			if name, found := findMatrixPlaceholder(cmd); found {
+		for i, hc := range hook.cmds {
+			if name, found := findMatrixPlaceholder(hc.Cmd); found {
 				return nil, fmt.Errorf("%s command %d: {matrix.%s} is not available outside tests", hook.kind, i+1, name)
+			}
+			for _, envName := range slices.Sorted(maps.Keys(hc.Env)) {
+				if name, found := findMatrixPlaceholder(hc.Env[envName]); found {
+					return nil, fmt.Errorf("%s command %d: env %q: {matrix.%s} is not available outside tests", hook.kind, i+1, envName, name)
+				}
+			}
+			if name, found := findMatrixPlaceholder(hc.StdinFile); found {
+				return nil, fmt.Errorf("%s command %d: stdin_file: {matrix.%s} is not available outside tests", hook.kind, i+1, name)
 			}
 		}
 	}

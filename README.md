@@ -248,8 +248,8 @@ tests:
 |----------|----------|-------------|
 | `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
 | `shared.copy` | No | Map of filename → host source path, copied once per file into `shared/`, writable. A name may not also appear under `files`; the block needs at least one entry across the two. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
-| `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
-| `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
+| `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`) run once, in order, before the file's tests. `cmd`/`env` expand `{shared.X}` only; bounded by `timeout` (default 30s, must be > 0 when set). On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
+| `teardown` | No | Same hook command or list form as `setup`, always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
 | `sandbox` | No | `false` opts this file's commands out of the sandbox, or a mapping (`enabled`, `network`, `image`) narrows it. Covers the tests AND the setup/teardown hooks. See [docs/file-format.md](docs/file-format.md#sandbox) |
 
 Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
