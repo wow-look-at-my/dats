@@ -11,9 +11,10 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 var (
@@ -25,8 +26,10 @@ var (
 )
 
 // MatrixVariable is one declared matrix variable: its name and its ordered
-// list of values. Values are kept as the literal scalar text from the YAML
-// (so 1.50 stays "1.50" and true stays "true").
+// list of values. A quoted value is kept as its literal text (so "1.50"
+// stays "1.50"); an unquoted value is reformatted from its resolved type
+// (so 1.50 becomes "1.5" and true becomes "true") -- yaml-fixed resolves a
+// bare scalar to a Go value rather than keeping its source spelling.
 type MatrixVariable struct {
 	Name   string
 	Values []string
@@ -38,57 +41,84 @@ type MatrixVariable struct {
 // than a map.
 type Matrix []MatrixVariable
 
-// UnmarshalYAML decodes the matrix mapping by iterating the mapping node's
-// key/value pairs directly, preserving declaration order (a plain map would
-// lose it). Iterating the node also bypasses yaml.v3's own duplicate-key
-// detection, so duplicate variable names are detected here, mirroring
-// OutputCheck's line-map handling.
-func (m *Matrix) UnmarshalYAML(node *yaml.Node) error {
-	if node.Kind != yaml.MappingNode {
+// UnmarshalYAML decodes the matrix mapping, preserving declaration order (a
+// plain Go map would lose it) via the parsed *yamlfixed.Map's own Keys
+// order. That Map can never hold a duplicate key (the parser rejects that
+// before this ever runs), so no manual duplicate-variable-name bookkeeping
+// is needed. Each value must itself be a
+// scalar's literal text -- yaml-fixed resolves scalars to Go values rather
+// than keeping source text, so a value is reformatted from its resolved type
+// rather than echoed verbatim (a float like 1.50 becomes "1.5", not "1.50";
+// see docs/file-format.md). An explicit `matrix: null` is treated the same
+// as an absent key (matching how `shared:`/`sandbox:` -- pointer-typed
+// fields the decoder never dereferences for a nil value -- already behave):
+// decodeStruct invokes UnmarshalYAML for any key that is present, null value
+// included, so a slice-typed field like Matrix must opt into that "null
+// means absent" reading itself rather than getting it for free.
+func (m *Matrix) UnmarshalYAML(value any) error {
+	if value == nil {
+		return nil
+	}
+	mv, ok := value.(*yamlfixed.Map)
+	if !ok {
 		return fmt.Errorf("matrix must be a mapping of variable names to value lists")
 	}
-	if len(node.Content) == 0 {
+	if mv.Len() == 0 {
 		return fmt.Errorf("matrix must declare at least one variable")
 	}
-	vars := make(Matrix, 0, len(node.Content)/2)
-	for i := 0; i < len(node.Content); i += 2 {
-		keyNode, valNode := node.Content[i], node.Content[i+1]
-		name := keyNode.Value
+	vars := make(Matrix, 0, mv.Len())
+	for _, name := range mv.Keys {
 		if !matrixNameRe.MatchString(name) {
 			return fmt.Errorf("matrix variable name %q must match ^[A-Za-z_][A-Za-z0-9_]*$", name)
 		}
-		if _, exists := vars.Lookup(name); exists {
-			return fmt.Errorf("matrix variable %q declared more than once", name)
-		}
-		if valNode.Kind != yaml.SequenceNode {
+		rawValues, _ := mv.Get(name)
+		valueList, ok := rawValues.([]any)
+		if !ok {
 			return fmt.Errorf("matrix variable %q must list its values as a sequence", name)
 		}
-		if len(valNode.Content) == 0 {
+		if len(valueList) == 0 {
 			return fmt.Errorf("matrix variable %q must list at least one value", name)
 		}
-		values := make([]string, 0, len(valNode.Content))
-		seen := make(map[string]bool, len(valNode.Content))
-		for j, item := range valNode.Content {
+		values := make([]string, 0, len(valueList))
+		seen := make(map[string]bool, len(valueList))
+		for j, item := range valueList {
 			// Only scalar values make sense as substitution text; null has no
-			// text at all. The scalar's literal text is taken verbatim, so a
-			// float like 1.50 is never reformatted and a bool stays "true".
-			if item.Kind != yaml.ScalarNode || item.ShortTag() == "!!null" {
+			// text at all, and a mapping/sequence has no scalar text either.
+			text, ok := matrixValueText(item)
+			if !ok {
 				return fmt.Errorf("matrix variable %q value %d: values must be scalar strings, numbers, or booleans", name, j+1)
 			}
-			value := item.Value
 			// Duplicates are compared after stringification: 1.50 and "1.50"
 			// would produce byte-identical instances, so the repeat can only
 			// be a mistake.
-			if seen[value] {
-				return fmt.Errorf("matrix variable %q lists duplicate value %q", name, value)
+			if seen[text] {
+				return fmt.Errorf("matrix variable %q lists duplicate value %q", name, text)
 			}
-			seen[value] = true
-			values = append(values, value)
+			seen[text] = true
+			values = append(values, text)
 		}
 		vars = append(vars, MatrixVariable{Name: name, Values: values})
 	}
 	*m = vars
 	return nil
+}
+
+// matrixValueText renders a matrix value's resolved scalar as substitution
+// text: a string is used verbatim (so a quoted "1.50" stays "1.50"), while a
+// bool/int/float is formatted from its resolved value.
+func matrixValueText(item any) (string, bool) {
+	switch v := item.(type) {
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case int:
+		return strconv.Itoa(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64), true
+	default:
+		return "", false
+	}
 }
 
 // Lookup returns the values declared for name and whether name is declared.
@@ -243,39 +273,36 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 			files[name] = check
 		}
 	}
-	applyToNodeStrings(&test.Outputs.JSONOutput, f)
+	if test.Outputs.JSONOutput.set {
+		test.Outputs.JSONOutput.value = substituteJSONValue(test.Outputs.JSONOutput.value, f)
+	}
 }
 
-// applyToNodeStrings applies f to the Value of every string scalar in the
-// node tree, mapping keys included; non-string scalars (numbers, bools,
-// null) are untouched, so substitution inside json_output cannot change a
-// value's JSON type. Alias nodes are followed to their anchor target (that
-// is the value they decode to), with each node visited at most once so a
-// target reachable both directly and through aliases is substituted exactly
-// once -- the single-pass guarantee holds.
-func applyToNodeStrings(n *yaml.Node, f func(string) string) {
-	if n == nil || n.Kind == 0 {
-		return
-	}
-	visitNodeStrings(n, f, map[*yaml.Node]bool{})
-}
-
-func visitNodeStrings(n *yaml.Node, f func(string) string, seen map[*yaml.Node]bool) {
-	if n == nil || n.Kind == 0 || seen[n] {
-		return
-	}
-	seen[n] = true
-	if n.Kind == yaml.ScalarNode {
-		if n.ShortTag() == "!!str" {
-			n.Value = f(n.Value)
+// substituteJSONValue returns a deep copy of v -- json_output's generic
+// value tree (nil, bool, int, float64, string, []any, or map[string]any) --
+// with f applied to every string, mapping keys included; non-string scalars
+// (numbers, bools, null) are untouched, so substitution inside json_output
+// cannot change a value's JSON type. Passing the identity function makes
+// this a pure deep copy, which is how copyTest duplicates JSONOutput without
+// a second, separate copying mechanism.
+func substituteJSONValue(v any, f func(string) string) any {
+	switch val := v.(type) {
+	case string:
+		return f(val)
+	case []any:
+		out := make([]any, len(val))
+		for i, e := range val {
+			out[i] = substituteJSONValue(e, f)
 		}
-		return
-	}
-	if n.Alias != nil {
-		visitNodeStrings(n.Alias, f, seen)
-	}
-	for _, child := range n.Content {
-		visitNodeStrings(child, f, seen)
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, e := range val {
+			out[f(k)] = substituteJSONValue(e, f)
+		}
+		return out
+	default:
+		return val
 	}
 }
 
@@ -334,9 +361,10 @@ func findMatrixPlaceholder(s string) (string, bool) {
 }
 
 // copyTest returns a deep copy of t: every map, every slice, and the
-// json_output node tree are duplicated, so substitutions applied to the copy
-// can never reach the source test or a sibling instance. The copy's Matrix
-// is cleared -- an expanded instance is a concrete test, not a template.
+// json_output value tree are duplicated, so substitutions applied to the
+// copy can never reach the source test or a sibling instance. The copy's
+// Matrix is cleared -- an expanded instance is a concrete test, not a
+// template.
 func copyTest(t *Test) Test {
 	c := *t
 	c.Matrix = nil
@@ -349,7 +377,9 @@ func copyTest(t *Test) Test {
 	c.Outputs.NotStderr = copyOutputCheck(t.Outputs.NotStderr)
 	c.Outputs.Files = copyFileChecks(t.Outputs.Files)
 	c.Outputs.NotFiles = copyFileChecks(t.Outputs.NotFiles)
-	c.Outputs.JSONOutput = *copyNode(&t.Outputs.JSONOutput)
+	if t.Outputs.JSONOutput.set {
+		c.Outputs.JSONOutput.value = substituteJSONValue(t.Outputs.JSONOutput.value, func(s string) string { return s })
+	}
 	return c
 }
 
@@ -375,31 +405,4 @@ func copyFileChecks(m map[string]FileCheck) map[string]FileCheck {
 		c[name] = check
 	}
 	return c
-}
-
-// copyNode deep-copies a yaml.Node tree: Content recursively, and Alias
-// pointers remapped to the copied target so an alias inside json_output
-// decodes the instance's own (substituted) anchor value -- never a node of
-// the source test's tree, which substitution must not reach. The seen map
-// keeps shared targets shared within one copy.
-func copyNode(n *yaml.Node) *yaml.Node {
-	return copyNodeMapped(n, map[*yaml.Node]*yaml.Node{})
-}
-
-func copyNodeMapped(n *yaml.Node, seen map[*yaml.Node]*yaml.Node) *yaml.Node {
-	if c, ok := seen[n]; ok {
-		return c
-	}
-	c := *n
-	seen[n] = &c
-	if n.Alias != nil {
-		c.Alias = copyNodeMapped(n.Alias, seen)
-	}
-	if len(n.Content) > 0 {
-		c.Content = make([]*yaml.Node, len(n.Content))
-		for i, child := range n.Content {
-			c.Content[i] = copyNodeMapped(child, seen)
-		}
-	}
-	return &c
 }

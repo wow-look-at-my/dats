@@ -92,154 +92,157 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 
 ## DATS File Format
 
+`.dats` files are indented with tabs, not spaces, and have no anchors/aliases — see
+[YAML Dialect](docs/file-format.md#yaml-dialect).
+
 ```yaml
 # Optional file-level keys: shared fixture files written once per file,
 # setup command(s) run once before the tests, and teardown command(s) that
 # always run once after them (string or list form each).
 shared:
-  files:
-    config.json: |
-      {"debug": true}
+	files:
+		config.json: |
+			{"debug": true}
 setup: cat {shared.config.json} > {shared.generated.txt}
 teardown:
-  - echo cleanup one
-  - echo cleanup two
+	- echo cleanup one
+	- echo cleanup two
 
 tests:
-  # Simple command
-  - desc: echo test
-    cmd: echo Hello World
-    outputs:
-      stdout:
-        - "Hello World"
+	# Simple command
+	- desc: echo test
+	  cmd: echo Hello World
+	  outputs:
+		stdout:
+			- "Hello World"
 
-  # Shared fixtures are addressed with {shared.X} (read-only by convention)
-  - desc: reads a shared fixture
-    cmd: cat {shared.generated.txt}
-    outputs:
-      stdout:
-        - '"debug": true'
+	# Shared fixtures are addressed with {shared.X} (read-only by convention)
+	- desc: reads a shared fixture
+	  cmd: cat {shared.generated.txt}
+	  outputs:
+		stdout:
+			- '"debug": true'
 
-  # Command with input file
-  - desc: cat reads file
-    inputs:
-      files:
-        input.txt: |
-          Hello, world!
-    cmd: cat {inputs.input.txt}
-    outputs:
-      stdout:
-        - "Hello, world!"
+	# Command with input file
+	- desc: cat reads file
+	  inputs:
+		files:
+			input.txt: |
+				Hello, world!
+	  cmd: cat {inputs.input.txt}
+	  outputs:
+		stdout:
+			- "Hello, world!"
 
-  # Pulling in an existing host file, writable -- the read-write counterpart
-  # of the sandbox's read-only bind mount of the working directory. The
-  # source resolves relative to this .dats file. If you want a file, write
-  # the file and copy or bind mount it in -- never a heredoc (see below).
-  - desc: modifies a copied-in fixture
-    inputs:
-      copy:
-        config.json: fixtures/config.json
-    cmd: echo "patched" >> {inputs.config.json}; cat {inputs.config.json}
-    outputs:
-      stdout:
-        - "patched"
+	# Pulling in an existing host file, writable -- the read-write counterpart
+	# of the sandbox's read-only bind mount of the working directory. The
+	# source resolves relative to this .dats file. If you want a file, write
+	# the file and copy or bind mount it in -- never a heredoc (see below).
+	- desc: modifies a copied-in fixture
+	  inputs:
+		copy:
+			config.json: fixtures/config.json
+	  cmd: echo "patched" >> {inputs.config.json}; cat {inputs.config.json}
+	  outputs:
+		stdout:
+			- "patched"
 
-  # Command with stdin
-  - desc: cat reads stdin
-    inputs:
-      stdin: "Hello from stdin"
-    cmd: cat
-    outputs:
-      stdout:
-        - "Hello from stdin"
+	# Command with stdin
+	- desc: cat reads stdin
+	  inputs:
+		stdin: "Hello from stdin"
+	  cmd: cat
+	  outputs:
+		stdout:
+			- "Hello from stdin"
 
-  # Per-test environment variables (added to the inherited environment;
-  # values go through placeholder expansion)
-  - desc: env var visible to command
-    inputs:
-      env:
-        MY_VAR: hello
-    cmd: echo "$MY_VAR"
-    outputs:
-      stdout:
-        - "hello"
+	# Per-test environment variables (added to the inherited environment;
+	# values go through placeholder expansion)
+	- desc: env var visible to command
+	  inputs:
+		env:
+			MY_VAR: hello
+	  cmd: echo "$MY_VAR"
+	  outputs:
+		stdout:
+			- "hello"
 
-  # Expected non-zero exit
-  - desc: grep returns 1 when not found
-    exit: 1
-    inputs:
-      stdin: "hello world"
-    cmd: grep -q "notfound"
+	# Expected non-zero exit
+	- desc: grep returns 1 when not found
+	  exit: 1
+	  inputs:
+		stdin: "hello world"
+	  cmd: grep -q "notfound"
 
-  # Line-specific assertions (0-indexed)
-  - desc: line matching
-    cmd: printf "line0\nline1\nline2"
-    outputs:
-      stdout:
-        0: "^line0$"
-        2: "^line2$"
+	# Line-specific assertions (0-indexed)
+	- desc: line matching
+	  cmd: printf "line0\nline1\nline2"
+	  outputs:
+		stdout:
+			0: "^line0$"
+			2: "^line2$"
 
-  # Negative assertions
-  - desc: no errors
-    cmd: echo success
-    outputs:
-      stdout:
-        - "success"
-      "!stdout":
-        - "error"
-        - "fail"
+	# Negative assertions
+	- desc: no errors
+	  cmd: echo success
+	  outputs:
+		stdout:
+			- "success"
+		"!stdout":
+			- "error"
+			- "fail"
 
-  # Output file validation
-  - desc: creates output file
-    cmd: echo "result" > {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          exists: true
-          match:
-            - "result"
-          notMatch:
-            - "error"
+	# Output file validation
+	- desc: creates output file
+	  cmd: echo "result" > {outputs.result.txt}
+	  outputs:
+		files:
+			result.txt:
+				exists: true
+				match:
+					- "result"
+				notMatch:
+					- "error"
 
-  # Negated output file (each check inverted: exists true = must NOT exist)
-  - desc: no stray file
-    cmd: echo nothing
-    outputs:
-      "!files":
-        unexpected.txt:
-          exists: true
+	# Negated output file (each check inverted: exists true = must NOT exist)
+	- desc: no stray file
+	  cmd: echo nothing
+	  outputs:
+		"!files":
+			unexpected.txt:
+				exists: true
 
-  # Per-test timeout (integer seconds or a Go duration string)
-  - desc: must finish quickly
-    cmd: echo fast
-    timeout: 2s
-    outputs:
-      stdout:
-        - "fast"
+	# Per-test timeout (integer seconds or a Go duration string)
+	- desc: must finish quickly
+	  cmd: echo fast
+	  timeout: 2s
+	  outputs:
+		stdout:
+			- "fast"
 
-  # Exit code variables
-  - desc: exit code variable
-    exit: EXIT_SUCCESS
-    cmd: true
+	# Exit code variables
+	- desc: exit code variable
+	  exit: EXIT_SUCCESS
+	  cmd: true
 
-  # Snapshot (golden-file) assertion: stdout must byte-match the golden
-  # stored next to this file (<file>.snapshots/NNN-<slug>.stdout.golden);
-  # create/refresh goldens with `dats --update`
-  - desc: matches the stored golden
-    cmd: echo stable output
-    outputs:
-      snapshot: true
+	# Snapshot (golden-file) assertion: stdout must byte-match the golden
+	# stored next to this file (<file>.snapshots/NNN-<slug>.stdout.golden);
+	# create/refresh goldens with `dats --update`
+	- desc: matches the stored golden
+	  cmd: echo stable output
+	  outputs:
+		snapshot: true
 
-  # Matrix (parameterized) test: one instance per combination (this one runs
-  # 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
-  - desc: greets
-    cmd: echo "{matrix.greeting}, {matrix.name}!"
-    matrix:
-      greeting: [hello, howdy]
-      name: [alice, bob]
-    outputs:
-      stdout:
-        - "{matrix.greeting}, {matrix.name}!"
+	# Matrix (parameterized) test: one instance per combination (this one runs
+	# 4 times, reported as "greets [greeting=hello, name=alice]" and so on)
+	- desc: greets
+	  cmd: echo "{matrix.greeting}, {matrix.name}!"
+	  matrix:
+		greeting: [hello, howdy]
+		name: [alice, bob]
+	  outputs:
+		stdout:
+			- "{matrix.greeting}, {matrix.name}!"
 ```
 
 ### File-Level Properties

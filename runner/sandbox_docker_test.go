@@ -94,9 +94,9 @@ func TestRunFileDockerSandboxTimeoutLeavesNoContainer(t *testing.T) {
 	requireDocker(t)
 	path := writeRunnerDats(t, `
 tests:
-  - desc: sleeps past its deadline
-    cmd: sleep 120
-    timeout: 2s
+	- desc: sleeps past its deadline
+	  cmd: sleep 120
+	  timeout: 2s
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

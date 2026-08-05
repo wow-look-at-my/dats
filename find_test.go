@@ -14,7 +14,7 @@ import (
 func TestFindFilesWithArgs(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
-	require.Nil(t, os.WriteFile(datsFile, []byte("tests:\n  - cmd: echo hi\n"), 0644))
+	require.Nil(t, os.WriteFile(datsFile, []byte("tests:\n\t- cmd: echo hi\n"), 0644))
 
 	files, err := FindFiles([]string{datsFile})
 	require.Nil(t, err)

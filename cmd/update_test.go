@@ -29,10 +29,10 @@ func setUpdateFlag(t *testing.T, value bool) {
 }
 
 const snapshotDats = `tests:
-  - desc: snap
-    cmd: echo hello
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: echo hello
+	  outputs:
+		snapshot: true
 `
 
 func TestUpdateFlagRegistration(t *testing.T) {

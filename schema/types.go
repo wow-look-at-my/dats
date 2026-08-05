@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 // exitCodeNames are the symbolic exit code names the runner can resolve.
@@ -91,8 +91,8 @@ type CommandList []HookCommand
 // before any of the file's tests.
 type SetupCommands CommandList
 
-func (s *SetupCommands) UnmarshalYAML(node *yaml.Node) error {
-	cmds, err := unmarshalCommandList(node, "setup")
+func (s *SetupCommands) UnmarshalYAML(value any) error {
+	cmds, err := unmarshalCommandList(value, "setup")
 	if err != nil {
 		return err
 	}
@@ -104,8 +104,8 @@ func (s *SetupCommands) UnmarshalYAML(node *yaml.Node) error {
 // once, in order, after the file's tests.
 type TeardownCommands CommandList
 
-func (td *TeardownCommands) UnmarshalYAML(node *yaml.Node) error {
-	cmds, err := unmarshalCommandList(node, "teardown")
+func (td *TeardownCommands) UnmarshalYAML(value any) error {
+	cmds, err := unmarshalCommandList(value, "teardown")
 	if err != nil {
 		return err
 	}
@@ -114,22 +114,22 @@ func (td *TeardownCommands) UnmarshalYAML(node *yaml.Node) error {
 }
 
 // unmarshalCommandList decodes the two accepted CommandList shapes, naming
-// key (setup or teardown) in every error.
-func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
-	switch node.Kind {
-	case yaml.ScalarNode:
-		hc, err := hookCommandFromNode(node, key, "command")
-		if err != nil {
-			return nil, err
-		}
-		return CommandList{hc}, nil
-	case yaml.SequenceNode:
-		if len(node.Content) == 0 {
+// key (setup or teardown) in every error. Only a sequence's items may take
+// the mapping form -- a bare (non-list) value must be a command string, so a
+// lone mapping like `setup: {cmd: ...}` falls through to the final error. An
+// explicit `setup: null`/`teardown: null` is treated the same as an absent
+// key, matching Matrix and SnapshotCheck.
+func unmarshalCommandList(value any, key string) (CommandList, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if seq, ok := value.([]any); ok {
+		if len(seq) == 0 {
 			return nil, fmt.Errorf("%s: must list at least one command", key)
 		}
-		cmds := make(CommandList, 0, len(node.Content))
-		for i, item := range node.Content {
-			hc, err := hookCommandFromNode(item, key, fmt.Sprintf("command %d", i+1))
+		cmds := make(CommandList, 0, len(seq))
+		for i, item := range seq {
+			hc, err := hookCommandFromValue(item, key, fmt.Sprintf("command %d", i+1))
 			if err != nil {
 				return nil, err
 			}
@@ -137,98 +137,102 @@ func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
 		}
 		return cmds, nil
 	}
+	if _, isMapping := value.(*yamlfixed.Map); !isMapping {
+		hc, err := hookCommandFromValue(value, key, "command")
+		if err != nil {
+			return nil, err
+		}
+		return CommandList{hc}, nil
+	}
 	return nil, fmt.Errorf("%s must be a command string or a list of command strings", key)
 }
 
-// hookCommandFromNode decodes one setup/teardown entry into a HookCommand:
-// either a bare command string (commandFromNode's rules, unchanged) or a
-// mapping with cmd plus optional env, stdin_file, and timeout. It is NOT a
-// yaml.Unmarshaler method -- the automatic dispatch interface has no room
-// to carry key ("setup"/"teardown") and label ("command"/"command N")
-// through to every error, so unmarshalCommandList calls it directly per
-// item, the same way it always called commandFromNode. The mapping node is
-// iterated manually, which bypasses yaml.v3's own duplicate-key detection
-// and the decoder's KnownFields checking, so both are enforced here --
-// mirroring SandboxSpec.
-func hookCommandFromNode(node *yaml.Node, key, label string) (HookCommand, error) {
-	switch node.Kind {
-	case yaml.ScalarNode:
-		cmd, err := commandFromNode(node, key, label)
+// hookCommandFromValue decodes one setup/teardown entry into a HookCommand:
+// either a bare command string (commandFromValue's rules) or a mapping with
+// cmd plus optional env, stdin_file, and timeout. It is NOT an Unmarshaler
+// method -- the automatic dispatch has no room to carry key
+// ("setup"/"teardown") and label ("command"/"command N") through to every
+// error, so unmarshalCommandList calls it directly per item. A parsed
+// *yamlfixed.Map can never hold a duplicate key (the parser rejects that
+// before this ever runs), so no manual duplicate-key bookkeeping is needed.
+func hookCommandFromValue(value any, key, label string) (HookCommand, error) {
+	if _, isSequence := value.([]any); isSequence {
+		return HookCommand{}, fmt.Errorf("%s: %s must be a command string or a mapping (cmd, env, stdin_file, timeout)", key, label)
+	}
+	m, isMapping := value.(*yamlfixed.Map)
+	if !isMapping {
+		cmd, err := commandFromValue(value, key, label)
 		if err != nil {
 			return HookCommand{}, err
 		}
 		return HookCommand{Cmd: cmd}, nil
-	case yaml.MappingNode:
-		var hc HookCommand
-		seen := make(map[string]bool, len(node.Content)/2)
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode, valNode := node.Content[i], node.Content[i+1]
-			k := keyNode.Value
-			switch k {
-			case "cmd", "env", "stdin_file", "timeout":
-			default:
-				return HookCommand{}, fmt.Errorf("%s: %s: unknown key %q (allowed: cmd, env, stdin_file, timeout)", key, label, k)
-			}
-			if seen[k] {
-				return HookCommand{}, fmt.Errorf("%s: %s: %s declared more than once", key, label, k)
-			}
-			seen[k] = true
-
-			switch k {
-			case "cmd":
-				cmd, err := commandFromNode(valNode, key, label)
-				if err != nil {
-					return HookCommand{}, err
-				}
-				hc.Cmd = cmd
-			case "env":
-				if valNode.Kind != yaml.MappingNode {
-					return HookCommand{}, fmt.Errorf("%s: %s: env must be a mapping of variable name to value", key, label)
-				}
-				var env map[string]string
-				if err := valNode.Decode(&env); err != nil {
-					return HookCommand{}, fmt.Errorf("%s: %s: env: %w", key, label, err)
-				}
-				hc.Env = env
-			case "stdin_file":
-				if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" || valNode.Value == "" {
-					return HookCommand{}, fmt.Errorf("%s: %s: stdin_file must be a non-empty string", key, label)
-				}
-				hc.StdinFile = valNode.Value
-			case "timeout":
-				var d Duration
-				if err := valNode.Decode(&d); err != nil {
-					return HookCommand{}, fmt.Errorf("%s: %s: %w", key, label, err)
-				}
-				if d.Value <= 0 {
-					return HookCommand{}, fmt.Errorf("%s: %s: timeout must be greater than 0 (omit it to use the default %s)", key, label, DefaultHookTimeout)
-				}
-				hc.Timeout = &d
-			}
-		}
-		if hc.Cmd == "" {
-			return HookCommand{}, fmt.Errorf("%s: %s: must set cmd", key, label)
-		}
-		return hc, nil
 	}
-	return HookCommand{}, fmt.Errorf("%s: %s must be a command string or a mapping (cmd, env, stdin_file, timeout)", key, label)
+	var hc HookCommand
+	for _, k := range m.Keys {
+		v, _ := m.Get(k)
+		switch k {
+		case "cmd":
+			cmd, err := commandFromValue(v, key, label)
+			if err != nil {
+				return HookCommand{}, err
+			}
+			hc.Cmd = cmd
+		case "env":
+			envMap, ok := v.(*yamlfixed.Map)
+			if !ok {
+				return HookCommand{}, fmt.Errorf("%s: %s: env must be a mapping of variable name to value", key, label)
+			}
+			env := make(map[string]string, envMap.Len())
+			for _, envName := range envMap.Keys {
+				envVal, _ := envMap.Get(envName)
+				s, ok := envVal.(string)
+				if !ok {
+					return HookCommand{}, fmt.Errorf("%s: %s: env: %q must be a string", key, label, envName)
+				}
+				env[envName] = s
+			}
+			hc.Env = env
+		case "stdin_file":
+			s, ok := v.(string)
+			if !ok || s == "" {
+				return HookCommand{}, fmt.Errorf("%s: %s: stdin_file must be a non-empty string", key, label)
+			}
+			hc.StdinFile = s
+		case "timeout":
+			var d Duration
+			if err := d.UnmarshalYAML(v); err != nil {
+				return HookCommand{}, fmt.Errorf("%s: %s: %w", key, label, err)
+			}
+			if d.Value <= 0 {
+				return HookCommand{}, fmt.Errorf("%s: %s: timeout must be greater than 0 (omit it to use the default %s)", key, label, DefaultHookTimeout)
+			}
+			hc.Timeout = &d
+		default:
+			return HookCommand{}, fmt.Errorf("%s: %s: unknown key %q (allowed: cmd, env, stdin_file, timeout)", key, label, k)
+		}
+	}
+	if hc.Cmd == "" {
+		return HookCommand{}, fmt.Errorf("%s: %s: must set cmd", key, label)
+	}
+	return hc, nil
 }
 
-// commandFromNode validates one command scalar, naming key (setup or
+// commandFromValue validates one command scalar, naming key (setup or
 // teardown) and label ("command" or "command N") in every error. Only true
-// strings are commands: yaml.v3 would happily coerce a bare 42 into "42",
-// which could never be a meaningful command.
-func commandFromNode(node *yaml.Node, key, label string) (string, error) {
-	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+// strings are commands: a quoted-looking bare 42 parses as the int 42, which
+// could never be a meaningful command.
+func commandFromValue(value any, key, label string) (string, error) {
+	s, ok := value.(string)
+	if !ok {
 		return "", fmt.Errorf("%s: %s must be a string", key, label)
 	}
-	if strings.TrimSpace(node.Value) == "" {
+	if strings.TrimSpace(s) == "" {
 		return "", fmt.Errorf("%s: %s must not be empty", key, label)
 	}
-	if msg := bannedRedirect(node.Value); msg != "" {
+	if msg := bannedRedirect(s); msg != "" {
 		return "", fmt.Errorf("%s: %s: %s", key, label, msg)
 	}
-	return node.Value, nil
+	return s, nil
 }
 
 // heredocBanMessage is the error text for a heredoc (<<WORD, <<-WORD, or
@@ -308,88 +312,88 @@ type ExitCode struct {
 	Variable string // If non-empty, use this variable name instead of Value
 }
 
-func (e *ExitCode) UnmarshalYAML(node *yaml.Node) error {
-	// Reject floats explicitly (even integral ones like 2.0): yaml.v3 would
-	// otherwise silently truncate them in the int decode below, and
-	// schema.json types exit as an integer.
-	if node.Tag == "!!float" {
-		return fmt.Errorf("exit code must be an integer in range 0-255, got float %s", node.Value)
-	}
-	// Try int first
-	var intVal int
-	if err := node.Decode(&intVal); err == nil {
-		if intVal < 0 || intVal > 255 {
-			return fmt.Errorf("exit code %d must be in range 0-255", intVal)
+func (e *ExitCode) UnmarshalYAML(value any) error {
+	switch v := value.(type) {
+	case int:
+		if v < 0 || v > 255 {
+			return fmt.Errorf("exit code %d must be in range 0-255", v)
 		}
-		e.Value = intVal
+		e.Value = v
 		return nil
-	}
-	// Try string - a quoted integer (e.g. "0") counts as its numeric value;
-	// otherwise it must be a name the runner can resolve
-	var strVal string
-	if err := node.Decode(&strVal); err == nil {
-		if intVal, err := strconv.Atoi(strVal); err == nil {
+	case float64:
+		// Reject floats explicitly (even integral ones like 2.0): decoding
+		// into int would otherwise silently truncate them, and schema.json
+		// types exit as an integer.
+		return fmt.Errorf("exit code must be an integer in range 0-255, got float %s", formatFloatForError(v))
+	case string:
+		// A quoted integer (e.g. "0") counts as its numeric value;
+		// otherwise it must be a name the runner can resolve.
+		if intVal, err := strconv.Atoi(v); err == nil {
 			if intVal < 0 || intVal > 255 {
 				return fmt.Errorf("exit code %d must be in range 0-255", intVal)
 			}
 			e.Value = intVal
 			return nil
 		}
-		if !exitCodeNames[strVal] {
-			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", strVal)
+		if !exitCodeNames[v] {
+			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", v)
 		}
-		e.Variable = strVal
+		e.Variable = v
 		return nil
 	}
 	return fmt.Errorf("exit must be an integer (0-255) or EXIT_SUCCESS/EXIT_FAILURE")
 }
 
 // Duration is a per-test timeout. It accepts either a bare integer number of
-// seconds (e.g. 5) or a Go duration string (e.g. "500ms", "2s", "1m30s").
-// A zero value means no timeout.
+// seconds (e.g. 5) or a Go duration string (e.g. "500ms", "2s", "1m30s"). A
+// zero value means no timeout.
 type Duration struct {
 	Value time.Duration
 }
 
-func (d *Duration) UnmarshalYAML(node *yaml.Node) error {
-	// Reject floats explicitly (even integral ones like 1.0): yaml.v3 would
-	// otherwise silently truncate them in the int decode below, turning
-	// timeout: 0.9 into 0 seconds -- i.e. no timeout at all. Fractional
-	// seconds are expressed as a duration string instead.
-	if node.Tag == "!!float" {
-		return fmt.Errorf("timeout must be an integer number of seconds or a duration string (e.g. \"900ms\", \"1.5s\"), got float %s", node.Value)
-	}
-	// Bare integer = seconds
-	var intVal int
-	if err := node.Decode(&intVal); err == nil {
-		if intVal < 0 {
-			return fmt.Errorf("timeout %d must not be negative", intVal)
+func (d *Duration) UnmarshalYAML(value any) error {
+	switch v := value.(type) {
+	case int:
+		if v < 0 {
+			return fmt.Errorf("timeout %d must not be negative", v)
 		}
-		d.Value = time.Duration(intVal) * time.Second
+		d.Value = time.Duration(v) * time.Second
 		return nil
-	}
-	// String = Go duration; a quoted bare integer (e.g. "5") means seconds,
-	// matching the unquoted form
-	var strVal string
-	if err := node.Decode(&strVal); err == nil {
-		if intVal, err := strconv.Atoi(strVal); err == nil {
+	case float64:
+		// Reject floats explicitly (even integral ones like 1.0): decoding
+		// into int would otherwise silently truncate them, turning
+		// timeout: 0.9 into 0 seconds -- i.e. no timeout at all. Fractional
+		// seconds are expressed as a duration string instead.
+		return fmt.Errorf("timeout must be an integer number of seconds or a duration string (e.g. \"900ms\", \"1.5s\"), got float %s", formatFloatForError(v))
+	case string:
+		// A quoted bare integer (e.g. "5") means seconds, matching the
+		// unquoted form.
+		if intVal, err := strconv.Atoi(v); err == nil {
 			if intVal < 0 {
 				return fmt.Errorf("timeout %d must not be negative", intVal)
 			}
 			d.Value = time.Duration(intVal) * time.Second
 			return nil
 		}
-		parsed, err := time.ParseDuration(strVal)
+		parsed, err := time.ParseDuration(v)
 		if err != nil {
-			return fmt.Errorf("invalid timeout %q: %w", strVal, err)
+			return fmt.Errorf("invalid timeout %q: %w", v, err)
 		}
 		if parsed < 0 {
-			return fmt.Errorf("timeout %q must not be negative", strVal)
+			return fmt.Errorf("timeout %q must not be negative", v)
 		}
 		d.Value = parsed
 		return nil
 	}
 	return fmt.Errorf("timeout must be an integer (seconds) or duration string")
+}
+
+// formatFloatForError renders a rejected float value for an error message.
+// The parser resolves a scalar straight to its Go value rather than keeping
+// the source text, so a source spelling like "1e3" is reported using its
+// resolved value ("1000") rather than verbatim.
+func formatFloatForError(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
 // OutputBlock contains all output validations
@@ -405,24 +409,38 @@ type OutputBlock struct {
 	// duplicates it by plain value copy.
 	Snapshot SnapshotCheck `yaml:"snapshot,omitempty"`
 	// JSONOutput is the expected JSON value of the whole stdout (json_output
-	// key). Stored as a yaml.Node so an explicit null expectation is
-	// distinguishable from an omitted key (zero node Kind).
-	JSONOutput yaml.Node `yaml:"json_output,omitempty"`
+	// key), wrapped so an explicit null expectation is distinguishable from
+	// an omitted key.
+	JSONOutput jsonOutputExpectation `yaml:"json_output,omitempty"`
+}
+
+// jsonOutputExpectation wraps the outputs.json_output expectation. decodeStruct
+// (yaml-fixed) only invokes UnmarshalYAML for a key that is actually present in
+// the source -- an absent key leaves the field at its Go zero value -- so Set
+// becoming true is itself the "was this key given at all" signal, including
+// when the given value is an explicit `null`.
+type jsonOutputExpectation struct {
+	set   bool
+	value any
+}
+
+func (j *jsonOutputExpectation) UnmarshalYAML(value any) error {
+	j.set = true
+	j.value = yamlfixed.ToPlain(value)
+	return nil
 }
 
 // HasJSONOutput reports whether a json_output expectation was specified.
 func (o *OutputBlock) HasJSONOutput() bool {
-	return o.JSONOutput.Kind != 0
+	return o.JSONOutput.set
 }
 
-// JSONOutputValue decodes the json_output expectation into plain Go values
-// (map[string]any, []any, string, bool, numbers, nil).
+// JSONOutputValue returns the json_output expectation as plain Go values
+// (map[string]any, []any, string, bool, numbers, nil). The error return is
+// kept for caller compatibility; the value is already fully resolved by
+// parse time, so it is always nil.
 func (o *OutputBlock) JSONOutputValue() (any, error) {
-	var v any
-	if err := o.JSONOutput.Decode(&v); err != nil {
-		return nil, fmt.Errorf("decoding json_output: %w", err)
-	}
-	return v, nil
+	return o.JSONOutput.value, nil
 }
 
 // OutputCheck represents either:
@@ -433,48 +451,51 @@ type OutputCheck struct {
 	LineChecks map[int]string // line-specific patterns (0-indexed)
 }
 
-func (o *OutputCheck) UnmarshalYAML(node *yaml.Node) error {
-	// Try sequence first (list of patterns)
-	if node.Kind == yaml.SequenceNode {
-		var patterns []string
-		if err := node.Decode(&patterns); err != nil {
-			return err
+// UnmarshalYAML decodes the two accepted OutputCheck shapes. An explicit
+// null (e.g. `outputs.stdout: null`) is treated the same as an absent key,
+// matching Matrix and SnapshotCheck.
+func (o *OutputCheck) UnmarshalYAML(value any) error {
+	if value == nil {
+		return nil
+	}
+	if seq, ok := value.([]any); ok {
+		patterns := make([]string, len(seq))
+		for i, item := range seq {
+			s, ok := item.(string)
+			if !ok {
+				return fmt.Errorf("output check pattern %d must be a string", i)
+			}
+			patterns[i] = s
 		}
 		o.Patterns = patterns
 		return nil
 	}
-
-	// Try mapping (line-specific checks)
-	if node.Kind == yaml.MappingNode {
-		o.LineChecks = make(map[int]string)
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode := node.Content[i]
-			valueNode := node.Content[i+1]
-
-			// Parse key as int
-			lineNum, err := strconv.Atoi(keyNode.Value)
+	// A parsed *yamlfixed.Map can never hold a duplicate KEY (the parser
+	// rejects that before this ever runs) -- but two distinct keys can still
+	// name the same line number ("0" and "00"), which the parser has no way
+	// to know is a collision, so that check still belongs here.
+	if m, ok := value.(*yamlfixed.Map); ok {
+		o.LineChecks = make(map[int]string, m.Len())
+		for _, k := range m.Keys {
+			lineNum, err := strconv.Atoi(k)
 			if err != nil {
-				return fmt.Errorf("line check key must be an integer, got %q", keyNode.Value)
+				return fmt.Errorf("line check key must be an integer, got %q", k)
 			}
 			if lineNum < 0 {
 				return fmt.Errorf("line number must be >= 0, got %d", lineNum)
 			}
-			// Iterating the mapping node directly bypasses yaml.v3's own
-			// duplicate-key detection, so detect collisions here instead of
-			// silently keeping the last entry.
-			if _, exists := o.LineChecks[lineNum]; exists {
+			if _, dup := o.LineChecks[lineNum]; dup {
 				return fmt.Errorf("duplicate line number %d in output check", lineNum)
 			}
-
-			var pattern string
-			if err := valueNode.Decode(&pattern); err != nil {
-				return err
+			v, _ := m.Get(k)
+			pattern, ok := v.(string)
+			if !ok {
+				return fmt.Errorf("line check pattern for line %d must be a string", lineNum)
 			}
 			o.LineChecks[lineNum] = pattern
 		}
 		return nil
 	}
-
 	return fmt.Errorf("output check must be a list of patterns or map of line checks")
 }
 
@@ -496,38 +517,31 @@ type SnapshotCheck struct {
 // UnmarshalYAML decodes the two accepted snapshot shapes: a scalar boolean
 // (`snapshot: true` snapshots stdout; `snapshot: false` is the documented
 // toggle-off, identical to omitting the key) or a mapping of stream names
-// (stdout, stderr) to booleans, of which at least one must be true. The
-// mapping node is iterated directly, which bypasses yaml.v3's own
-// duplicate-key detection, so duplicates are detected here, mirroring
-// OutputCheck's line-map handling.
-func (s *SnapshotCheck) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-	case yaml.ScalarNode:
-		var enabled bool
-		if err := node.Decode(&enabled); err != nil {
-			return fmt.Errorf("snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)")
-		}
-		if enabled {
+// (stdout, stderr) to booleans, of which at least one must be true. An
+// explicit `snapshot: null` is treated the same as an absent key. A parsed
+// *yamlfixed.Map can never hold a duplicate key (the parser rejects that
+// before this ever runs), so no manual duplicate-key bookkeeping is needed.
+func (s *SnapshotCheck) UnmarshalYAML(value any) error {
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case bool:
+		if v {
 			*s = SnapshotCheck{Enabled: true, Stdout: true}
 		} else {
 			*s = SnapshotCheck{}
 		}
 		return nil
-	case yaml.MappingNode:
+	case *yamlfixed.Map:
 		check := SnapshotCheck{}
-		seen := make(map[string]bool, len(node.Content)/2)
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode, valNode := node.Content[i], node.Content[i+1]
-			key := keyNode.Value
+		for _, key := range v.Keys {
 			if key != "stdout" && key != "stderr" {
 				return fmt.Errorf("snapshot: unknown key %q (allowed: stdout, stderr)", key)
 			}
-			if seen[key] {
-				return fmt.Errorf("snapshot: %s declared more than once", key)
-			}
-			seen[key] = true
-			var enabled bool
-			if valNode.Kind != yaml.ScalarNode || valNode.Decode(&enabled) != nil {
+			val, _ := v.Get(key)
+			enabled, ok := val.(bool)
+			if !ok {
 				return fmt.Errorf("snapshot: %s must be a boolean", key)
 			}
 			if key == "stdout" {

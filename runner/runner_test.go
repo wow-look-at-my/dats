@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/dats/schema"
-	"gopkg.in/yaml.v3"
+	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 func TestNewRunner(t *testing.T) {
@@ -531,9 +531,9 @@ func TestRunTestJSONOutput(t *testing.T) {
 	test := parseTestYAML(t, `
 cmd: echo '{"count":2,"name":"dats"}'
 outputs:
-  json_output:
-    name: dats
-    count: 2
+	json_output:
+		name: dats
+		count: 2
 `)
 	result := r.RunTest(context.Background(), test, tmp, 0)
 	assert.True(t, result.Passed, "failures: %v", result.Failures)
@@ -541,9 +541,9 @@ outputs:
 	test2 := parseTestYAML(t, `
 cmd: echo '{"count":3,"name":"dats"}'
 outputs:
-  json_output:
-    name: dats
-    count: 2
+	json_output:
+		name: dats
+		count: 2
 `)
 	result2 := r.RunTest(context.Background(), test2, tmp, 1)
 	assert.False(t, result2.Passed)
@@ -554,8 +554,8 @@ outputs:
 	test3 := parseTestYAML(t, `
 cmd: echo not-json
 outputs:
-  json_output:
-    name: dats
+	json_output:
+		name: dats
 `)
 	result3 := r.RunTest(context.Background(), test3, tmp, 2)
 	assert.False(t, result3.Passed)
@@ -568,7 +568,7 @@ outputs:
 func parseTestYAML(t *testing.T, text string) *schema.Test {
 	t.Helper()
 	var test schema.Test
-	require.Nil(t, yaml.Unmarshal([]byte(text), &test))
+	require.Nil(t, yamlfixed.UnmarshalStrict([]byte(text), &test))
 	return &test
 }
 
@@ -592,13 +592,13 @@ func TestRunFile(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
 	content := `tests:
-  - desc: echo test
-    cmd: echo hello
-    outputs:
-      stdout:
-        - "hello"
-  - desc: exit test
-    cmd: exit 0
+	- desc: echo test
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
+	- desc: exit test
+	  cmd: exit 0
 `
 	require.Nil(t, os.WriteFile(datsFile, []byte(content), 0644))
 
@@ -614,7 +614,7 @@ func TestRunFileKeepTemp(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
 	content := `tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `
 	require.Nil(t, os.WriteFile(datsFile, []byte(content), 0644))
 
@@ -637,7 +637,7 @@ func TestRunFileCoverDir(t *testing.T) {
 	tmp := t.TempDir()
 	datsFile := filepath.Join(tmp, "test.dats")
 	content := `tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `
 	require.Nil(t, os.WriteFile(datsFile, []byte(content), 0644))
 

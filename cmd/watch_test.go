@@ -90,8 +90,8 @@ func TestComputeWatchDirs(t *testing.T) {
 	for _, dir := range []string{fileDir, snapDir, otherDir, sub, nested, hidden} {
 		require.Nil(t, os.MkdirAll(dir, 0o755))
 	}
-	require.Nil(t, os.WriteFile(resolved, []byte("tests:\n  - cmd: true\n"), 0o644))
-	require.Nil(t, os.WriteFile(second, []byte("tests:\n  - cmd: true\n"), 0o644))
+	require.Nil(t, os.WriteFile(resolved, []byte("tests:\n\t- cmd: true\n"), 0o644))
+	require.Nil(t, os.WriteFile(second, []byte("tests:\n\t- cmd: true\n"), 0o644))
 
 	// The duplicate resolved entry must collapse; the missing more.snapshots
 	// dir must not be registered; the hidden subdir must be skipped.
@@ -214,7 +214,7 @@ func TestWatchRealFsnotifyIntegration(t *testing.T) {
 	// generous for the same reason.
 	dir := t.TempDir()
 	file := filepath.Join(dir, "probe.dats")
-	require.Nil(t, os.WriteFile(file, []byte("tests:\n  - cmd: true\n"), 0o644))
+	require.Nil(t, os.WriteFile(file, []byte("tests:\n\t- cmd: true\n"), 0o644))
 
 	w := &watchSession{
 		args:   []string{file},
@@ -232,7 +232,7 @@ func TestWatchRealFsnotifyIntegration(t *testing.T) {
 	deadline := time.Now().Add(15 * time.Second)
 	var changed []string
 	for changed == nil && time.Now().Before(deadline) {
-		require.Nil(t, os.WriteFile(file, []byte("tests:\n  - cmd: echo changed\n"), 0o644))
+		require.Nil(t, os.WriteFile(file, []byte("tests:\n\t- cmd: echo changed\n"), 0o644))
 		select {
 		case changed = <-cycles:
 		case <-time.After(500 * time.Millisecond):

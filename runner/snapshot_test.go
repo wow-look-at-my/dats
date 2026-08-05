@@ -94,10 +94,10 @@ func runSnapshotFile(t *testing.T, path string, update bool) (*FileResult, strin
 func TestSnapshotMissingGoldenFails(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: echo hello
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: echo hello
+	  outputs:
+		snapshot: true
 `)
 	result, out := runSnapshotFile(t, path, false)
 	assert.Equal(t, 1, result.Failed)
@@ -130,10 +130,10 @@ func TestSnapshotMismatchFirstDifference(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: `+tc.cmd+`
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: `+tc.cmd+`
+	  outputs:
+		snapshot: true
 `)
 			goldenPath := filepath.Join(SnapshotDir(path), "001-snap.stdout.golden")
 			require.Nil(t, os.MkdirAll(SnapshotDir(path), 0o755))
@@ -153,10 +153,10 @@ func TestSnapshotUnreadableGoldenFails(t *testing.T) {
 	// directory) is a loud read error, not a silent mismatch.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: echo hello
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: echo hello
+	  outputs:
+		snapshot: true
 `)
 	goldenPath := filepath.Join(SnapshotDir(path), "001-snap.stdout.golden")
 	require.Nil(t, os.MkdirAll(goldenPath, 0o755))
@@ -171,10 +171,10 @@ tests:
 func TestSnapshotPassesWhenGoldenMatches(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: printf 'hello\nworld\n'
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: printf 'hello\nworld\n'
+	  outputs:
+		snapshot: true
 `)
 	require.Nil(t, os.MkdirAll(SnapshotDir(path), 0o755))
 	require.Nil(t, os.WriteFile(filepath.Join(SnapshotDir(path), "001-snap.stdout.golden"),
@@ -191,15 +191,15 @@ func TestSnapshotUpdateWritesAndLists(t *testing.T) {
 	// test (whose name -- and thus slug -- derives from the command).
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: printf 'out\n'; printf 'err\n' >&2
-    outputs:
-      snapshot:
-        stdout: true
-        stderr: true
-  - cmd: echo hi
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: printf 'out\n'; printf 'err\n' >&2
+	  outputs:
+		snapshot:
+			stdout: true
+			stderr: true
+	- cmd: echo hi
+	  outputs:
+		snapshot: true
 `)
 	result, out := runSnapshotFile(t, path, true)
 	assert.Equal(t, 2, result.Passed, "output:\n%s", out)
@@ -242,10 +242,10 @@ tests:
 func TestSnapshotUpdateRewritesChangedGolden(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: echo new-output
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: echo new-output
+	  outputs:
+		snapshot: true
 `)
 	goldenPath := filepath.Join(SnapshotDir(path), "001-snap.stdout.golden")
 	require.Nil(t, os.MkdirAll(SnapshotDir(path), 0o755))
@@ -266,10 +266,10 @@ func TestSnapshotUpdateSkipsFailingInstance(t *testing.T) {
 	// the stale golden untouched and unlisted.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: snap
-    cmd: echo new-output; exit 3
-    outputs:
-      snapshot: true
+	- desc: snap
+	  cmd: echo new-output; exit 3
+	  outputs:
+		snapshot: true
 `)
 	goldenPath := filepath.Join(SnapshotDir(path), "001-snap.stdout.golden")
 	require.Nil(t, os.MkdirAll(SnapshotDir(path), 0o755))
@@ -292,10 +292,10 @@ func TestSnapshotUpdateCreatesMissingGoldenOnly(t *testing.T) {
 	// Update mode without a preexisting directory creates it and the golden.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: fresh
-    cmd: echo brand-new
-    outputs:
-      snapshot: true
+	- desc: fresh
+	  cmd: echo brand-new
+	  outputs:
+		snapshot: true
 `)
 	_, statErr := os.Stat(SnapshotDir(path))
 	require.True(t, os.IsNotExist(statErr))
@@ -312,11 +312,11 @@ func TestSnapshotTimeoutSkipsSnapshot(t *testing.T) {
 	// timeout, exactly like every other assertion.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: slow
-    cmd: sleep 1
-    timeout: 50ms
-    outputs:
-      snapshot: true
+	- desc: slow
+	  cmd: sleep 1
+	  timeout: 50ms
+	  outputs:
+		snapshot: true
 `)
 	result, _ := runSnapshotFile(t, path, false)
 	assert.Equal(t, 1, result.Failed)
@@ -332,13 +332,13 @@ func TestSnapshotNormalizedPathsInGolden(t *testing.T) {
 	// temp directory differs.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: paths
-    cmd: echo "input at {inputs.data.txt} shared at {shared.cfg.txt}"
-    inputs:
-      files:
-        data.txt: content
-    outputs:
-      snapshot: true
+	- desc: paths
+	  cmd: echo "input at {inputs.data.txt} shared at {shared.cfg.txt}"
+	  inputs:
+		files:
+			data.txt: content
+	  outputs:
+		snapshot: true
 `)
 	result, _ := runSnapshotFile(t, path, true)
 	assert.Equal(t, 1, result.Passed)
@@ -357,10 +357,10 @@ tests:
 func TestSnapshotPruneStaleGoldens(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: kept
-    cmd: echo kept
-    outputs:
-      snapshot: true
+	- desc: kept
+	  cmd: echo kept
+	  outputs:
+		snapshot: true
 `)
 	dir := SnapshotDir(path)
 	require.Nil(t, os.MkdirAll(dir, 0o755))
@@ -386,8 +386,8 @@ func TestSnapshotPruneRemovesEmptyDir(t *testing.T) {
 	// When pruning removes the last entries, the directory itself goes too.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: no snapshots here
-    cmd: echo hi
+	- desc: no snapshots here
+	  cmd: echo hi
 `)
 	dir := SnapshotDir(path)
 	require.Nil(t, os.MkdirAll(dir, 0o755))
@@ -405,10 +405,10 @@ func TestSnapshotPruneSkippedOnSetupFailure(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup: exit 3
 tests:
-  - desc: never runs
-    cmd: echo hi
-    outputs:
-      snapshot: true
+	- desc: never runs
+	  cmd: echo hi
+	  outputs:
+		snapshot: true
 `)
 	dir := SnapshotDir(path)
 	stale := filepath.Join(dir, "999-stale.stdout.golden")
@@ -425,8 +425,8 @@ tests:
 func TestSnapshotPruneSkippedWithoutUpdate(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: plain
-    cmd: echo hi
+	- desc: plain
+	  cmd: echo hi
 `)
 	dir := SnapshotDir(path)
 	stale := filepath.Join(dir, "999-stale.stdout.golden")
@@ -445,12 +445,14 @@ func TestSnapshotMatrixInstanceGoldens(t *testing.T) {
 	// distinct slug -- and the compare run passes per instance.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: greet
-    cmd: echo "hi {matrix.who}"
-    matrix:
-      who: [alice, bob]
-    outputs:
-      snapshot: true
+	- desc: greet
+	  cmd: echo "hi {matrix.who}"
+	  matrix:
+		who:
+			- alice
+			- bob
+	  outputs:
+		snapshot: true
 `)
 	result, _ := runSnapshotFile(t, path, true)
 	assert.Equal(t, 2, result.Passed)
@@ -473,23 +475,25 @@ tests:
 // both streams, a matrix snapshot test, and a plain non-snapshot test.
 const snapshotCorpus = `
 tests:
-  - desc: both streams
-    cmd: printf 'out\n'; printf 'err\n' >&2
-    outputs:
-      snapshot:
-        stdout: true
-        stderr: true
-  - desc: greet
-    cmd: echo "hi {matrix.who}"
-    matrix:
-      who: [alice, bob]
-    outputs:
-      snapshot: true
-  - desc: plain
-    cmd: echo plain
-    outputs:
-      stdout:
-        - plain
+	- desc: both streams
+	  cmd: printf 'out\n'; printf 'err\n' >&2
+	  outputs:
+		snapshot:
+			stdout: true
+			stderr: true
+	- desc: greet
+	  cmd: echo "hi {matrix.who}"
+	  matrix:
+		who:
+			- alice
+			- bob
+	  outputs:
+		snapshot: true
+	- desc: plain
+	  cmd: echo plain
+	  outputs:
+		stdout:
+			- plain
 `
 
 func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {

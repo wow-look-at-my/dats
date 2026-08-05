@@ -11,14 +11,32 @@ setup:       # optional command(s) run once before the tests
 teardown:    # optional command(s) always run once after the tests
 sandbox:     # optional: narrow or opt out of the sandbox for this file
 tests:
-  - # test 1
-  - # test 2
+	- # test 1
+	- # test 2
 ```
 
 A file must contain exactly one YAML document. A second `---` document is a parse error
 (`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys
 anywhere in the file are also parse errors, so a misspelled field cannot silently disable its
 assertion.
+
+## YAML Dialect
+
+`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a
+general-purpose YAML library, and it enforces one convention plus two capability gaps every
+existing file must satisfy:
+
+- **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be
+  used for indentation; indent with tabs`); spaces are only valid to ALIGN past a tab, e.g. a
+  sequence item's own mapping keys continuing past its `- ` marker. The
+  [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>`
+  command reindents an existing space-indented file (it does not preserve comments).
+- **No anchors or aliases.** `&name`/`*name` are not a YAML feature here — they parse as literal
+  scalar text, not a reference. Duplicate a value instead of anchoring it.
+- **Scalars reformat to their canonical spelling**, not the source text: a float like `1.50`
+  round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see
+  [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an
+  error message.
 
 ## File-Level Setup, Teardown, and Shared Fixtures
 
@@ -28,18 +46,18 @@ Three optional top-level keys run commands and materialize fixture files once pe
 
 ```yaml
 shared:
-  files:
-    config.json: |
-      {"debug": true}
+	files:
+		config.json: |
+			{"debug": true}
 
 setup: cat {shared.config.json} > {shared.generated.txt}   # a single string...
 
 teardown:                                                  # ...or a list of strings
-  - first cleanup command
-  - second cleanup command
+	- first cleanup command
+	- second cleanup command
 
 tests:
-  - cmd: cat {shared.generated.txt}
+	- cmd: cat {shared.generated.txt}
 ```
 
 `setup` and `teardown` each accept either a single entry or a sequence of entries. An entry is
@@ -48,12 +66,12 @@ either a bare command string, or a mapping with `cmd` plus optional `env`, `stdi
 
 ```yaml
 setup:
-  - cmd: seed the database
-    env:
-      DB_URL: "{shared.db.sock}"
-    stdin_file: fixtures/seed.sql   # relative to this .dats file; raw, unexpanded content
-    timeout: 10s                    # must be > 0; defaults to 30s
-  - echo plain strings still work
+	- cmd: seed the database
+	  env:
+		DB_URL: "{shared.db.sock}"
+	  stdin_file: fixtures/seed.sql   # relative to this .dats file; raw, unexpanded content
+	  timeout: 10s                    # must be > 0; defaults to 30s
+	- echo plain strings still work
 ```
 
 `env` values expand `{shared.X}` only, same as `cmd`, and are added on top of the inherited
@@ -138,10 +156,10 @@ sandbox: false        # this file's commands need the host; run them there
 
 ```yaml
 sandbox:
-  enabled: true       # default; `false` is the same as `sandbox: false`
-  network: false      # default true; false runs commands with no network
-  image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
-                      # Ignored by bwrap and seatbelt, which use the host's own filesystem
+	enabled: true       # default; `false` is the same as `sandbox: false`
+	network: false      # default true; false runs commands with no network
+	image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
+		# Ignored by bwrap and seatbelt, which use the host's own filesystem
 ```
 
 There is no key for extra writable host paths, and that is deliberate. Somewhere to write is
@@ -190,15 +208,15 @@ other way to get a file into the writable temp directory: instead of content, it
 
 ```yaml
 shared:
-  copy:
-    fixture.bin: ../fixtures/fixture.bin   # once per file, into shared/
+	copy:
+		fixture.bin: ../fixtures/fixture.bin   # once per file, into shared/
 
 tests:
-  - desc: modifies a copied-in fixture
-    inputs:
-      copy:
-        config.json: fixtures/config.json  # once per test, into the test's inputs/
-    cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
+	- desc: modifies a copied-in fixture
+	  inputs:
+		copy:
+			config.json: fixtures/config.json  # once per test, into the test's inputs/
+	  cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
 ```
 
 Each is a map of **destination filename** (addressed the same way as a `files` entry —
@@ -223,12 +241,12 @@ the **source** path first, so a copy source can vary per instance:
 
 ```yaml
 tests:
-  - cmd: cat {inputs.variant.bin}
-    matrix:
-      variant: [a, b]
-    inputs:
-      copy:
-        variant.bin: fixtures/{matrix.variant}.bin
+	- cmd: cat {inputs.variant.bin}
+	  matrix:
+		variant: [a, b]
+	  inputs:
+		copy:
+			variant.bin: fixtures/{matrix.variant}.bin
 ```
 
 `shared.copy` runs at file scope, before any matrix instance exists, so `{matrix.X}` there is
@@ -279,35 +297,35 @@ Each test has these fields:
 
 ```yaml
 tests:
-  - cmd: echo hello
+	- cmd: echo hello
 ```
 
 ### Full Test
 
 ```yaml
 tests:
-  - desc: comprehensive example
-    exit: 0
-    timeout: 5s
-    cmd: process {inputs.data.txt} -o {outputs.result.txt}
-    inputs:
-      stdin: "optional stdin content"
-      files:
-        data.txt: "input file content"
-      env:
-        PROCESS_MODE: strict
-    outputs:
-      stdout:
-        - "pattern to match"
-      stderr:
-        - "expected stderr"
-      "!stdout":
-        - "must not appear"
-      files:
-        result.txt:
-          exists: true
-          match:
-            - "expected content"
+	- desc: comprehensive example
+	  exit: 0
+	  timeout: 5s
+	  cmd: process {inputs.data.txt} -o {outputs.result.txt}
+	  inputs:
+		stdin: "optional stdin content"
+		files:
+			data.txt: "input file content"
+		env:
+			PROCESS_MODE: strict
+	  outputs:
+		stdout:
+			- "pattern to match"
+		stderr:
+			- "expected stderr"
+		"!stdout":
+			- "must not appear"
+		files:
+			result.txt:
+				exists: true
+				match:
+					- "expected content"
 ```
 
 ---
@@ -319,14 +337,14 @@ expanding the test into one instance per **combination** of values (cartesian pr
 
 ```yaml
 tests:
-  - desc: greets
-    cmd: echo "{matrix.greeting}, {matrix.name}!"
-    matrix:
-      greeting: [hello, howdy]
-      name: [alice, bob]
-    outputs:
-      stdout:
-        - "{matrix.greeting}, {matrix.name}!"
+	- desc: greets
+	  cmd: echo "{matrix.greeting}, {matrix.name}!"
+	  matrix:
+		greeting: [hello, howdy]
+		name: [alice, bob]
+	  outputs:
+		stdout:
+			- "{matrix.greeting}, {matrix.name}!"
 ```
 
 This runs as 4 tests. **Every instance always runs** — dats has no test filtering or
@@ -395,10 +413,10 @@ normally expand:
 
 ```yaml
 tests:
-  - desc: reads the file the matrix names
-    cmd: cat {matrix.path}
-    matrix:
-      path: ["{shared.config.json}"]
+	- desc: reads the file the matrix names
+	  cmd: cat {matrix.path}
+	  matrix:
+		path: ["{shared.config.json}"]
 ```
 
 Substitution is a **single pass**: substituted text is never re-scanned, so a matrix
@@ -482,8 +500,8 @@ are addressed by absolute path through placeholders. A shell heredoc (`<<WORD`) 
 
 ```yaml
 inputs:
-  files:
-    data.txt: "content"
+	files:
+		data.txt: "content"
 cmd: cat {inputs.data.txt}
 ```
 
@@ -504,9 +522,9 @@ intermediate directories itself.
 ```yaml
 cmd: process -o {outputs.result.bin}
 outputs:
-  files:
-    result.bin:
-      exists: true
+	files:
+		result.bin:
+			exists: true
 ```
 
 ### Shared Placeholders
@@ -527,15 +545,15 @@ or program the command runs) can reference other input paths and output paths:
 
 ```yaml
 inputs:
-  files:
-    script.sh: 'cp {inputs.data.txt} {outputs.copy.txt}'
-    data.txt: "content"
+	files:
+		script.sh: 'cp {inputs.data.txt} {outputs.copy.txt}'
+		data.txt: "content"
 cmd: bash {inputs.script.sh}
 outputs:
-  files:
-    copy.txt:
-      match:
-        - "content"
+	files:
+		copy.txt:
+			match:
+				- "content"
 ```
 
 `{inputs.<name>}` for a name not declared under `inputs.files` is left untouched (in both the
@@ -551,9 +569,9 @@ Bare and quoted integers are equivalent; the 0-255 range is enforced either way:
 
 ```yaml
 exit: 0      # success
-exit: 1      # generic failure
-exit: 127    # command not found
-exit: "3"    # quoted integer, same as 3
+# exit: 1      # generic failure
+# exit: 127    # command not found
+# exit: "3"    # quoted integer, same as 3
 ```
 
 Floats are rejected at parse time (`exit: 1.5` is an error, as is an integral float like
@@ -569,7 +587,7 @@ runner could never resolve it):
 
 ```yaml
 exit: EXIT_SUCCESS
-exit: EXIT_FAILURE
+# exit: EXIT_FAILURE
 ```
 
 ### Signal Deaths
@@ -591,9 +609,9 @@ field means no timeout.
 
 ```yaml
 timeout: 5       # 5 seconds
-timeout: "5"     # quoted integer, also 5 seconds
-timeout: 500ms   # 500 milliseconds
-timeout: 1m30s   # 90 seconds
+# timeout: "5"     # quoted integer, also 5 seconds
+# timeout: 500ms   # 500 milliseconds
+# timeout: 1m30s   # 90 seconds
 ```
 
 Floats are rejected at parse time — `timeout: 0.9` is an error, not 0 seconds; write
@@ -616,16 +634,16 @@ captured.
 
 ```yaml
 inputs:
-  stdin: "content piped to stdin"
-  files:
-    filename.txt: "file content"
-    another.txt: |
-      multi-line
-      content
-  copy:
-    real.bin: fixtures/real.bin   # copies an existing host file in, writable
-  env:
-    MY_VAR: "value"
+	stdin: "content piped to stdin"
+	files:
+		filename.txt: "file content"
+		another.txt: |
+			multi-line
+			content
+	copy:
+		real.bin: fixtures/real.bin   # copies an existing host file in, writable
+	env:
+		MY_VAR: "value"
 ```
 
 See [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`.
@@ -636,7 +654,7 @@ Content piped to the command's standard input.
 
 ```yaml
 inputs:
-  stdin: "hello world"
+	stdin: "hello world"
 cmd: grep hello
 ```
 
@@ -654,10 +672,10 @@ fixture-setup time. The same rule applies to the names under `outputs.files` and
 
 ```yaml
 inputs:
-  files:
-    config.json: |
-      {"key": "value"}
-    data.csv: "a,b,c"
+	files:
+		config.json: |
+			{"key": "value"}
+		data.csv: "a,b,c"
 ```
 
 ### `env`
@@ -669,11 +687,11 @@ as the command, so a variable can carry a fixture's absolute path:
 
 ```yaml
 inputs:
-  files:
-    cfg.json: '{"mode": "test"}'
-  env:
-    MY_VAR: hello
-    CONFIG_PATH: "{inputs.cfg.json}"
+	files:
+		cfg.json: '{"mode": "test"}'
+	env:
+		MY_VAR: hello
+		CONFIG_PATH: "{inputs.cfg.json}"
 cmd: 'echo "$MY_VAR"; cat "$CONFIG_PATH"'
 ```
 
@@ -686,14 +704,14 @@ over a test's own `GOCOVERDIR` entry.
 
 ```yaml
 outputs:
-  stdout:        # patterns that MUST appear (or line-number map)
-  stderr:        # patterns that MUST appear (or line-number map)
-  "!stdout":     # patterns that must NOT appear (or line-number map)
-  "!stderr":     # patterns that must NOT appear (or line-number map)
-  files:         # output file checks
-  "!files":      # negated output file checks
-  snapshot:      # golden-file (snapshot) assertion on stdout/stderr
-  json_output:   # expected JSON value of the whole stdout
+	stdout:        # patterns that MUST appear (or line-number map)
+	stderr:        # patterns that MUST appear (or line-number map)
+	"!stdout":     # patterns that must NOT appear (or line-number map)
+	"!stderr":     # patterns that must NOT appear (or line-number map)
+	files:         # output file checks
+	"!files":      # negated output file checks
+	snapshot:      # golden-file (snapshot) assertion on stdout/stderr
+	json_output:   # expected JSON value of the whole stdout
 ```
 
 ### Pattern Lists
@@ -703,9 +721,9 @@ not regexes — metacharacters have no special meaning:
 
 ```yaml
 outputs:
-  stdout:
-    - "expected text"
-    - "another pattern"
+	stdout:
+		- "expected text"
+		- "another pattern"
 ```
 
 ### Line-Specific Checks
@@ -716,10 +734,10 @@ have fails the test (empty output has zero lines):
 
 ```yaml
 outputs:
-  stdout:
-    0: "^first line$"
-    2: "^third line$"
-    5: "pattern on line 6"
+	stdout:
+		0: "^first line$"
+		2: "^third line$"
+		5: "pattern on line 6"
 ```
 
 Line keys must be unique, non-negative integers: a duplicate line number (including different
@@ -734,11 +752,11 @@ format or the other.
 
 ```yaml
 outputs:
-  "!stdout":
-    - "error"
-    - "failed"
-  "!stderr":
-    - "warning"
+	"!stdout":
+		- "error"
+		- "failed"
+	"!stderr":
+		- "warning"
 ```
 
 Like the positive checks, negated checks also accept the line-specific map form. Each regex
@@ -747,9 +765,9 @@ exist passes — there is nothing there to match:
 
 ```yaml
 outputs:
-  "!stdout":
-    0: "error"        # line 0 must not contain "error"
-    2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
+	"!stdout":
+		0: "error"        # line 0 must not contain "error"
+		2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
 ```
 
 ---
@@ -760,14 +778,14 @@ Validate output files created by the command:
 
 ```yaml
 outputs:
-  files:
-    output.bin:
-      exists: true
-      match:
-        - "expected pattern"
-        - "another pattern"
-      notMatch:
-        - "should not contain"
+	files:
+		output.bin:
+			exists: true
+			match:
+				- "expected pattern"
+				- "another pattern"
+			notMatch:
+				- "should not contain"
 ```
 
 File names must be relative paths that stay inside the test directory (`..` and absolute
@@ -790,11 +808,11 @@ than passing vacuously. Under `files` the file must exist; under `!files` it mus
 
 ```yaml
 outputs:
-  files:
-    out.txt: {}       # out.txt must exist
-    log.txt:          # null value, same meaning: log.txt must exist
-  "!files":
-    stray.txt: {}     # stray.txt must NOT exist
+	files:
+		out.txt: {}       # out.txt must exist
+		log.txt:          # null value, same meaning: log.txt must exist
+	"!files":
+		stray.txt: {}     # stray.txt must NOT exist
 ```
 
 ### Negated File Checks (`!files`)
@@ -813,12 +831,12 @@ The common use is asserting that a file must NOT exist or must NOT contain somet
 
 ```yaml
 outputs:
-  "!files":
-    error.log:
-      exists: true        # error.log must NOT exist
-    report.txt:
-      match:
-        - "FAILED"        # report.txt must NOT contain FAILED
+	"!files":
+		error.log:
+			exists: true        # error.log must NOT exist
+		report.txt:
+			match:
+				- "FAILED"        # report.txt must NOT contain FAILED
 ```
 
 ---
@@ -830,13 +848,13 @@ value:
 
 ```yaml
 tests:
-  - desc: emits the expected JSON document
-    cmd: mytool --json
-    outputs:
-      json_output:
-        name: dats
-        count: 2
-        tags: [a, b]
+	- desc: emits the expected JSON document
+	  cmd: mytool --json
+	  outputs:
+		json_output:
+			name: dats
+			count: 2
+			tags: [a, b]
 ```
 
 Comparison rules:
@@ -864,17 +882,17 @@ pin an entire output verbatim without spelling it out in YAML. Two forms:
 
 ```yaml
 tests:
-  - desc: renders the report
-    cmd: mytool report
-    outputs:
-      snapshot: true          # snapshot stdout (boolean shorthand)
+	- desc: renders the report
+	  cmd: mytool report
+	  outputs:
+		snapshot: true          # snapshot stdout (boolean shorthand)
 
-  - desc: split streams
-    cmd: mytool report --warnings
-    outputs:
-      snapshot:               # per-stream form: enable stdout and/or stderr
-        stdout: true
-        stderr: true
+	- desc: split streams
+	  cmd: mytool report --warnings
+	  outputs:
+		snapshot:               # per-stream form: enable stdout and/or stderr
+			stdout: true
+			stderr: true
 ```
 
 `snapshot: false` is the documented toggle-off — identical to omitting the key, handy for
@@ -977,10 +995,10 @@ See [CLI Usage](cli.md#updating-snapshots---update) for a worked example.
 
 ```yaml
 shared:                    # optional file-level fixtures
-  files:
-    <name>: string         # filename: content ({shared.X} placeholders expanded)
-  copy:
-    <name>: string         # filename: host source path (relative to the .dats file)
+	files:
+		<name>: string         # filename: content ({shared.X} placeholders expanded)
+	copy:
+		<name>: string         # filename: host source path (relative to the .dats file)
 setup: hookCommand|[]      # optional; command(s) run once before the tests
 teardown: hookCommand|[]   # optional; command(s) always run once after the tests
 # hookCommand = string, or:
@@ -989,35 +1007,35 @@ teardown: hookCommand|[]   # optional; command(s) always run once after the test
 #   stdin_file: string      # optional; host path, relative to the .dats file
 #   timeout: int|string     # optional; must be > 0, defaults to 30s
 tests:
-  - desc: string           # optional, defaults to cmd value
-    exit: int|string       # optional, defaults to 0
-    timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
-    cmd: string            # required; a shell heredoc (<<WORD) or herestring (<<<) is rejected at parse time
-    matrix:                # optional; expands the test into one instance per combination
-      <name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
-    inputs:
-      stdin: string        # optional
-      files:               # optional
-        <name>: string     # filename: content
-      copy:                # optional
-        <name>: string     # filename: host source path (relative to the .dats file)
-      env:                 # optional
-        <name>: string     # env var: value (placeholders expanded)
-    outputs:
-      stdout: []|{}        # pattern list or line checks
-      stderr: []|{}        # pattern list or line checks
-      "!stdout": []|{}     # negated patterns
-      "!stderr": []|{}     # negated patterns
-      files:
-        <name>:            # empty check ({}/null) = must exist
-          exists: bool
-          match: []
-          notMatch: []
-      "!files":
-        <name>:            # empty check ({}/null) = must NOT exist
-          exists: bool
-          match: []
-          notMatch: []
-      snapshot: bool|{}    # golden-file assertion: true = stdout, or {stdout: bool, stderr: bool}
-      json_output: any     # expected JSON value of the whole stdout
+	- desc: string           # optional, defaults to cmd value
+	  exit: int|string       # optional, defaults to 0
+	  timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
+	  cmd: string            # required; a shell heredoc (<<WORD) or herestring (<<<) is rejected at parse time
+	  matrix:                # optional; expands the test into one instance per combination
+		<name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
+	  inputs:
+		stdin: string        # optional
+		files:               # optional
+			<name>: string     # filename: content
+		copy:                # optional
+			<name>: string     # filename: host source path (relative to the .dats file)
+		env:                 # optional
+			<name>: string     # env var: value (placeholders expanded)
+	  outputs:
+		stdout: "[]|{}"        # pattern list or line checks
+		stderr: "[]|{}"        # pattern list or line checks
+		"!stdout": "[]|{}"     # negated patterns
+		"!stderr": "[]|{}"     # negated patterns
+		files:
+			<name>:            # empty check ({}/null) = must exist
+				exists: bool
+				match: []
+				notMatch: []
+		"!files":
+			<name>:            # empty check ({}/null) = must NOT exist
+				exists: bool
+				match: []
+				notMatch: []
+		snapshot: bool|{}    # golden-file assertion: true = stdout, or {stdout: bool, stderr: bool}
+		json_output: any     # expected JSON value of the whole stdout
 ```

@@ -14,11 +14,15 @@ import (
 func TestExpandMatrix_CartesianOrderLastFastest(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - desc: greets
-    cmd: echo "{matrix.greeting}, {matrix.name}!"
-    matrix:
-      greeting: [hello, howdy]
-      name: [alice, bob]
+	- desc: greets
+	  cmd: echo "{matrix.greeting}, {matrix.name}!"
+	  matrix:
+		greeting:
+			- hello
+			- howdy
+		name:
+			- alice
+			- bob
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -50,10 +54,15 @@ tests:
 	// A 2x3 matrix expands to 6 instances, last variable fastest.
 	tf, err = ParseFile(writeTempDats(t, `
 tests:
-  - cmd: echo "{matrix.a}{matrix.b}"
-    matrix:
-      a: [1, 2]
-      b: [x, y, z]
+	- cmd: echo "{matrix.a}{matrix.b}"
+	  matrix:
+		a:
+			- 1
+			- 2
+		b:
+			- x
+			- y
+			- z
 `))
 	require.Nil(t, err)
 	instances = ExpandMatrix(&tf.Tests[0])
@@ -71,14 +80,14 @@ tests:
 func TestExpandMatrix_NoMatrixSingleInstance(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - desc: plain
-    cmd: echo hi
-    inputs:
-      files:
-        data.txt: content
-    outputs:
-      stdout:
-        - "hi"
+	- desc: plain
+	  cmd: echo hi
+	  inputs:
+		files:
+			data.txt: content
+	  outputs:
+		stdout:
+			- hi
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -91,9 +100,10 @@ tests:
 func TestExpandMatrix_SingleValueStillLabeled(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - cmd: echo "{matrix.k}"
-    matrix:
-      k: [v]
+	- cmd: echo "{matrix.k}"
+	  matrix:
+		k:
+			- v
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -107,38 +117,39 @@ func TestExpandMatrix_SubstitutionScope(t *testing.T) {
 	// must reach them all -- and leave fixture file names literal.
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - desc: "desc {matrix.a}"
-    cmd: echo "cmd {matrix.a}"
-    matrix:
-      a: [v1]
-    inputs:
-      stdin: "stdin {matrix.a}"
-      files:
-        data.txt: "content {matrix.a}"
-        "name-{matrix.a}.txt": "literal name"
-      env:
-        VAR: "env {matrix.a}"
-    outputs:
-      stdout:
-        - "pattern {matrix.a}"
-      stderr:
-        0: "line {matrix.a}"
-      "!stdout":
-        - "neg {matrix.a}"
-      "!stderr":
-        1: "negline {matrix.a}"
-      files:
-        out.txt:
-          match:
-            - "match {matrix.a}"
-          notMatch:
-            - "notmatch {matrix.a}"
-      "!files":
-        stray.txt:
-          match:
-            - "straymatch {matrix.a}"
-      json_output:
-        "key {matrix.a}": "value {matrix.a}"
+	- desc: desc {matrix.a}
+	  cmd: echo "cmd {matrix.a}"
+	  matrix:
+		a:
+			- v1
+	  inputs:
+		stdin: stdin {matrix.a}
+		files:
+			data.txt: content {matrix.a}
+			name-{matrix.a}.txt: literal name
+		env:
+			VAR: env {matrix.a}
+	  outputs:
+		stdout:
+			- pattern {matrix.a}
+		stderr:
+			"0": line {matrix.a}
+		"!stdout":
+			- neg {matrix.a}
+		"!stderr":
+			"1": negline {matrix.a}
+		files:
+			out.txt:
+				match:
+					- match {matrix.a}
+				notMatch:
+					- notmatch {matrix.a}
+		"!files":
+			stray.txt:
+				match:
+					- straymatch {matrix.a}
+		json_output:
+			key {matrix.a}: value {matrix.a}
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -170,14 +181,15 @@ tests:
 func TestExpandMatrix_JSONOutputNonStringScalarsUntouched(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - cmd: echo hi
-    matrix:
-      n: [x]
-    outputs:
-      json_output:
-        count: 3
-        flag: true
-        name: "{matrix.n}"
+	- cmd: echo hi
+	  matrix:
+		n:
+			- x
+	  outputs:
+		json_output:
+			count: 3
+			flag: true
+			name: "{matrix.n}"
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -192,10 +204,12 @@ func TestExpandMatrix_SubstitutedTextNotRescanned(t *testing.T) {
 	// {matrix.b} lands in the command verbatim, even though b is declared.
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - cmd: echo "{matrix.a} {matrix.b}"
-    matrix:
-      a: ["{matrix.b}"]
-      b: [real]
+	- cmd: echo "{matrix.a} {matrix.b}"
+	  matrix:
+		a:
+			- "{matrix.b}"
+		b:
+			- real
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])
@@ -207,20 +221,22 @@ func TestExpandMatrix_DeepCopyIsolation(t *testing.T) {
 	exists := true
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - cmd: echo "{matrix.x}"
-    matrix:
-      x: [a, b]
-    inputs:
-      files:
-        data.txt: "payload {matrix.x}"
-    outputs:
-      stdout:
-        - "out {matrix.x}"
-      files:
-        out.txt:
-          exists: true
-          match:
-            - "m {matrix.x}"
+	- cmd: echo "{matrix.x}"
+	  matrix:
+		x:
+			- a
+			- b
+	  inputs:
+		files:
+			data.txt: payload {matrix.x}
+	  outputs:
+		stdout:
+			- out {matrix.x}
+		files:
+			out.txt:
+				exists: true
+				match:
+					- m {matrix.x}
 `))
 	require.Nil(t, err)
 	source := &tf.Tests[0]
@@ -248,38 +264,6 @@ tests:
 	assert.Equal(t, Matrix{{Name: "x", Values: []string{"a", "b"}}}, source.Matrix)
 }
 
-func TestExpandMatrix_JSONOutputAliasSubstitutedPerInstance(t *testing.T) {
-	// A YAML alias inside json_output decodes its anchor target; the copy
-	// must remap the alias into the instance's own tree so the aliased
-	// occurrence sees that instance's substitution -- never the source
-	// test's (or a sibling's) unsubstituted node.
-	tf, err := ParseFile(writeTempDats(t, `
-tests:
-  - cmd: echo hi
-    matrix:
-      i: [7, 8]
-    outputs:
-      json_output: [&a "v{matrix.i}", *a]
-`))
-	require.Nil(t, err)
-	source := &tf.Tests[0]
-	instances := ExpandMatrix(source)
-	require.Len(t, instances, 2)
-
-	first, err := instances[0].Test.Outputs.JSONOutputValue()
-	require.Nil(t, err)
-	assert.Equal(t, []any{"v7", "v7"}, first)
-
-	second, err := instances[1].Test.Outputs.JSONOutputValue()
-	require.Nil(t, err)
-	assert.Equal(t, []any{"v8", "v8"}, second)
-
-	// The source test's tree is untouched by either instance's substitution.
-	original, err := source.Outputs.JSONOutputValue()
-	require.Nil(t, err)
-	assert.Equal(t, []any{"v{matrix.i}", "v{matrix.i}"}, original)
-}
-
 func TestExpandMatrix_SnapshotIntactOnEveryInstance(t *testing.T) {
 	// The snapshot block holds no strings, so it is outside the matrix
 	// substitution scope; expansion must carry it verbatim onto every
@@ -287,14 +271,16 @@ func TestExpandMatrix_SnapshotIntactOnEveryInstance(t *testing.T) {
 	// included).
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
-  - desc: snap {matrix.who}
-    cmd: echo {matrix.who}
-    matrix:
-      who: [alice, bob]
-    outputs:
-      snapshot:
-        stdout: true
-        stderr: true
+	- desc: snap {matrix.who}
+	  cmd: echo {matrix.who}
+	  matrix:
+		who:
+			- alice
+			- bob
+	  outputs:
+		snapshot:
+			stdout: true
+			stderr: true
 `))
 	require.Nil(t, err)
 	instances := ExpandMatrix(&tf.Tests[0])

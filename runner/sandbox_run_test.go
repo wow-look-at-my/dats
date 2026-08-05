@@ -23,8 +23,8 @@ func TestRunFileWithoutUsableBackendFails(t *testing.T) {
 	// rather than running its commands on the host.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: never runs
-    cmd: echo hi
+	- desc: never runs
+	  cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -45,18 +45,18 @@ func TestRunFileSandboxBlocksHostWrites(t *testing.T) {
 
 	path := writeRunnerDats(t, `
 tests:
-  - desc: host filesystem is read-only
-    cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
-    outputs:
-      stdout:
-        - BLOCKED
-  - desc: the test's own outputs directory is writable
-    cmd: echo produced > {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          match:
-            - produced
+	- desc: host filesystem is read-only
+	  cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  outputs:
+		stdout:
+			- BLOCKED
+	- desc: the test's own outputs directory is writable
+	  cmd: echo produced > {outputs.result.txt}
+	  outputs:
+		files:
+			result.txt:
+				match:
+					- produced
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -79,8 +79,8 @@ func TestRunFileSandboxHooksAreSandboxedToo(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup: echo pwned > `+probe+`
 tests:
-  - desc: fails with the file's setup
-    cmd: echo hi
+	- desc: fails with the file's setup
+	  cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -101,8 +101,8 @@ func TestRunFileSandboxFileOptOutRunsOnHost(t *testing.T) {
 	path := writeRunnerDats(t, `
 sandbox: false
 tests:
-  - desc: writes to the host
-    cmd: echo produced > `+probe+`
+	- desc: writes to the host
+	  cmd: echo produced > `+probe+`
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -121,13 +121,13 @@ func TestRunFileSandboxNetworkOff(t *testing.T) {
 	// the network namespace's own view: loopback and nothing else.
 	path := writeRunnerDats(t, `
 sandbox:
-  network: false
+	network: false
 tests:
-  - desc: only loopback exists
-    cmd: 'cut -d: -f1 /proc/net/dev | tail -n +3 | tr -d " " | sort | tr "\n" ","'
-    outputs:
-      stdout:
-        0: "^lo,$"
+	- desc: only loopback exists
+	  cmd: "cut -d: -f1 /proc/net/dev | tail -n +3 | tr -d \" \" | sort | tr \"\\n\" \",\""
+	  outputs:
+		stdout:
+			"0": ^lo,$
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -152,26 +152,26 @@ func TestRunFileSandboxScratchGoesInTheTempDir(t *testing.T) {
 
 	path := writeRunnerDats(t, `
 tests:
-  - desc: scratch goes in the private tmpfs
-    cmd: |
-      d="$(mktemp -d)"
-      echo produced > "$d/scratch.txt"
-      cat "$d/scratch.txt"
-    outputs:
-      stdout:
-        - produced
-  - desc: ...or in the test's own outputs directory
-    cmd: echo produced > {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          match:
-            - produced
-  - desc: an undeclared host path is not
-    cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
-    outputs:
-      stdout:
-        - BLOCKED
+	- desc: scratch goes in the private tmpfs
+	  cmd: |
+			d="$(mktemp -d)"
+			echo produced > "$d/scratch.txt"
+			cat "$d/scratch.txt"
+	  outputs:
+		stdout:
+			- produced
+	- desc: ...or in the test's own outputs directory
+	  cmd: echo produced > {outputs.result.txt}
+	  outputs:
+		files:
+			result.txt:
+				match:
+					- produced
+	- desc: an undeclared host path is not
+	  cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  outputs:
+		stdout:
+			- BLOCKED
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -191,9 +191,9 @@ func TestRunFileSandboxTimeoutStillTimesOut(t *testing.T) {
 	requireBwrap(t)
 	path := writeRunnerDats(t, `
 tests:
-  - desc: sleeps past its deadline
-    cmd: sleep 30
-    timeout: 500ms
+	- desc: sleeps past its deadline
+	  cmd: sleep 30
+	  timeout: 500ms
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -212,24 +212,24 @@ func TestRunFileSandboxInputsEnvAndStdinStillWork(t *testing.T) {
 	requireBwrap(t)
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    shared.txt: shared-content
+	files:
+		shared.txt: shared-content
 setup: cp {shared.shared.txt} {shared.copied.txt}
 tests:
-  - desc: fixtures, env, stdin and shared files
-    cmd: 'cat {inputs.in.txt} {shared.copied.txt}; echo "$MY_VAR"; cat'
-    inputs:
-      stdin: from-stdin
-      files:
-        in.txt: input-content
-      env:
-        MY_VAR: from-env
-    outputs:
-      stdout:
-        - input-content
-        - shared-content
-        - from-env
-        - from-stdin
+	- desc: fixtures, env, stdin and shared files
+	  cmd: cat {inputs.in.txt} {shared.copied.txt}; echo "$MY_VAR"; cat
+	  inputs:
+		stdin: from-stdin
+		files:
+			in.txt: input-content
+		env:
+			MY_VAR: from-env
+	  outputs:
+		stdout:
+			- input-content
+			- shared-content
+			- from-env
+			- from-stdin
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -246,20 +246,21 @@ func TestRunFilesParallelSandboxed(t *testing.T) {
 	requireBwrap(t)
 	first := writeRunnerDats(t, `
 tests:
-  - desc: read-only host
-    cmd: 'echo x > /etc/dats-parallel-probe 2>/dev/null && echo WROTE || echo BLOCKED'
-    outputs:
-      stdout:
-        - BLOCKED
+	- desc: read-only host
+	  cmd: echo x > /etc/dats-parallel-probe 2>/dev/null && echo WROTE || echo BLOCKED
+	  outputs:
+		stdout:
+			- BLOCKED
 `)
 	second := filepath.Join(t.TempDir(), "second.dats")
 	require.Nil(t, os.WriteFile(second, []byte(`
 tests:
-  - desc: writable outputs
-    cmd: echo produced > {outputs.out.txt}
-    outputs:
-      files:
-        out.txt: {}
+	- desc: writable outputs
+	  cmd: echo produced > {outputs.out.txt}
+	  outputs:
+		files:
+			out.txt:
+				{}
 `), 0644))
 
 	var buf bytes.Buffer

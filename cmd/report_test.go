@@ -39,50 +39,52 @@ func writeReportCorpus(t *testing.T) (dir string, files []string) {
 	dir = t.TempDir()
 	corpus := []struct{ name, content string }{
 		{"a-pass.dats", `tests:
-  - desc: greets {matrix.who}
-    cmd: echo "hi {matrix.who}"
-    matrix:
-      who: [alice, bob]
-    outputs:
-      stdout:
-        - "hi {matrix.who}"
+	- desc: greets {matrix.who}
+	  cmd: echo "hi {matrix.who}"
+	  matrix:
+		who:
+			- alice
+			- bob
+	  outputs:
+		stdout:
+			- hi {matrix.who}
 `},
 		{"b-fail.dats", `tests:
-  - desc: multi-assert failure
-    cmd: printf 'real-out'; printf 'real-err' >&2; exit 3
-    outputs:
-      stdout:
-        - "wanted-one"
-        - "wanted-two"
-  - desc: still passes
-    cmd: echo fine
-    outputs:
-      stdout:
-        - "fine"
-  - desc: wrong file content
-    cmd: printf data > {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          match:
-            - "different"
+	- desc: multi-assert failure
+	  cmd: printf 'real-out'; printf 'real-err' >&2; exit 3
+	  outputs:
+		stdout:
+			- wanted-one
+			- wanted-two
+	- desc: still passes
+	  cmd: echo fine
+	  outputs:
+		stdout:
+			- fine
+	- desc: wrong file content
+	  cmd: printf data > {outputs.result.txt}
+	  outputs:
+		files:
+			result.txt:
+				match:
+					- different
 `},
 		{"c-setupfail.dats", `setup: echo setup-out; echo setup-err >&2; exit 7
 tests:
-  - desc: never runs
-    cmd: echo hi
-  - desc: also never runs
-    cmd: echo hi2
+	- desc: never runs
+	  cmd: echo hi
+	- desc: also never runs
+	  cmd: echo hi2
 `},
 		{"d-teardownfail.dats", `teardown:
-  - echo cleanup-out; exit 4
-  - echo cleanup-err >&2; exit 5
+	- echo cleanup-out; exit 4
+	- echo cleanup-err >&2; exit 5
 tests:
-  - desc: passes fine
-    cmd: echo ok
-    outputs:
-      stdout:
-        - "ok"
+	- desc: passes fine
+	  cmd: echo ok
+	  outputs:
+		stdout:
+			- ok
 `},
 	}
 	for _, f := range corpus {
@@ -181,7 +183,7 @@ func TestReportsSerialParallelEquivalence(t *testing.T) {
 }
 
 func TestReportsCreateParentDirectories(t *testing.T) {
-	datsFile := writeDats(t, "ok.dats", "tests:\n  - cmd: echo hi\n")
+	datsFile := writeDats(t, "ok.dats", "tests:\n\t- cmd: echo hi\n")
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "deep", "junit", "report.xml")
 	jsonPath := filepath.Join(outDir, "deeper", "json", "report.json")
@@ -199,7 +201,7 @@ func TestReportsCreateParentDirectories(t *testing.T) {
 // are written especially when tests fail and the process is about to exit 1,
 // with ok=false and the failure counted.
 func TestReportsWrittenWhenRunFails(t *testing.T) {
-	datsFile := writeDats(t, "fail.dats", "tests:\n  - desc: fails\n    cmd: exit 9\n")
+	datsFile := writeDats(t, "fail.dats", "tests:\n\t- desc: fails\n\t  cmd: exit 9\n")
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
@@ -228,7 +230,7 @@ func TestReportsWrittenWhenRunFails(t *testing.T) {
 // errTestsFailed sentinel) and failing the run even though every test
 // passed. The other report is still attempted.
 func TestReportsUnwritablePathFailsTheRun(t *testing.T) {
-	datsFile := writeDats(t, "ok.dats", "tests:\n  - cmd: echo hi\n")
+	datsFile := writeDats(t, "ok.dats", "tests:\n\t- cmd: echo hi\n")
 	outDir := t.TempDir()
 	blocker := filepath.Join(outDir, "blocker")
 	require.Nil(t, os.WriteFile(blocker, []byte("a file, not a directory"), 0644))
@@ -253,8 +255,8 @@ func TestReportsUnwritablePathFailsTheRun(t *testing.T) {
 // bytes round-trip).
 func TestReportsControlCharsStayParseable(t *testing.T) {
 	datsFile := writeDats(t, "ctrl.dats", `tests:
-  - desc: emits control bytes
-    cmd: printf 'esc \033[31m nul \000 end'; exit 1
+	- desc: emits control bytes
+	  cmd: printf 'esc \033[31m nul \000 end'; exit 1
 `)
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
@@ -297,7 +299,7 @@ func TestSyntaxUnaffectedByReportFlags(t *testing.T) {
 		assert.Equal(t, "", f.NoOptDefVal, "%s must require a value", name)
 	}
 
-	datsFile := writeDats(t, "ok.dats", "tests:\n  - cmd: echo hi\n")
+	datsFile := writeDats(t, "ok.dats", "tests:\n\t- cmd: echo hi\n")
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")

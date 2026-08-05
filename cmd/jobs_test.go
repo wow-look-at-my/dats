@@ -136,43 +136,50 @@ func TestRunTestsJobsMultiFileOutputMatchesSerial(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
 		"a.dats": `shared:
-  files:
-    config.txt: from-shared
+	files:
+		config.txt: from-shared
 setup: echo prepared > {shared.gen.txt}
 teardown: echo done
 tests:
-  - desc: greets {matrix.who} at {matrix.volume}
-    cmd: echo "{matrix.who}-{matrix.volume}"
-    matrix:
-      who: [alice, bob]
-      volume: [quiet, loud]
-    outputs:
-      stdout:
-        - "{matrix.who}-{matrix.volume}"
-  - desc: reads shared
-    cmd: cat {shared.config.txt} {shared.gen.txt}
-    outputs:
-      stdout:
-        - "from-shared"
-        - "prepared"
+	- desc: greets {matrix.who} at {matrix.volume}
+	  cmd: echo "{matrix.who}-{matrix.volume}"
+	  matrix:
+		who:
+			- alice
+			- bob
+		volume:
+			- quiet
+			- loud
+	  outputs:
+		stdout:
+			- "{matrix.who}-{matrix.volume}"
+	- desc: reads shared
+	  cmd: cat {shared.config.txt} {shared.gen.txt}
+	  outputs:
+		stdout:
+			- from-shared
+			- prepared
 `,
 		"b.dats": `tests:
-  - desc: deliberately fails
-    cmd: echo wrong
-    outputs:
-      stdout:
-        - "expected-text"
-  - desc: passes
-    cmd: echo fine
+	- desc: deliberately fails
+	  cmd: echo wrong
+	  outputs:
+		stdout:
+			- expected-text
+	- desc: passes
+	  cmd: echo fine
 `,
 		"c.dats": `tests:
-  - desc: instance {matrix.i}
-    cmd: echo "i={matrix.i}"
-    matrix:
-      i: [1, 2, 3]
-    outputs:
-      stdout:
-        - "i={matrix.i}"
+	- desc: instance {matrix.i}
+	  cmd: echo "i={matrix.i}"
+	  matrix:
+		i:
+			- 1
+			- 2
+			- 3
+	  outputs:
+		stdout:
+			- i={matrix.i}
 `,
 	}
 	var paths []string
