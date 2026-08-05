@@ -101,8 +101,8 @@ func ParseFile(path string) (*TestFile, error) {
 		if test.Cmd == "" {
 			return nil, fmt.Errorf("test %d: missing required field 'cmd'", i+1)
 		}
-		if containsHeredoc(test.Cmd) {
-			return nil, fmt.Errorf("test %d: cmd: %s", i+1, heredocBanMessage)
+		if msg := bannedRedirect(test.Cmd); msg != "" {
+			return nil, fmt.Errorf("test %d: cmd: %s", i+1, msg)
 		}
 		// Fixture file names must stay inside the test directory. The runner
 		// enforces this again at fixture-setup time; checking here lets

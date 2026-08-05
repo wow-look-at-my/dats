@@ -76,10 +76,10 @@ go test -cover ./...
 - `schema/` - YAML schema types + parser (public, importable by external modules)
   - `types.go` - Schema types with custom unmarshalers
   - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, non-local
-    fixture names, undeclared `{matrix.X}` references, matrix placeholders in setup/teardown/shared, a shell heredoc in
-    cmd/setup/teardown (`containsHeredoc`, types.go -- `<<WORD` banned, `<<<` herestrings unaffected), and a `copy`
-    destination that is non-local, empty-sourced, or collides with a `files` entry of the same name (`validateCopyBlock`,
-    shared across `shared.copy` and `inputs.copy`)
+    fixture names, undeclared `{matrix.X}` references, matrix placeholders in setup/teardown/shared, a banned redirect in
+    cmd/setup/teardown (`bannedRedirect`, types.go -- a heredoc `<<WORD` or a herestring `<<<`, each with its own message),
+    and a `copy` destination that is non-local, empty-sourced, or collides with a `files` entry of the same name
+    (`validateCopyBlock`, shared across `shared.copy` and `inputs.copy`)
   - `sandbox.go` - `SandboxSpec`: the file-level `sandbox` key (scalar bool or mapping of `enabled`/`network`/`image`, strictly validated — unknown/duplicate keys, wrong types, and an empty mapping are parse errors) plus the nil-safe `IsEnabled`/`NetworkEnabled` accessors (unstated = sandboxed, network on)
   - `matrix.go` - `Matrix` (declaration-ordered variables, strict value validation), `ExpandMatrix` (cartesian instance expansion, deep copies, single-pass `{matrix.X}` substitution), and the single definition of the matrix substitution scope shared by validation and expansion
 - `runner/` - Native test runner (public, importable by external modules). RunFile/RunTest/RunFilesParallel/Execute take a context: cancellation kills in-flight process groups (surfacing as signal deaths, never as timeouts); teardown runs under context.WithoutCancel so it always executes
@@ -109,7 +109,7 @@ go test -cover ./...
   path, copied in writable -- the read-write counterpart of the sandbox's read-only cwd bind mount; a name may not also
   appear under `files`; `{matrix.X}` substitutes into the source), and `env` (map of env var name to value, added to the
   inherited environment in sorted key order). Depth: `docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy`
-- **CommandList / SetupCommands / TeardownCommands** - File-level `setup`/`teardown` values: a single command string or a sequence of command strings ([]string underneath); the two wrapper types exist so parse errors name their key. Empty lists, blank commands, non-string entries, and a shell heredoc (`<<WORD`; a herestring `<<<` is unaffected) are parse errors
+- **CommandList / SetupCommands / TeardownCommands** - File-level `setup`/`teardown` values: a single command string or a sequence of command strings ([]string underneath); the two wrapper types exist so parse errors name their key. Empty lists, blank commands, non-string entries, a shell heredoc (`<<WORD`), and a herestring (`<<<`) are all parse errors
 - **Shared** - File-level `shared` block with `Files map[string]string` and `Copy map[string]string` (same read-write-copy
   semantics as `InputBlock.Copy`, resolved once per file; `{matrix.X}` in a source is rejected, no instance exists yet);
   must declare at least one entry across the two, names disjoint and locality-validated (nil pointer on TestFile when absent)
@@ -125,7 +125,7 @@ Setup commands, teardown commands, and `shared.files` contents expand ONLY `{sha
 
 `{matrix.X}` is a separate, earlier layer: single-pass text substitution at instance-expansion time (before any runtime expansion), also reaching `desc`, `inputs.stdin`, `inputs.copy` sources, output patterns, and json_output strings. Matrix values may contain other placeholders (expanded at runtime as usual); substituted text is never re-scanned. Matrix placeholders in setup/teardown/shared/shared.copy are parse errors (`not available outside tests`); fixture file NAMES (files and copy destinations alike) and env var NAMES are never substituted.
 
-Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`, `shared.files`, `shared.copy`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup), and a name may not appear under both `files` and `copy` in the same block. Nested names like `sub/file.txt` are allowed; parent directories of declared output files and of shared files are auto-created. `inputs.copy`/`shared.copy` sources resolve relative to the `.dats` file's own directory and are copied in writable, preserving permission bits -- see `docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy`. A heredoc (`<<WORD`) in `cmd`/`setup`/`teardown` is a parse error; use `copy` (or `files`) instead.
+Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`, `shared.files`, `shared.copy`) must be local relative paths (no `..`/absolute; enforced at parse time and again at fixture setup), and a name may not appear under both `files` and `copy` in the same block. Nested names like `sub/file.txt` are allowed; parent directories of declared output files and of shared files are auto-created. `inputs.copy`/`shared.copy` sources resolve relative to the `.dats` file's own directory and are copied in writable, preserving permission bits -- see `docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy`. A heredoc (`<<WORD`) or a herestring (`<<<`) in `cmd`/`setup`/`teardown` is a parse error; use `copy`/`files` or `inputs.stdin`/a pipe instead, respectively.
 
 ## DATS File Format
 

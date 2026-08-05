@@ -598,15 +598,53 @@ tests:
 	}
 }
 
-func TestParseFile_HerestringAllowed(t *testing.T) {
-	// "<<<" is a herestring, not a heredoc, and is not banned.
-	path := writeTempDats(t, `
+func TestParseFile_HerestringRejected(t *testing.T) {
+	// "<<<" (a herestring) is banned too, distinctly from a heredoc: it
+	// redirects stdin from the end of the line rather than embedding a file.
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"cmd": {`
 tests:
   - cmd: cat <<< "hello"
-    outputs:
-      stdout:
-        - hello
+`, "test 1: cmd: must not use a shell herestring"},
+		"setup": {`
+setup: cat <<< "hello"
+tests:
+  - cmd: true
+`, "setup: command: must not use a shell herestring"},
+		"teardown": {`
+teardown: cat <<< "hello"
+tests:
+  - cmd: true
+`, "teardown: command: must not use a shell herestring"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Contains(t, err.Error(), "inputs.stdin")
+		})
+	}
+}
+
+func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
+	// A bare "<<" with a third "<" is a herestring; without one, a heredoc.
+	// Each gets its own, distinct error message.
+	heredocPath := writeTempDats(t, "tests:\n  - cmd: |\n      cat <<EOF\n      hi\n      EOF\n")
+	_, err := ParseFile(heredocPath)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must not use a shell heredoc")
+	assert.NotContains(t, err.Error(), "herestring")
+
+	herestringPath := writeTempDats(t, `
+tests:
+  - cmd: cat <<< "hi"
 `)
-	_, err := ParseFile(path)
-	require.Nil(t, err)
+	_, err = ParseFile(herestringPath)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must not use a shell herestring")
+	assert.NotContains(t, err.Error(), "heredoc")
 }

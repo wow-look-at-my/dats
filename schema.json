@@ -36,7 +36,7 @@
   },
   "definitions": {
     "commandList": {
-      "description": "One shell command (string) or an ordered list of shell commands (at least one). Each runs via bash -c like a test cmd, with the inherited environment, no stdin, and no timeout. Only {shared.X} placeholders are expanded; {inputs.X}/{outputs.X} are per-test namespaces and stay verbatim here. Blank commands are rejected at parse time, as is a shell heredoc (<<WORD) -- write the file and pull it in with shared.files/shared.copy instead; a herestring (<<<) is unaffected.",
+      "description": "One shell command (string) or an ordered list of shell commands (at least one). Each runs via bash -c like a test cmd, with the inherited environment, no stdin, and no timeout. Only {shared.X} placeholders are expanded; {inputs.X}/{outputs.X} are per-test namespaces and stay verbatim here. Blank commands are rejected at parse time, as is a shell heredoc (<<WORD) -- write the file and pull it in with shared.files/shared.copy instead -- and a herestring (<<<), which should be inputs.stdin or a pipe instead.",
       "oneOf": [
         {
           "type": "string",
@@ -122,7 +122,7 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination). A shell heredoc (<<WORD, <<-WORD, <<~WORD) is rejected at parse time -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead; a herestring (<<<) is unaffected."
+          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination). A shell heredoc (<<WORD, <<-WORD, <<~WORD) is rejected at parse time -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead -- and so is a herestring (<<<), which should be inputs.stdin or a pipe instead."
         },
         "exit": {
           "description": "Expected exit code (0-255, bare or quoted) or exit code name (default 0)",

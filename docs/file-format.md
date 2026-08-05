@@ -211,21 +211,31 @@ tests:
 rejected the same way it is in `shared.files` (`shared copy "X": {matrix.x} is not available
 outside tests`).
 
-### Why not a heredoc?
+### Why not a heredoc or herestring?
 
-A shell heredoc (`<<WORD`, `<<-WORD`, `<<~WORD`) in `cmd`, `setup`, or `teardown` is rejected
-at parse time:
+A shell heredoc (`<<WORD`, `<<-WORD`, `<<~WORD`) or herestring (`<<<`) in `cmd`, `setup`, or
+`teardown` is rejected at parse time, each with its own error naming why:
 
 ```
 test 1: cmd: must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead
+```
+
+```
+test 1: cmd: must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line
 ```
 
 A heredoc embeds a file's content inline in a single shell string — exactly what `files` and
 `copy` exist to do declaratively, with names dats can address via `{inputs.X}`/`{shared.X}`,
 validate for locality, and normalize in snapshot goldens. A heredoc bypasses all of that: it
 is invisible to every mechanism above. If you want a file, write the file and copy or bind
-mount it in. A herestring (`<<<`) is a single-line construct, not a heredoc, and is
-unaffected.
+mount it in.
+
+A herestring is a different construct — `cmd <<< "text"` feeds `text` to `cmd`'s stdin on one
+line, no multi-line delimiter involved — but it is banned for a related reason: it puts the
+data source at the *end* of the line, working against bash's normal left-to-right flow
+(`producer | consumer`), and duplicates what `inputs.stdin` (declarative, placeholder-expanded,
+readable in the test's own block) or an ordinary pipe already does inside `cmd`. Use one of
+those instead: `inputs: {stdin: "text"}` with `cmd: cat`, or `cmd: echo text | cat`.
 
 ## Test Object
 
@@ -417,10 +427,12 @@ Text that only *resembles* a placeholder without being one — a non-local name 
 `{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`),
 or any other brace construct — still passes through verbatim.
 
-A `cmd`, `setup`, or `teardown` string containing a shell heredoc (`<<WORD`) now fails to
-parse (see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy)) — the one genuinely
-backwards-incompatible change here, since such a file previously ran the heredoc as ordinary
-shell. Rewrite it with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy`.
+A `cmd`, `setup`, or `teardown` string containing a shell heredoc (`<<WORD`) or herestring
+(`<<<`) now fails to parse (see
+[Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy)) — the one genuinely
+backwards-incompatible change here, since such a file previously ran either as ordinary
+shell. Rewrite a heredoc with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy`,
+and a herestring with `inputs.stdin` or a pipe.
 
 Sandboxing changes runtime behavior rather than parsing, and it applies to files that
 declare nothing: commands that used to write anywhere on the host now write only inside
@@ -435,8 +447,9 @@ host declares `sandbox: false`; a whole run opts out with `--no-sandbox`.
 
 The command is run with `bash -c` in the working directory of the `dats` invocation (the
 runner does not change directory). Fixture files live in a fresh per-run temp directory and
-are addressed by absolute path through placeholders. A shell heredoc (`<<WORD`) in `cmd` is
-rejected at parse time — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
+are addressed by absolute path through placeholders. A shell heredoc (`<<WORD`) or herestring
+(`<<<`) in `cmd` is rejected at parse time — see
+[Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
 ### Input Placeholders
 
@@ -950,7 +963,7 @@ tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0
     timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
-    cmd: string            # required; a shell heredoc (<<WORD) is rejected at parse time
+    cmd: string            # required; a shell heredoc (<<WORD) or herestring (<<<) is rejected at parse time
     matrix:                # optional; expands the test into one instance per combination
       <name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
     inputs:

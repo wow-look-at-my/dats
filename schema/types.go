@@ -111,38 +111,35 @@ func commandFromNode(node *yaml.Node, key, label string) (string, error) {
 	if strings.TrimSpace(node.Value) == "" {
 		return "", fmt.Errorf("%s: %s must not be empty", key, label)
 	}
-	if containsHeredoc(node.Value) {
-		return "", fmt.Errorf("%s: %s: %s", key, label, heredocBanMessage)
+	if msg := bannedRedirect(node.Value); msg != "" {
+		return "", fmt.Errorf("%s: %s: %s", key, label, msg)
 	}
 	return node.Value, nil
 }
 
-// heredocBanMessage is the error text for every heredoc rejection (test cmd,
-// setup, teardown), naming the mechanisms that replace the heredoc.
+// heredocBanMessage is the error text for a heredoc (<<WORD, <<-WORD, or
+// <<~WORD): it embeds a file's content inline in a single shell string,
+// bypassing dats' own fixture mechanisms.
 const heredocBanMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
 
-// containsHeredoc reports whether s contains a shell heredoc redirection
-// (<<WORD, <<-WORD, or <<~WORD). It does not match "<<<" (a herestring: a
-// single-line construct, not the multi-line embedded-file pattern heredocs
-// enable) -- a run of three or more "<" is skipped in full so a herestring's
-// trailing "<<" is never mistaken for a heredoc start.
-func containsHeredoc(s string) bool {
-	for i := 0; i+1 < len(s); i++ {
-		if s[i] != '<' || s[i+1] != '<' {
-			continue
-		}
-		if i+2 < len(s) && s[i+2] == '<' {
-			// Skip the whole run of "<" so none of it is rescanned.
-			j := i + 2
-			for j < len(s) && s[j] == '<' {
-				j++
-			}
-			i = j - 1
-			continue
-		}
-		return true
+// herestringBanMessage is the error text for a herestring (<<<): it redirects
+// stdin from the end of the line, bypassing the normal left-to-right
+// pipe/inputs.stdin data flow.
+const herestringBanMessage = "must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line"
+
+// bannedRedirect reports why s is rejected, if at all: a heredoc (<<WORD) or
+// a herestring (<<<) are both banned in cmd/setup/teardown, for different
+// reasons (see heredocBanMessage and herestringBanMessage), so the first "<<"
+// in s determines which message applies. Returns "" when s contains neither.
+func bannedRedirect(s string) string {
+	idx := strings.Index(s, "<<")
+	if idx == -1 {
+		return ""
 	}
-	return false
+	if idx+2 < len(s) && s[idx+2] == '<' {
+		return herestringBanMessage
+	}
+	return heredocBanMessage
 }
 
 // Shared declares file-level fixture files, written once into the file's

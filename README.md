@@ -262,7 +262,7 @@ mode — do not assume exclusive access to global resources.
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths. A shell heredoc (`<<WORD`) is rejected at parse time — write the file and pull it in with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy` instead; a herestring (`<<<`) is unaffected |
+| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths. A shell heredoc (`<<WORD`) is rejected at parse time — write the file and pull it in with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy` instead — and so is a herestring (`<<<`) — use `inputs.stdin` (or a pipe) instead |
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats are rejected at parse time |
 | `timeout` | No | Per-test timeout: integer seconds (bare or quoted, e.g. `"5"`) or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout; floats are rejected (write `1.5s`, not `1.5`) |
@@ -291,9 +291,11 @@ it). Nested names like `sub/file.txt` are allowed. A name may appear under
 `inputs.files`/`shared.files` author a fixture's content inline as YAML text;
 `inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable
 — the read-write counterpart of the sandbox's read-only bind mount of the
-working directory. Heredocs are rejected at parse time in `cmd`, `setup`, and
-`teardown` for the same reason: write the file and pull it in with one of the
-two mechanisms above instead. See
+working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both
+rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a
+file inline instead of using the two mechanisms above, and a herestring
+redirects stdin from the end of the line instead of the normal left-to-right
+flow (`inputs.stdin`, or a pipe). See
 [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy)
 for the full reference.
 

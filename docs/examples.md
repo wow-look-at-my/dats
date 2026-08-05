@@ -279,8 +279,8 @@ tests:
 ```
 
 See [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for the full
-reference, including why heredocs are rejected in `cmd`/`setup`/`teardown` in favor of this
-and `files`.
+reference, including why heredocs and herestrings are rejected in `cmd`/`setup`/`teardown` in
+favor of this, `files`, and `inputs.stdin`.
 
 ### Opting a file out
 
