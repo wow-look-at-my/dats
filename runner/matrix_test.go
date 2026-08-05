@@ -22,14 +22,19 @@ func TestRunFileMatrixExpansionOrderAndLabels(t *testing.T) {
 	// fastest, every line labeled, header and summary counting instances.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: combo
-    cmd: echo "{matrix.a}-{matrix.b}"
-    matrix:
-      a: [1, 2]
-      b: [x, y, z]
-    outputs:
-      stdout:
-        - "{matrix.a}-{matrix.b}"
+	- desc: combo
+	  cmd: echo "{matrix.a}-{matrix.b}"
+	  matrix:
+		a:
+			- 1
+			- 2
+		b:
+			- x
+			- y
+			- z
+	  outputs:
+		stdout:
+			- "{matrix.a}-{matrix.b}"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -60,18 +65,20 @@ func TestRunFileMatrixInstanceIsolation(t *testing.T) {
 	// its instance's file.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: isolated
-    cmd: cat {inputs.data.txt}
-    matrix:
-      v: [alpha, beta]
-    inputs:
-      files:
-        data.txt: "payload {matrix.v}"
-    outputs:
-      stdout:
-        - "payload {matrix.v}"
-      "!stdout":
-        - "payload alpha payload beta"
+	- desc: isolated
+	  cmd: cat {inputs.data.txt}
+	  matrix:
+		v:
+			- alpha
+			- beta
+	  inputs:
+		files:
+			data.txt: payload {matrix.v}
+	  outputs:
+		stdout:
+			- payload {matrix.v}
+		"!stdout":
+			- payload alpha payload beta
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -87,15 +94,17 @@ func TestRunFileMatrixStdinSubstituted(t *testing.T) {
 	// reach the process.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: stdin
-    cmd: cat
-    matrix:
-      g: [hello, howdy]
-    inputs:
-      stdin: "greeting={matrix.g}"
-    outputs:
-      stdout:
-        - "greeting={matrix.g}"
+	- desc: stdin
+	  cmd: cat
+	  matrix:
+		g:
+			- hello
+			- howdy
+	  inputs:
+		stdin: greeting={matrix.g}
+	  outputs:
+		stdout:
+			- greeting={matrix.g}
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -107,13 +116,15 @@ tests:
 func TestRunFileMatrixJSONOutputSubstituted(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: json
-    cmd: "printf '{\"greeting\": \"%s\"}' {matrix.g}"
-    matrix:
-      g: [hello, howdy]
-    outputs:
-      json_output:
-        greeting: "{matrix.g}"
+	- desc: json
+	  cmd: "printf '{\"greeting\": \"%s\"}' {matrix.g}"
+	  matrix:
+		g:
+			- hello
+			- howdy
+	  outputs:
+		json_output:
+			greeting: "{matrix.g}"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -125,10 +136,11 @@ tests:
 func TestRunFileMatrixSingleValueStillLabeled(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - desc: solo
-    cmd: echo one
-    matrix:
-      k: [v]
+	- desc: solo
+	  cmd: echo one
+	  matrix:
+		k:
+			- v
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -142,9 +154,10 @@ tests:
 func TestRunFileMatrixEmptyDescFallsBackToSubstitutedCmd(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - cmd: echo {matrix.x}
-    matrix:
-      x: [a]
+	- cmd: echo {matrix.x}
+	  matrix:
+		x:
+			- a
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -159,11 +172,16 @@ func TestRunFileMatrixFailingInstanceLabeled(t *testing.T) {
 	// instance by label, and the counts stay instance counts.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: check
-    cmd: test "{matrix.a}{matrix.b}" != "2y"
-    matrix:
-      a: [1, 2]
-      b: [x, y, z]
+	- desc: check
+	  cmd: test "{matrix.a}{matrix.b}" != "2y"
+	  matrix:
+		a:
+			- 1
+			- 2
+		b:
+			- x
+			- y
+			- z
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -187,16 +205,16 @@ func TestRunFileMatrixSetupFailureReportsEveryInstance(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "teardown-ran.txt")
 	path := writeRunnerDats(t, `
 setup:
-  - exit 3
+	- exit 3
 teardown: touch `+marker+`
 tests:
-  - desc: combo
-    cmd: echo "{matrix.a}-{matrix.b}"
-    matrix:
-      a: [1, 2]
-      b: [p, q]
-  - desc: plain
-    cmd: echo plain
+	- desc: combo
+	  cmd: echo "{matrix.a}-{matrix.b}"
+	  matrix:
+		a: [1, 2]
+		b: [p, q]
+	- desc: plain
+	  cmd: echo plain
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -230,16 +248,17 @@ func TestRunFileMatrixValueWithSharedPlaceholderExpandsAtRuntime(t *testing.T) {
 	// command, expanding at runtime.
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    config.json: '{"debug": true}'
+	files:
+		config.json: "{\"debug\": true}"
 tests:
-  - desc: shared-path
-    cmd: cat {matrix.path}
-    matrix:
-      path: ["{shared.config.json}"]
-    outputs:
-      stdout:
-        - '"debug": true'
+	- desc: shared-path
+	  cmd: cat {matrix.path}
+	  matrix:
+		path:
+			- "{shared.config.json}"
+	  outputs:
+		stdout:
+			- "\"debug\": true"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -253,16 +272,18 @@ func TestRunFileMatrixValueWithMatrixPlaceholderStaysLiteral(t *testing.T) {
 	// {matrix.b} is NOT re-expanded, even though b is declared.
 	path := writeRunnerDats(t, `
 tests:
-  - desc: literal
-    cmd: echo '{matrix.a}'
-    matrix:
-      a: ["{matrix.b}"]
-      b: [real]
-    outputs:
-      stdout:
-        - "matrix.b"
-      "!stdout":
-        - "real"
+	- desc: literal
+	  cmd: echo '{matrix.a}'
+	  matrix:
+		a:
+			- "{matrix.b}"
+		b:
+			- real
+	  outputs:
+		stdout:
+			- matrix.b
+		"!stdout":
+			- real
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

@@ -49,16 +49,16 @@ func TestParallelRunsWorkloadsAtLowPriority(t *testing.T) {
 setup: `+niceProbe+` > {shared.setup-nice.txt}
 teardown: `+niceProbe+` > `+teardownNice+`
 tests:
-  - desc: test command runs at nice 19
-    cmd: `+niceProbe+`
-    outputs:
-      stdout:
-        0: "^19$"
-  - desc: setup hook ran at nice 19
-    cmd: cat {shared.setup-nice.txt}
-    outputs:
-      stdout:
-        0: "^19$"
+	- desc: test command runs at nice 19
+	  cmd: `+niceProbe+`
+	  outputs:
+		stdout:
+			0: "^19$"
+	- desc: setup hook ran at nice 19
+	  cmd: cat {shared.setup-nice.txt}
+	  outputs:
+		stdout:
+			0: "^19$"
 `)
 
 	var buf bytes.Buffer
@@ -86,16 +86,16 @@ func TestSerialRunsWorkloadsAtOwnPriority(t *testing.T) {
 	path := writeParallelDats(t, "nice-serial.dats", `
 setup: `+niceProbe+` > {shared.setup-nice.txt}
 tests:
-  - desc: test command inherits the parent priority
-    cmd: `+niceProbe+`
-    outputs:
-      stdout:
-        0: "^`+nice+`$"
-  - desc: setup hook inherited the parent priority
-    cmd: cat {shared.setup-nice.txt}
-    outputs:
-      stdout:
-        0: "^`+nice+`$"
+	- desc: test command inherits the parent priority
+	  cmd: `+niceProbe+`
+	  outputs:
+		stdout:
+			0: "^`+nice+`$"
+	- desc: setup hook inherited the parent priority
+	  cmd: cat {shared.setup-nice.txt}
+	  outputs:
+		stdout:
+			0: "^`+nice+`$"
 `)
 
 	var buf bytes.Buffer

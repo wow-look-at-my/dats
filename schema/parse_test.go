@@ -19,11 +19,11 @@ func writeTempDats(t *testing.T, content string) string {
 func TestParseFile_Valid(t *testing.T) {
 	path := writeTempDats(t, `
 tests:
-  - desc: hello
-    cmd: echo hi
-    outputs:
-      stdout:
-        - "hi"
+	- desc: hello
+	  cmd: echo hi
+	  outputs:
+		stdout:
+			- hi
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -40,8 +40,8 @@ func TestParseFile_InvalidYAML(t *testing.T) {
 func TestParseFile_MissingCmd(t *testing.T) {
 	path := writeTempDats(t, `
 tests:
-  - desc: no command
-    exit: 0
+	- desc: no command
+	  exit: 0
 `)
 	_, err := ParseFile(path)
 	assert.NotNil(t, err)
@@ -62,53 +62,53 @@ func TestParseFile_UnknownKeysRejected(t *testing.T) {
 	cases := map[string]string{
 		"top level": `
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 bogus: true
 `,
 		"test level": `
 tests:
-  - cmd: echo hi
-    stdotu:
-      - "typo of stdout at the wrong level"
+	- cmd: echo hi
+	  stdotu:
+		- typo of stdout at the wrong level
 `,
 		"outputs level": `
 tests:
-  - cmd: echo hi
-    outputs:
-      stdotu:
-        - "typo of stdout"
+	- cmd: echo hi
+	  outputs:
+		stdotu:
+			- typo of stdout
 `,
 		"inputs level": `
 tests:
-  - cmd: echo hi
-    inputs:
-      file:
-        a.txt: "typo of files"
+	- cmd: echo hi
+	  inputs:
+		file:
+			a.txt: typo of files
 `,
 		"file check level": `
 tests:
-  - cmd: echo hi
-    outputs:
-      files:
-        out.txt:
-          matches:
-            - "typo of match"
+	- cmd: echo hi
+	  outputs:
+		files:
+			out.txt:
+				matches:
+					- typo of match
 `,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, err := ParseFile(writeTempDats(t, content))
 			require.NotNil(t, err)
-			assert.Contains(t, err.Error(), "not found")
+			assert.Contains(t, err.Error(), "unknown field")
 		})
 	}
 }
 
 func TestParseFile_SchemaKeyAllowed(t *testing.T) {
 	path := writeTempDats(t, `
-"$schema": https://github.com/wow-look-at-my/dats/schema.json
+$schema: https://github.com/wow-look-at-my/dats/schema.json
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -120,13 +120,13 @@ func TestParseFile_InputEnvAccepted(t *testing.T) {
 	// rejected -- see TestParseFile_UnknownKeysRejected).
 	path := writeTempDats(t, `
 tests:
-  - cmd: echo "$MY_VAR"
-    inputs:
-      env:
-        MY_VAR: hello
-        CONFIG_PATH: "{inputs.cfg.json}"
-      files:
-        cfg.json: "{}"
+	- cmd: echo "$MY_VAR"
+	  inputs:
+		env:
+			MY_VAR: hello
+			CONFIG_PATH: "{inputs.cfg.json}"
+		files:
+			cfg.json: "{}"
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -147,14 +147,14 @@ func TestParseFile_MultiDocumentRejected(t *testing.T) {
 	// A second "---" document used to be silently ignored, dropping its tests.
 	path := writeTempDats(t, `
 tests:
-  - cmd: echo doc1
+	- cmd: echo doc1
 ---
 tests:
-  - cmd: echo doc2, silently dropped before this fix
+	- cmd: echo doc2, silently dropped before this fix
 `)
 	_, err := ParseFile(path)
 	require.NotNil(t, err)
-	assert.Contains(t, err.Error(), "multiple YAML documents are not supported")
+	assert.Contains(t, err.Error(), "input contains 2 documents")
 }
 
 func TestParseFile_TraversalFileNamesRejected(t *testing.T) {
@@ -163,33 +163,33 @@ func TestParseFile_TraversalFileNamesRejected(t *testing.T) {
 	cases := map[string]string{
 		"inputs.files": `
 tests:
-  - cmd: echo hi
-    inputs:
-      files:
-        ../evil.txt: pwned
+	- cmd: echo hi
+	  inputs:
+		files:
+			../evil.txt: pwned
 `,
 		"outputs.files": `
 tests:
-  - cmd: echo hi
-    outputs:
-      files:
-        ../../evil.txt:
-          exists: true
+	- cmd: echo hi
+	  outputs:
+		files:
+			../../evil.txt:
+				exists: true
 `,
 		"outputs.!files": `
 tests:
-  - cmd: echo hi
-    outputs:
-      "!files":
-        ../evil.txt:
-          exists: true
+	- cmd: echo hi
+	  outputs:
+		"!files":
+			../evil.txt:
+				exists: true
 `,
 		"absolute path": `
 tests:
-  - cmd: echo hi
-    inputs:
-      files:
-        /etc/evil.txt: pwned
+	- cmd: echo hi
+	  inputs:
+		files:
+			/etc/evil.txt: pwned
 `,
 	}
 	for name, content := range cases {
@@ -204,11 +204,11 @@ tests:
 func TestParseFile_TraversalErrorNamesTestAndFile(t *testing.T) {
 	path := writeTempDats(t, `
 tests:
-  - cmd: echo hi
-  - cmd: echo hi
-    inputs:
-      files:
-        ../evil.txt: pwned
+	- cmd: echo hi
+	- cmd: echo hi
+	  inputs:
+		files:
+			../evil.txt: pwned
 `)
 	_, err := ParseFile(path)
 	require.NotNil(t, err)
@@ -218,15 +218,15 @@ tests:
 func TestParseFile_SetupTeardownSharedRoundtrip(t *testing.T) {
 	path := writeTempDats(t, `
 shared:
-  files:
-    config.json: '{"debug": true}'
-    sub/nested.txt: nested
+	files:
+		config.json: "{\"debug\": true}"
+		sub/nested.txt: nested
 setup:
-  - mkdir output
-  - cp {shared.config.json} output/
+	- mkdir output
+	- cp {shared.config.json} output/
 teardown: echo done
 tests:
-  - cmd: cat {shared.config.json}
+	- cmd: cat {shared.config.json}
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -244,10 +244,10 @@ func TestParseFile_SetupStringForm(t *testing.T) {
 	path := writeTempDats(t, `
 setup: echo one command
 teardown:
-  - echo first
-  - echo second
+	- echo first
+	- echo second
 tests:
-  - cmd: true
+	- cmd: true
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -260,7 +260,7 @@ func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
 	// all three absent.
 	path := writeTempDats(t, `
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -277,55 +277,58 @@ func TestParseFile_CommandListRejected(t *testing.T) {
 		"setup empty list": {`
 setup: []
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: must list at least one command"},
 		"teardown empty list": {`
 teardown: []
 tests:
-  - cmd: true
+	- cmd: true
 `, "teardown: must list at least one command"},
 		"setup blank string": {`
 setup: "   "
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command must not be empty"},
 		"setup numeric scalar": {`
 setup: 42
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command must be a string"},
 		"setup blank element": {`
 setup:
-  - echo ok
-  - "  "
+	- echo ok
+	- "  "
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command 2 must not be empty"},
 		"setup sequence element": {`
 setup:
-  - echo ok
-  - [not, a, string]
+	- echo ok
+	-
+		- not
+		- a
+		- string
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command 2 must be a command string or a mapping"},
 		"setup numeric element": {`
 setup:
-  - echo ok
-  - 42
+	- echo ok
+	- 42
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command 2 must be a string"},
 		"teardown map element unknown key": {`
 teardown:
-  - foo: nope
+	- foo: nope
 tests:
-  - cmd: true
+	- cmd: true
 `, `teardown: command 1: unknown key "foo"`},
 		"setup map node": {`
 setup:
-  cmd: nope
+	cmd: nope
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup must be a command string or a list of command strings"},
 	}
 	for name, tc := range cases {
@@ -343,38 +346,40 @@ func TestParseFile_SharedRejected(t *testing.T) {
 		wantErr string
 	}{
 		"no files key": {`
-shared: {}
+shared:
+	{}
 tests:
-  - cmd: true
+	- cmd: true
 `, "shared: must declare at least one file under files"},
 		"empty files": {`
 shared:
-  files: {}
+	files:
+		{}
 tests:
-  - cmd: true
+	- cmd: true
 `, "shared: must declare at least one file under files"},
 		"traversal name": {`
 shared:
-  files:
-    ../evil.txt: pwned
+	files:
+		../evil.txt: pwned
 tests:
-  - cmd: true
+	- cmd: true
 `, `shared file name "../evil.txt" must be a relative path that stays inside the shared directory`},
 		"absolute name": {`
 shared:
-  files:
-    /etc/evil.txt: pwned
+	files:
+		/etc/evil.txt: pwned
 tests:
-  - cmd: true
+	- cmd: true
 `, "must be a relative path that stays inside the shared directory"},
 		"unknown key under shared": {`
 shared:
-  files:
-    a.txt: content
-  bogus: true
+	files:
+		a.txt: content
+	bogus: true
 tests:
-  - cmd: true
-`, "not found"},
+	- cmd: true
+`, "unknown field"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -391,19 +396,19 @@ func TestParseFile_SnapshotForms(t *testing.T) {
 	// is the documented toggle-off, identical to omitting the key.
 	path := writeTempDats(t, `
 tests:
-  - desc: shorthand
-    cmd: echo hi
-    outputs:
-      snapshot: true
-  - desc: toggled off
-    cmd: echo hi
-    outputs:
-      snapshot: false
-  - desc: stderr only
-    cmd: echo err >&2
-    outputs:
-      snapshot:
-        stderr: true
+	- desc: shorthand
+	  cmd: echo hi
+	  outputs:
+		snapshot: true
+	- desc: toggled off
+	  cmd: echo hi
+	  outputs:
+		snapshot: false
+	- desc: stderr only
+	  cmd: echo err >&2
+	  outputs:
+		snapshot:
+			stderr: true
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -422,22 +427,23 @@ func TestParseFile_SnapshotRejected(t *testing.T) {
 	}{
 		"unknown stream key": {`
 tests:
-  - cmd: echo hi
-    outputs:
-      snapshot:
-        files: true
+	- cmd: echo hi
+	  outputs:
+		snapshot:
+			files: true
 `, `snapshot: unknown key "files" (allowed: stdout, stderr)`},
 		"nothing enabled": {`
 tests:
-  - cmd: echo hi
-    outputs:
-      snapshot: {}
+	- cmd: echo hi
+	  outputs:
+		snapshot:
+			{}
 `, "snapshot: must enable at least one of stdout, stderr"},
 		"non-bool scalar": {`
 tests:
-  - cmd: echo hi
-    outputs:
-      snapshot: everything
+	- cmd: echo hi
+	  outputs:
+		snapshot: everything
 `, "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
 	}
 	for name, tc := range cases {
@@ -453,17 +459,17 @@ func TestParseFile_NestedLocalFileNamesAllowed(t *testing.T) {
 	// Nested relative names like sub/file.txt are local and stay accepted.
 	path := writeTempDats(t, `
 tests:
-  - cmd: cat {inputs.sub/dir/nested.txt}
-    inputs:
-      files:
-        sub/dir/nested.txt: content
-    outputs:
-      files:
-        sub/out.txt:
-          exists: false
-      "!files":
-        other/missing.txt:
-          exists: true
+	- cmd: cat {inputs.sub/dir/nested.txt}
+	  inputs:
+		files:
+			sub/dir/nested.txt: content
+	  outputs:
+		files:
+			sub/out.txt:
+				exists: false
+		"!files":
+			other/missing.txt:
+				exists: true
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -473,13 +479,13 @@ tests:
 func TestParseFile_CopyAccepted(t *testing.T) {
 	path := writeTempDats(t, `
 shared:
-  copy:
-    fixture.bin: ../fixtures/fixture.bin
+	copy:
+		fixture.bin: ../fixtures/fixture.bin
 tests:
-  - cmd: cat {inputs.data.txt}
-    inputs:
-      copy:
-        data.txt: testdata/data.txt
+	- cmd: cat {inputs.data.txt}
+	  inputs:
+		copy:
+			data.txt: testdata/data.txt
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
@@ -494,62 +500,63 @@ func TestParseFile_CopyRejected(t *testing.T) {
 	}{
 		"shared copy traversal name": {`
 shared:
-  copy:
-    ../evil.txt: some/source.txt
+	copy:
+		../evil.txt: some/source.txt
 tests:
-  - cmd: true
+	- cmd: true
 `, `copy destination "../evil.txt" must be a relative path`},
 		"shared copy absolute name": {`
 shared:
-  copy:
-    /etc/evil.txt: some/source.txt
+	copy:
+		/etc/evil.txt: some/source.txt
 tests:
-  - cmd: true
+	- cmd: true
 `, `copy destination "/etc/evil.txt" must be a relative path`},
 		"shared copy empty source": {`
 shared:
-  copy:
-    dest.txt: ""
+	copy:
+		dest.txt: ""
 tests:
-  - cmd: true
+	- cmd: true
 `, `copy destination "dest.txt" must name a non-empty source path`},
 		"shared name in both files and copy": {`
 shared:
-  files:
-    dup.txt: content
-  copy:
-    dup.txt: some/source.txt
+	files:
+		dup.txt: content
+	copy:
+		dup.txt: some/source.txt
 tests:
-  - cmd: true
+	- cmd: true
 `, `"dup.txt" is declared under both files and copy`},
 		"shared block with only copy is not empty": {`
 shared:
-  copy: {}
+	copy:
+		{}
 tests:
-  - cmd: true
+	- cmd: true
 `, "shared: must declare at least one file under files or copy"},
 		"inputs copy traversal name": {`
 tests:
-  - cmd: true
-    inputs:
-      copy:
-        ../evil.txt: some/source.txt
+	- cmd: true
+	  inputs:
+		copy:
+			../evil.txt: some/source.txt
 `, `copy destination "../evil.txt" must be a relative path`},
 		"inputs copy empty source": {`
 tests:
-  - cmd: true
-    inputs:
-      copy:
-        dest.txt: ""
+	- cmd: true
+	  inputs:
+		copy:
+			dest.txt: ""
 `, `copy destination "dest.txt" must name a non-empty source path`},
 		"inputs name in both files and copy": {`
 tests:
-  - cmd: true
-    inputs:
-      files:
-        dup.txt: content
-      copy:
-        dup.txt: some/source.txt
+	- cmd: true
+	  inputs:
+		files:
+			dup.txt: content
+		copy:
+			dup.txt: some/source.txt
 `, `"dup.txt" is declared under both files and copy`},
 	}
 	for name, tc := range cases {
@@ -568,24 +575,18 @@ func TestParseFile_HeredocRejected(t *testing.T) {
 	}{
 		"cmd": {`
 tests:
-  - cmd: |
-      cat <<EOF > out.txt
-      hello
-      EOF
+	- cmd: "cat <<EOF > out.txt\nhello\nEOF\n"
 `, "test 1: cmd: must not use a shell heredoc"},
 		"setup": {`
-setup: |
-  cat <<-EOF
-  hi
-  EOF
+setup: "cat <<-EOF\nhi\nEOF\n"
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command: must not use a shell heredoc"},
 		"teardown": {`
 teardown:
-  - "cat <<~EOF\nhi\nEOF"
+	- "cat <<~EOF\nhi\nEOF"
 tests:
-  - cmd: true
+	- cmd: true
 `, "teardown: command 1: must not use a shell heredoc"},
 	}
 	for name, tc := range cases {
@@ -607,17 +608,17 @@ func TestParseFile_HerestringRejected(t *testing.T) {
 	}{
 		"cmd": {`
 tests:
-  - cmd: cat <<< "hello"
+	- cmd: cat <<< "hello"
 `, "test 1: cmd: must not use a shell herestring"},
 		"setup": {`
 setup: cat <<< "hello"
 tests:
-  - cmd: true
+	- cmd: true
 `, "setup: command: must not use a shell herestring"},
 		"teardown": {`
 teardown: cat <<< "hello"
 tests:
-  - cmd: true
+	- cmd: true
 `, "teardown: command: must not use a shell herestring"},
 	}
 	for name, tc := range cases {
@@ -633,7 +634,7 @@ tests:
 func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
 	// A bare "<<" with a third "<" is a herestring; without one, a heredoc.
 	// Each gets its own, distinct error message.
-	heredocPath := writeTempDats(t, "tests:\n  - cmd: |\n      cat <<EOF\n      hi\n      EOF\n")
+	heredocPath := writeTempDats(t, "tests:\n\t- cmd: \"cat <<EOF\\nhi\\nEOF\\n\"\n")
 	_, err := ParseFile(heredocPath)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "must not use a shell heredoc")
@@ -641,7 +642,7 @@ func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
 
 	herestringPath := writeTempDats(t, `
 tests:
-  - cmd: cat <<< "hi"
+	- cmd: cat <<< "hi"
 `)
 	_, err = ParseFile(herestringPath)
 	require.NotNil(t, err)

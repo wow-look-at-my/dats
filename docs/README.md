@@ -18,11 +18,11 @@ without requiring any external test framework.
 
 ```yaml
 tests:
-  - desc: hello world
-    cmd: echo "Hello, World!"
-    outputs:
-      stdout:
-        - "Hello, World!"
+	- desc: hello world
+	  cmd: echo "Hello, World!"
+	  outputs:
+		stdout:
+			- "Hello, World!"
 ```
 
 2. Run it:
@@ -35,7 +35,8 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
 
 ## Key Concepts
 
-- **Tests** are defined in YAML with a simple, declarative format
+- **Tests** are defined in YAML with a simple, declarative format — indented with tabs, not
+  spaces; see [YAML Dialect](file-format.md#yaml-dialect)
 - **Placeholders** like `{inputs.file.txt}` and `{outputs.result.txt}` expand to absolute
   paths inside a per-run temp directory
 - **Exit codes** can be integers (0-255) or variables like `EXIT_SUCCESS`

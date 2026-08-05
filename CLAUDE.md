@@ -47,7 +47,8 @@ go test -cover ./...
 ## Architecture
 
 ### Core Flow
-1. `.dats` YAML file is parsed using `gopkg.in/yaml.v3`
+1. `.dats` YAML file is parsed using [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed) — tabs-only indentation, no
+   anchors/aliases, canonical scalar reformatting; see `docs/file-format.md#yaml-dialect`
 2. Every test is expanded up front into its matrix instances (`schema.ExpandMatrix`; non-matrix tests = one instance) — the header count, instance numbering, temp dirs, summary counts, and setup-failure reporting all operate on the expanded list; every instance always runs (no test filtering/selection by design)
 3. Per file: the file's sandbox is resolved (`Runner.newSandboxPlan`) BEFORE anything runs — a file that must be sandboxed and cannot be fails outright; then a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test instance in the file — reported as failures, never "skipped" — but teardown still runs)
 4. For each test instance, fixtures are set up in a temp directory
@@ -156,54 +157,55 @@ Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`,
 
 ```yaml
 sandbox: false              # Optional: opt this file's commands out of the sandbox
-                            # (or a map: enabled/network/image)
+	# (or a map: enabled/network/image)
 shared:                     # Optional file-level fixtures (once per file)
-  files:
-    config.json: content    # written into shared/, addressed as {shared.config.json}
-  copy:
-    real.bin: fixtures/real.bin   # copied into shared/, writable (path relative to this .dats file)
+	files:
+		config.json: content    # written into shared/, addressed as {shared.config.json}
+	copy:
+		real.bin: fixtures/real.bin   # copied into shared/, writable (path relative to this .dats file)
 setup: single command       # Optional; or a list of command strings
 teardown:                   # Optional; ALWAYS runs (even after setup failure)
-  - first cleanup command
-  - second cleanup command
+	- first cleanup command
+	- second cleanup command
 tests:
-  - desc: optional description
-    cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
-    exit: 0                   # Optional, default 0 (or EXIT_SUCCESS/EXIT_FAILURE)
-    timeout: 2s               # Optional, int seconds or Go duration string; 0/omitted = no timeout
-    matrix:                   # Optional; expands the test into one instance per combination
-      greeting: [hello, howdy]  # values referenced as {matrix.greeting}
-    inputs:
-      stdin: "input text"     # Optional, piped to cmd
-      files:                  # Optional, creates fixture files
-        file.txt: content
-      copy:                   # Optional, copies a host file in, writable
-        real.bin: fixtures/real.bin   # (path is relative to this .dats file)
-      env:                    # Optional, env vars added to the inherited environment
-        MY_VAR: value         # (values support {inputs.X}/{outputs.X} placeholders)
-    outputs:                  # Optional
-      stdout:                 # Pattern list or line-number map
-        - "pattern"           # Substring match
-      stdout:                 # Or use line-specific regex (0-indexed)
-        0: "^first line$"
-        2: "^third line$"
-      "!stdout":              # Patterns that must NOT appear (also accepts the line-number map form)
-        - "error"
-      stderr:
-        - "warning"
-      files:                  # Output file validation
-        result.txt:
-          exists: true
-          match:
-            - "expected content"
-          notMatch:
-            - "error"
-      "!files":               # Negated output file validation (each check inverted)
-        unexpected.txt:
-          exists: true        # must NOT exist
-      snapshot: true          # Golden-file assertion: stdout must byte-match
-                              # <file>.snapshots/NNN-<slug>.stdout.golden
-                              # (or {stdout: bool, stderr: bool}; --update rewrites)
+	- desc: optional description
+	  cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
+	  exit: 0                   # Optional, default 0 (or EXIT_SUCCESS/EXIT_FAILURE)
+	  timeout: 2s               # Optional, int seconds or Go duration string; 0/omitted = no timeout
+	  matrix:                   # Optional; expands the test into one instance per combination
+		greeting: [hello, howdy]  # values referenced as {matrix.greeting}
+	  inputs:
+		stdin: "input text"     # Optional, piped to cmd
+		files:                  # Optional, creates fixture files
+			file.txt: content
+		copy:                   # Optional, copies a host file in, writable
+			real.bin: fixtures/real.bin   # (path is relative to this .dats file)
+		env:                    # Optional, env vars added to the inherited environment
+			MY_VAR: value         # (values support {inputs.X}/{outputs.X} placeholders)
+	  outputs:                  # Optional
+		stdout:                 # Pattern list (substring match)...
+			- "pattern"
+		# ...or a line-number map instead (0-indexed regex), not both:
+		# stdout:
+		#   0: "^first line$"
+		#   2: "^third line$"
+		"!stdout":              # Patterns that must NOT appear (also accepts the line-number map form)
+			- "error"
+		stderr:
+			- "warning"
+		files:                  # Output file validation
+			result.txt:
+				exists: true
+				match:
+					- "expected content"
+				notMatch:
+					- "error"
+		"!files":               # Negated output file validation (each check inverted)
+			unexpected.txt:
+				exists: true        # must NOT exist
+		snapshot: true          # Golden-file assertion: stdout must byte-match
+			# <file>.snapshots/NNN-<slug>.stdout.golden
+			# (or {stdout: bool, stderr: bool}; --update rewrites)
 ```
 
 The in-progress XML migration (`internal/schema`/`internal/runner`, not yet wired into the CLI) targets this format:

@@ -45,37 +45,37 @@ func TestRunFileDockerSandbox(t *testing.T) {
 
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    shared.txt: shared-content
+	files:
+		shared.txt: shared-content
 tests:
-  - desc: runs inside the image
-    cmd: grep -q debian /etc/os-release
-  - desc: fixtures, shared files, env and stdin all arrive
-    cmd: 'cat {inputs.in.txt} {shared.shared.txt}; echo "$MY_VAR"; cat'
-    inputs:
-      stdin: from-stdin
-      files:
-        in.txt: input-content
-      env:
-        MY_VAR: from-env
-    outputs:
-      stdout:
-        - input-content
-        - shared-content
-        - from-env
-        - from-stdin
-  - desc: the outputs directory is writable and lands on the host
-    cmd: echo produced > {outputs.result.txt}
-    outputs:
-      files:
-        result.txt:
-          match:
-            - produced
-  - desc: host paths outside the temp directory are not writable
-    cmd: 'echo pwned > `+hostProbe+` 2>/dev/null && echo WROTE || echo BLOCKED'
-    outputs:
-      stdout:
-        - BLOCKED
+	- desc: runs inside the image
+	  cmd: grep -q debian /etc/os-release
+	- desc: fixtures, shared files, env and stdin all arrive
+	  cmd: 'cat {inputs.in.txt} {shared.shared.txt}; echo "$MY_VAR"; cat'
+	  inputs:
+		stdin: from-stdin
+		files:
+			in.txt: input-content
+		env:
+			MY_VAR: from-env
+	  outputs:
+		stdout:
+			- input-content
+			- shared-content
+			- from-env
+			- from-stdin
+	- desc: the outputs directory is writable and lands on the host
+	  cmd: echo produced > {outputs.result.txt}
+	  outputs:
+		files:
+			result.txt:
+				match:
+					- produced
+	- desc: host paths outside the temp directory are not writable
+	  cmd: 'echo pwned > `+hostProbe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  outputs:
+		stdout:
+			- BLOCKED
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -94,9 +94,9 @@ func TestRunFileDockerSandboxTimeoutLeavesNoContainer(t *testing.T) {
 	requireDocker(t)
 	path := writeRunnerDats(t, `
 tests:
-  - desc: sleeps past its deadline
-    cmd: sleep 120
-    timeout: 2s
+	- desc: sleeps past its deadline
+	  cmd: sleep 120
+	  timeout: 2s
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

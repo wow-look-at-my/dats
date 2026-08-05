@@ -100,11 +100,11 @@ func TestRunTestsWithoutSandboxRunsOnHost(t *testing.T) {
 	// gets must not require a backend or change the output.
 	datsFile := writeDats(t, "host.dats", `
 tests:
-  - desc: runs
-    cmd: echo hi
-    outputs:
-      stdout:
-        - hi
+	- desc: runs
+	  cmd: echo hi
+	  outputs:
+		stdout:
+			- hi
 `)
 	var out bytes.Buffer
 	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil))
