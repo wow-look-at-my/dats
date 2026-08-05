@@ -131,6 +131,19 @@ tests:
       stdout:
         - "Hello, world!"
 
+  # Pulling in an existing host file, writable -- the read-write counterpart
+  # of the sandbox's read-only bind mount of the working directory. The
+  # source resolves relative to this .dats file. If you want a file, write
+  # the file and copy or bind mount it in -- never a heredoc (see below).
+  - desc: modifies a copied-in fixture
+    inputs:
+      copy:
+        config.json: fixtures/config.json
+    cmd: echo "patched" >> {inputs.config.json}; cat {inputs.config.json}
+    outputs:
+      stdout:
+        - "patched"
+
   # Command with stdin
   - desc: cat reads stdin
     inputs:
@@ -234,8 +247,9 @@ tests:
 | Property | Required | Description |
 |----------|----------|-------------|
 | `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
-| `setup` | No | Command string or list of command strings run once, in order, before the file's tests. Only `{shared.X}` expands. On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
-| `teardown` | No | Command string or list of command strings that always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
+| `shared.copy` | No | Map of filename → host source path, copied once per file into `shared/`, writable. A name may not also appear under `files`; the block needs at least one entry across the two. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
+| `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`) run once, in order, before the file's tests. `cmd`/`env` expand `{shared.X}` only; bounded by `timeout` (default 30s, must be > 0 when set). On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
+| `teardown` | No | Same hook command or list form as `setup`, always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
 | `sandbox` | No | `false` opts this file's commands out of the sandbox, or a mapping (`enabled`, `network`, `image`) narrows it. Covers the tests AND the setup/teardown hooks. See [docs/file-format.md](docs/file-format.md#sandbox) |
 
 Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
@@ -248,13 +262,14 @@ mode — do not assume exclusive access to global resources.
 
 | Property | Required | Description |
 |----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths |
+| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths. A shell heredoc (`<<WORD`) is rejected at parse time — write the file and pull it in with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy` instead — and so is a herestring (`<<<`) — use `inputs.stdin` (or a pipe) instead |
 | `desc` | No | Description for the test (used in output) |
 | `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats are rejected at parse time |
 | `timeout` | No | Per-test timeout: integer seconds (bare or quoted, e.g. `"5"`) or a Go duration string (e.g. `500ms`, `2s`, `1m30s`). 0/omitted = no timeout; floats are rejected (write `1.5s`, not `1.5`) |
 | `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). Reference values as `{matrix.X}` in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs and reports as `desc [k=v, ...]` |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
+| `inputs.copy` | No | Map of filename → host source path, copied in writable before running (relative sources resolve against the `.dats` file's directory). A name may not also appear under `files`. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
 | `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
 | `outputs.stdout` | No | Patterns to match in stdout |
 | `outputs.stderr` | No | Patterns to match in stderr |
@@ -265,10 +280,24 @@ mode — do not assume exclusive access to global resources.
 | `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or `{stdout: bool, stderr: bool}` (at least one true). Output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp paths normalize to `{testdir}`/`{shareddir}`/`{tmproot}`; `dats --update` (re)writes goldens and prunes stale ones |
 | `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
-File names under `inputs.files`, `outputs.files`, and `outputs.!files` must be
-relative paths that stay inside the test directory (no `..` or absolute paths;
-rejected at parse time, so `dats syntax` catches it). Nested names like
-`sub/file.txt` are allowed.
+File names under `inputs.files`, `inputs.copy`, `outputs.files`, and
+`outputs.!files` must be relative paths that stay inside the test directory
+(no `..` or absolute paths; rejected at parse time, so `dats syntax` catches
+it). Nested names like `sub/file.txt` are allowed. A name may appear under
+`files` or `copy`, never both.
+
+### Pulling files into the sandbox
+
+`inputs.files`/`shared.files` author a fixture's content inline as YAML text;
+`inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable
+— the read-write counterpart of the sandbox's read-only bind mount of the
+working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both
+rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a
+file inline instead of using the two mechanisms above, and a herestring
+redirects stdin from the end of the line instead of the normal left-to-right
+flow (`inputs.stdin`, or a pipe). See
+[docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy)
+for the full reference.
 
 ### Output Assertions
 

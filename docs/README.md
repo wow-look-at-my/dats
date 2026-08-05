@@ -47,3 +47,8 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
   the `.dats` file; `dats --update` rewrites them from actual output
 - **Sandboxing** is on by default (bubblewrap, falling back to docker): commands may only
   write inside their temp directory. Opt out with `--no-sandbox` or `sandbox: false`
+- **Copy fixtures** (`inputs.copy`, `shared.copy`) pull an existing host file into that
+  writable temp directory — the read-write counterpart of the sandbox's read-only bind mount
+  of the working directory. Heredocs and herestrings in `cmd`/`setup`/`teardown` are rejected
+  at parse time: write the file and pull it in with `files`/`copy`, or use `inputs.stdin`/a
+  pipe, instead

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,7 +43,10 @@ type TestContext struct {
 // SetupFixtures creates fixture files for a test and returns the context.
 // Input file contents go through the same placeholder expansion as the
 // command, so a fixture can reference other input paths and output paths.
-func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestContext, error) {
+// sourceDir resolves a relative inputs.copy source: the directory holding the
+// .dats file being run, so a copy source is portable regardless of dats'
+// working directory.
+func SetupFixtures(baseDir string, testIndex int, test *schema.Test, sourceDir string) (*TestContext, error) {
 	ctx := &TestContext{
 		BaseDir:     baseDir,
 		TestIndex:   testIndex,
@@ -51,10 +55,24 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	}
 
 	// File names must stay inside the test directory: reject absolute paths
-	// and traversal (e.g. "../../evil") before creating anything.
+	// and traversal (e.g. "../../evil") before creating anything. Copy
+	// destinations follow the same rule and may not collide with a files
+	// name -- ParseFile already enforces both; checked again here so a
+	// library caller constructing a Test directly gets the same guarantee.
 	for name := range test.Inputs.Files {
 		if !filepath.IsLocal(name) {
 			return nil, fmt.Errorf("input file name %q must be a relative path that stays inside the test directory", name)
+		}
+	}
+	for name, src := range test.Inputs.Copy {
+		if !filepath.IsLocal(name) {
+			return nil, fmt.Errorf("input copy destination %q must be a relative path that stays inside the test directory", name)
+		}
+		if _, dup := test.Inputs.Files[name]; dup {
+			return nil, fmt.Errorf("input %q is declared under both files and copy", name)
+		}
+		if src == "" {
+			return nil, fmt.Errorf("input copy destination %q must name a non-empty source path", name)
 		}
 	}
 	for name := range test.Outputs.Files {
@@ -105,13 +123,19 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 	}
 
 	// Register every input path before writing any file so that contents can
-	// reference any declared input, regardless of map iteration order.
-	if len(test.Inputs.Files) > 0 {
+	// reference any declared input, regardless of map iteration order. Files
+	// and Copy share one namespace (validated disjoint above) and one
+	// directory, so a {inputs.X} placeholder resolves the same way whichever
+	// map declared X.
+	if len(test.Inputs.Files) > 0 || len(test.Inputs.Copy) > 0 {
 		inputDir := filepath.Join(testDir, "inputs")
 		if err := os.MkdirAll(inputDir, 0755); err != nil {
 			return nil, fmt.Errorf("creating input dir: %w", err)
 		}
 		for name := range test.Inputs.Files {
+			ctx.InputPaths[name] = filepath.Join(inputDir, name)
+		}
+		for name := range test.Inputs.Copy {
 			ctx.InputPaths[name] = filepath.Join(inputDir, name)
 		}
 	}
@@ -125,6 +149,20 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test) (*TestConte
 		}
 		if err := os.WriteFile(path, []byte(ExpandPlaceholders(content, ctx)), 0644); err != nil {
 			return nil, fmt.Errorf("writing input file %s: %w", name, err)
+		}
+	}
+
+	// Copy in the host files declared under inputs.copy: the writable
+	// counterpart of the sandbox's read-only bind mount of the working
+	// directory, for a test that needs to modify a real file rather than
+	// only read it or author its content inline.
+	for name, src := range test.Inputs.Copy {
+		path := ctx.InputPaths[name]
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return nil, fmt.Errorf("creating input subdir: %w", err)
+		}
+		if err := copyHostFile(resolveSource(src, sourceDir), path); err != nil {
+			return nil, fmt.Errorf("copying input file %s: %w", name, err)
 		}
 	}
 
@@ -186,15 +224,29 @@ func ExpandSharedPlaceholders(s, sharedDir string) string {
 }
 
 // SetupSharedFixtures writes the file-level shared fixture files into
-// sharedDir, in sorted name order. File names must be local relative paths
-// (ParseFile already enforces this; it is checked again here before anything
-// is written); parent directories of nested names are created. Contents go
-// through {shared.X} expansion only -- {inputs.X}/{outputs.X} are per-test
-// namespaces and stay verbatim.
-func SetupSharedFixtures(sharedDir string, files map[string]string) error {
+// sharedDir, in sorted name order, then copies in the file-level copy
+// fixtures. Names must be local relative paths and disjoint between the two
+// maps (ParseFile already enforces both; checked again here before anything
+// is written, for a library caller constructing a TestFile directly); parent
+// directories of nested names are created. Files contents go through
+// {shared.X} expansion only -- {inputs.X}/{outputs.X} are per-test
+// namespaces and stay verbatim. sourceDir resolves a relative copy source:
+// the directory holding the .dats file being run.
+func SetupSharedFixtures(sharedDir string, files, copyFiles map[string]string, sourceDir string) error {
 	for name := range files {
 		if !filepath.IsLocal(name) {
 			return fmt.Errorf("shared file name %q must be a relative path that stays inside the shared directory", name)
+		}
+	}
+	for name, src := range copyFiles {
+		if !filepath.IsLocal(name) {
+			return fmt.Errorf("shared copy destination %q must be a relative path that stays inside the shared directory", name)
+		}
+		if _, dup := files[name]; dup {
+			return fmt.Errorf("shared %q is declared under both files and copy", name)
+		}
+		if src == "" {
+			return fmt.Errorf("shared copy destination %q must name a non-empty source path", name)
 		}
 	}
 	for _, name := range sortedStringKeys(files) {
@@ -206,7 +258,56 @@ func SetupSharedFixtures(sharedDir string, files map[string]string) error {
 			return fmt.Errorf("writing shared file %s: %w", name, err)
 		}
 	}
+	for _, name := range sortedStringKeys(copyFiles) {
+		path := filepath.Join(sharedDir, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return fmt.Errorf("creating shared subdir: %w", err)
+		}
+		if err := copyHostFile(resolveSource(copyFiles[name], sourceDir), path); err != nil {
+			return fmt.Errorf("copying shared file %s: %w", name, err)
+		}
+	}
 	return nil
+}
+
+// resolveSource resolves a copy fixture's host source path: absolute paths
+// are used as-is, and a relative path resolves against sourceDir -- the
+// directory holding the .dats file being run -- so a copy source is portable
+// regardless of dats' own working directory.
+func resolveSource(src, sourceDir string) string {
+	if filepath.IsAbs(src) || sourceDir == "" {
+		return src
+	}
+	return filepath.Join(sourceDir, src)
+}
+
+// copyHostFile copies src into dest, writable, preserving src's permission
+// bits (so a fixture script pulled in via copy keeps its executable bit).
+// This is the read-write counterpart of the sandbox's read-only bind mount of
+// the working directory: a way to pull an existing host file into the
+// sandbox for a test to modify, without inlining its content as YAML text.
+func copyHostFile(src, dest string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("%s is a directory, not a file", src)
+	}
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // Cleanup removes the fixture directory

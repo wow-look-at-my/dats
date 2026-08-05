@@ -357,6 +357,124 @@ tests:
 	assert.Contains(t, buf.String(), "# teardown: echo cleanup")
 }
 
+func TestRunFileHookEnvApplied(t *testing.T) {
+	// FOO is a literal value and BAR expands {shared.X}, proving both the env
+	// values themselves and their placeholder expansion reach the command.
+	path := writeRunnerDats(t, `
+shared:
+  files:
+    marker.txt: from-shared
+setup:
+  - cmd: 'echo "$FOO/$BAR" > {shared.out.txt}'
+    env:
+      FOO: bar
+      BAR: "{shared.marker.txt}"
+tests:
+  - cmd: cat {shared.out.txt}
+    outputs:
+      stdout:
+        - "bar/"
+        - "/shared/marker.txt"
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+}
+
+func TestRunFileHookEnvNotInheritedByTests(t *testing.T) {
+	// A hook's env is scoped to that hook command; it must not leak into the
+	// test commands that run afterward.
+	path := writeRunnerDats(t, `
+setup:
+  - cmd: 'true'
+    env:
+      FOO: bar
+tests:
+  - cmd: 'echo "[$FOO]"'
+    outputs:
+      stdout:
+        - "[]"
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+}
+
+func TestRunFileHookStdinFile(t *testing.T) {
+	dir := t.TempDir()
+	require.Nil(t, os.WriteFile(filepath.Join(dir, "in.txt"), []byte("piped content"), 0644))
+	path := filepath.Join(dir, "runner.dats")
+	require.Nil(t, os.WriteFile(path, []byte(`
+setup:
+  - cmd: cat > {shared.out.txt}
+    stdin_file: in.txt
+tests:
+  - cmd: cat {shared.out.txt}
+    outputs:
+      stdout:
+        - "piped content"
+`), 0644))
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+}
+
+func TestRunFileHookStdinFileMissingFailsLoudly(t *testing.T) {
+	path := writeRunnerDats(t, `
+setup:
+  - cmd: cat
+    stdin_file: does-not-exist.txt
+tests:
+  - cmd: echo never
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	require.NotNil(t, result.SetupFailure)
+	assert.Contains(t, result.SetupFailure.Detail, "reading stdin_file")
+}
+
+func TestRunFileHookTimeoutEnforced(t *testing.T) {
+	path := writeRunnerDats(t, `
+setup:
+  - cmd: sleep 5
+    timeout: 200ms
+tests:
+  - cmd: echo never
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	start := time.Now()
+	result, err := r.RunFile(context.Background(), path)
+	elapsed := time.Since(start)
+	require.Nil(t, err)
+	assert.Less(t, elapsed, 3*time.Second, "the hook's own timeout must cut the sleep short")
+	require.NotNil(t, result.SetupFailure)
+	assert.Contains(t, result.SetupFailure.Detail, "command timed out after 200ms")
+}
+
+func TestRunFileHookDefaultTimeoutDoesNotFireEarly(t *testing.T) {
+	// A hook with no stated timeout runs under DefaultHookTimeout (30s), not
+	// some shorter implicit bound -- a quick command must not be cut off.
+	path := writeRunnerDats(t, `
+setup: echo quick
+tests:
+  - cmd: echo hi
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.True(t, result.Ok(), "output:\n%s", buf.String())
+}
+
 func TestRunFileCanceledContextTeardownStillRuns(t *testing.T) {
 	// Canceling the context mid-run aborts the in-flight test command
 	// promptly and reports the instance as failed -- but teardown runs under

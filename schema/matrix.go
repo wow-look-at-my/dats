@@ -197,20 +197,24 @@ func substituteMatrix(s string, assignments []MatrixAssignment) string {
 
 // applyToMatrixScope applies f, in place, to every string of test that is
 // inside the matrix substitution scope: desc, cmd, inputs.stdin, inputs.files
-// contents, inputs.env values, every output pattern string (stdout, stderr,
-// !stdout, and !stderr in both the list and line-map forms; files and !files
-// match/notMatch entries), and every string scalar inside json_output (keys
-// and values). Out of scope and left untouched: fixture file names, env var
-// names, exit, timeout, and the matrix block itself. This is the single
-// definition of the scope -- parse-time reference validation and instance
-// expansion both walk it, so they can never disagree. Maps are visited in
-// sorted key order so validation reports deterministically.
+// contents, inputs.copy sources, inputs.env values, every output pattern
+// string (stdout, stderr, !stdout, and !stderr in both the list and line-map
+// forms; files and !files match/notMatch entries), and every string scalar
+// inside json_output (keys and values). Out of scope and left untouched:
+// fixture file names (files and copy destinations alike), env var names,
+// exit, timeout, and the matrix block itself. This is the single definition
+// of the scope -- parse-time reference validation and instance expansion both
+// walk it, so they can never disagree. Maps are visited in sorted key order
+// so validation reports deterministically.
 func applyToMatrixScope(test *Test, f func(string) string) {
 	test.Desc = f(test.Desc)
 	test.Cmd = f(test.Cmd)
 	test.Inputs.Stdin = f(test.Inputs.Stdin)
 	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Files)) {
 		test.Inputs.Files[name] = f(test.Inputs.Files[name])
+	}
+	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Copy)) {
+		test.Inputs.Copy[name] = f(test.Inputs.Copy[name])
 	}
 	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Env)) {
 		test.Inputs.Env[name] = f(test.Inputs.Env[name])
@@ -337,6 +341,7 @@ func copyTest(t *Test) Test {
 	c := *t
 	c.Matrix = nil
 	c.Inputs.Files = maps.Clone(t.Inputs.Files)
+	c.Inputs.Copy = maps.Clone(t.Inputs.Copy)
 	c.Inputs.Env = maps.Clone(t.Inputs.Env)
 	c.Outputs.Stdout = copyOutputCheck(t.Outputs.Stdout)
 	c.Outputs.Stderr = copyOutputCheck(t.Outputs.Stderr)

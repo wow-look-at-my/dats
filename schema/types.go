@@ -40,12 +40,52 @@ type TestFile struct {
 	Tests   []Test       `yaml:"tests"`
 }
 
-// CommandList is an ordered list of shell commands: the value shape of the
-// file-level setup and teardown keys. In YAML it is written as either a
-// single scalar string or a sequence of scalar strings. SetupCommands and
-// TeardownCommands wrap it so parse errors can name their key, mirroring how
-// ExitCode and Duration hardcode "exit" and "timeout" in their messages.
-type CommandList []string
+// DefaultHookTimeout bounds a setup/teardown command when its entry does not
+// state its own timeout. Unlike a test's timeout (0/omitted = unbounded), a
+// hook command always has one: it runs once per file, before or after every
+// test, and an unbounded hook can hang a whole run with no per-test signal to
+// notice it.
+const DefaultHookTimeout = 30 * time.Second
+
+// HookCommand is one setup/teardown list entry: a command plus the settings
+// that shape how it runs. In YAML it is written as either a bare command
+// string (no extra env, no stdin, DefaultHookTimeout) or a mapping with cmd
+// plus optional env, stdin_file, and timeout.
+type HookCommand struct {
+	Cmd string
+	// Env adds KEY=VALUE entries to the command's environment, on top of the
+	// run's own Env and the inherited environment. Values expand only
+	// {shared.X}, the same namespace Cmd expands -- {inputs.X}/{outputs.X}
+	// are per-test namespaces that do not exist at file scope.
+	Env map[string]string
+	// StdinFile names a host file whose raw content is piped to the
+	// command's stdin, unexpanded -- the stdin counterpart of a copy fixture
+	// rather than of inputs.stdin's inline, placeholder-expanded text. A
+	// relative path resolves against the directory holding the .dats file,
+	// same as inputs.copy/shared.copy. Empty means no stdin.
+	StdinFile string
+	// Timeout is the entry's own bound, or nil when unstated (the runner
+	// then applies DefaultHookTimeout). An explicit value must be greater
+	// than 0 -- there is no way to spell "no timeout" for a hook command.
+	Timeout *Duration
+}
+
+// EffectiveTimeout returns the bound the runner enforces on this command:
+// the entry's own Timeout if it set one, else DefaultHookTimeout.
+func (h HookCommand) EffectiveTimeout() time.Duration {
+	if h.Timeout != nil {
+		return h.Timeout.Value
+	}
+	return DefaultHookTimeout
+}
+
+// CommandList is an ordered list of setup/teardown commands: the value shape
+// of the file-level setup and teardown keys. In YAML it is written as either
+// a single entry or a sequence of entries (each a bare string or a mapping;
+// see HookCommand). SetupCommands and TeardownCommands wrap it so parse
+// errors can name their key, mirroring how ExitCode and Duration hardcode
+// "exit" and "timeout" in their messages.
+type CommandList []HookCommand
 
 // SetupCommands is the file-level setup key: commands run once, in order,
 // before any of the file's tests.
@@ -78,26 +118,100 @@ func (td *TeardownCommands) UnmarshalYAML(node *yaml.Node) error {
 func unmarshalCommandList(node *yaml.Node, key string) (CommandList, error) {
 	switch node.Kind {
 	case yaml.ScalarNode:
-		cmd, err := commandFromNode(node, key, "command")
+		hc, err := hookCommandFromNode(node, key, "command")
 		if err != nil {
 			return nil, err
 		}
-		return CommandList{cmd}, nil
+		return CommandList{hc}, nil
 	case yaml.SequenceNode:
 		if len(node.Content) == 0 {
 			return nil, fmt.Errorf("%s: must list at least one command", key)
 		}
 		cmds := make(CommandList, 0, len(node.Content))
 		for i, item := range node.Content {
-			cmd, err := commandFromNode(item, key, fmt.Sprintf("command %d", i+1))
+			hc, err := hookCommandFromNode(item, key, fmt.Sprintf("command %d", i+1))
 			if err != nil {
 				return nil, err
 			}
-			cmds = append(cmds, cmd)
+			cmds = append(cmds, hc)
 		}
 		return cmds, nil
 	}
 	return nil, fmt.Errorf("%s must be a command string or a list of command strings", key)
+}
+
+// hookCommandFromNode decodes one setup/teardown entry into a HookCommand:
+// either a bare command string (commandFromNode's rules, unchanged) or a
+// mapping with cmd plus optional env, stdin_file, and timeout. It is NOT a
+// yaml.Unmarshaler method -- the automatic dispatch interface has no room
+// to carry key ("setup"/"teardown") and label ("command"/"command N")
+// through to every error, so unmarshalCommandList calls it directly per
+// item, the same way it always called commandFromNode. The mapping node is
+// iterated manually, which bypasses yaml.v3's own duplicate-key detection
+// and the decoder's KnownFields checking, so both are enforced here --
+// mirroring SandboxSpec.
+func hookCommandFromNode(node *yaml.Node, key, label string) (HookCommand, error) {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		cmd, err := commandFromNode(node, key, label)
+		if err != nil {
+			return HookCommand{}, err
+		}
+		return HookCommand{Cmd: cmd}, nil
+	case yaml.MappingNode:
+		var hc HookCommand
+		seen := make(map[string]bool, len(node.Content)/2)
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode, valNode := node.Content[i], node.Content[i+1]
+			k := keyNode.Value
+			switch k {
+			case "cmd", "env", "stdin_file", "timeout":
+			default:
+				return HookCommand{}, fmt.Errorf("%s: %s: unknown key %q (allowed: cmd, env, stdin_file, timeout)", key, label, k)
+			}
+			if seen[k] {
+				return HookCommand{}, fmt.Errorf("%s: %s: %s declared more than once", key, label, k)
+			}
+			seen[k] = true
+
+			switch k {
+			case "cmd":
+				cmd, err := commandFromNode(valNode, key, label)
+				if err != nil {
+					return HookCommand{}, err
+				}
+				hc.Cmd = cmd
+			case "env":
+				if valNode.Kind != yaml.MappingNode {
+					return HookCommand{}, fmt.Errorf("%s: %s: env must be a mapping of variable name to value", key, label)
+				}
+				var env map[string]string
+				if err := valNode.Decode(&env); err != nil {
+					return HookCommand{}, fmt.Errorf("%s: %s: env: %w", key, label, err)
+				}
+				hc.Env = env
+			case "stdin_file":
+				if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" || valNode.Value == "" {
+					return HookCommand{}, fmt.Errorf("%s: %s: stdin_file must be a non-empty string", key, label)
+				}
+				hc.StdinFile = valNode.Value
+			case "timeout":
+				var d Duration
+				if err := valNode.Decode(&d); err != nil {
+					return HookCommand{}, fmt.Errorf("%s: %s: %w", key, label, err)
+				}
+				if d.Value <= 0 {
+					return HookCommand{}, fmt.Errorf("%s: %s: timeout must be greater than 0 (omit it to use the default %s)", key, label, DefaultHookTimeout)
+				}
+				hc.Timeout = &d
+			}
+		}
+		if hc.Cmd == "" {
+			return HookCommand{}, fmt.Errorf("%s: %s: must set cmd", key, label)
+		}
+		return hc, nil
+	}
+	return HookCommand{}, fmt.Errorf("%s: %s must be a command string or a mapping (cmd, env, stdin_file, timeout)", key, label)
 }
 
 // commandFromNode validates one command scalar, naming key (setup or
@@ -111,7 +225,35 @@ func commandFromNode(node *yaml.Node, key, label string) (string, error) {
 	if strings.TrimSpace(node.Value) == "" {
 		return "", fmt.Errorf("%s: %s must not be empty", key, label)
 	}
+	if msg := bannedRedirect(node.Value); msg != "" {
+		return "", fmt.Errorf("%s: %s: %s", key, label, msg)
+	}
 	return node.Value, nil
+}
+
+// heredocBanMessage is the error text for a heredoc (<<WORD, <<-WORD, or
+// <<~WORD): it embeds a file's content inline in a single shell string,
+// bypassing dats' own fixture mechanisms.
+const heredocBanMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
+
+// herestringBanMessage is the error text for a herestring (<<<): it redirects
+// stdin from the end of the line, bypassing the normal left-to-right
+// pipe/inputs.stdin data flow.
+const herestringBanMessage = "must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line"
+
+// bannedRedirect reports why s is rejected, if at all: a heredoc (<<WORD) or
+// a herestring (<<<) are both banned in cmd/setup/teardown, for different
+// reasons (see heredocBanMessage and herestringBanMessage), so the first "<<"
+// in s determines which message applies. Returns "" when s contains neither.
+func bannedRedirect(s string) string {
+	idx := strings.Index(s, "<<")
+	if idx == -1 {
+		return ""
+	}
+	if idx+2 < len(s) && s[idx+2] == '<' {
+		return herestringBanMessage
+	}
+	return heredocBanMessage
 }
 
 // Shared declares file-level fixture files, written once into the file's
@@ -120,7 +262,13 @@ func commandFromNode(node *yaml.Node, key, label string) (string, error) {
 type Shared struct {
 	// Files maps file name to content. Contents go through {shared.X}
 	// placeholder expansion only; names must be local relative paths.
-	Files map[string]string `yaml:"files"`
+	Files map[string]string `yaml:"files,omitempty"`
+	// Copy maps a fixture name to a host file to copy into the shared
+	// directory, writable -- the read-write counterpart of the sandbox's
+	// read-only bind mount of the working directory. A relative source
+	// resolves against the directory holding the .dats file; names follow
+	// the same locality rule as Files, and a name may not appear in both.
+	Copy map[string]string `yaml:"copy,omitempty"`
 }
 
 // Test represents a single test case
@@ -141,6 +289,13 @@ type Test struct {
 type InputBlock struct {
 	Stdin string            `yaml:"stdin,omitempty"`
 	Files map[string]string `yaml:"files,omitempty"`
+	// Copy maps a fixture name to a host file to copy into the test's input
+	// directory, writable -- the read-write counterpart of the sandbox's
+	// read-only bind mount of the working directory: a file the test needs
+	// to modify. A relative source resolves against the directory holding
+	// the .dats file; names follow the same locality rule as Files, and a
+	// name may not appear in both.
+	Copy map[string]string `yaml:"copy,omitempty"`
 	// Env maps environment variable names to values. The variables are added
 	// to the inherited environment for the test's command; values go through
 	// the same placeholder expansion as the command.

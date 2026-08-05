@@ -369,6 +369,21 @@ shared:
 tests:
   - cmd: echo hi
 `, `shared file "config.json": {matrix.x} is not available outside tests`},
+		"setup hook env value": {`
+setup:
+  - cmd: echo hi
+    env:
+      FOO: "{matrix.x}"
+tests:
+  - cmd: echo hi
+`, `setup command 1: env "FOO": {matrix.x} is not available outside tests`},
+		"teardown hook stdin_file": {`
+teardown:
+  - cmd: echo hi
+    stdin_file: "{matrix.x}"
+tests:
+  - cmd: echo hi
+`, `teardown command 1: stdin_file: {matrix.x} is not available outside tests`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

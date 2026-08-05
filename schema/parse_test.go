@@ -230,8 +230,8 @@ tests:
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
-	assert.Equal(t, SetupCommands{"mkdir output", "cp {shared.config.json} output/"}, tf.Setup)
-	assert.Equal(t, TeardownCommands{"echo done"}, tf.Teardown)
+	assert.Equal(t, SetupCommands{{Cmd: "mkdir output"}, {Cmd: "cp {shared.config.json} output/"}}, tf.Setup)
+	assert.Equal(t, TeardownCommands{{Cmd: "echo done"}}, tf.Teardown)
 	require.NotNil(t, tf.Shared)
 	assert.Equal(t, map[string]string{
 		"config.json":    `{"debug": true}`,
@@ -251,8 +251,8 @@ tests:
 `)
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
-	assert.Equal(t, SetupCommands{"echo one command"}, tf.Setup)
-	assert.Equal(t, TeardownCommands{"echo first", "echo second"}, tf.Teardown)
+	assert.Equal(t, SetupCommands{{Cmd: "echo one command"}}, tf.Setup)
+	assert.Equal(t, TeardownCommands{{Cmd: "echo first"}, {Cmd: "echo second"}}, tf.Teardown)
 }
 
 func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
@@ -307,7 +307,7 @@ setup:
   - [not, a, string]
 tests:
   - cmd: true
-`, "setup: command 2 must be a string"},
+`, "setup: command 2 must be a command string or a mapping"},
 		"setup numeric element": {`
 setup:
   - echo ok
@@ -315,12 +315,12 @@ setup:
 tests:
   - cmd: true
 `, "setup: command 2 must be a string"},
-		"teardown map element": {`
+		"teardown map element unknown key": {`
 teardown:
-  - cmd: nope
+  - foo: nope
 tests:
   - cmd: true
-`, "teardown: command 1 must be a string"},
+`, `teardown: command 1: unknown key "foo"`},
 		"setup map node": {`
 setup:
   cmd: nope
@@ -468,4 +468,183 @@ tests:
 	tf, err := ParseFile(path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, len(tf.Tests))
+}
+
+func TestParseFile_CopyAccepted(t *testing.T) {
+	path := writeTempDats(t, `
+shared:
+  copy:
+    fixture.bin: ../fixtures/fixture.bin
+tests:
+  - cmd: cat {inputs.data.txt}
+    inputs:
+      copy:
+        data.txt: testdata/data.txt
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	require.Equal(t, "../fixtures/fixture.bin", tf.Shared.Copy["fixture.bin"])
+	require.Equal(t, "testdata/data.txt", tf.Tests[0].Inputs.Copy["data.txt"])
+}
+
+func TestParseFile_CopyRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"shared copy traversal name": {`
+shared:
+  copy:
+    ../evil.txt: some/source.txt
+tests:
+  - cmd: true
+`, `copy destination "../evil.txt" must be a relative path`},
+		"shared copy absolute name": {`
+shared:
+  copy:
+    /etc/evil.txt: some/source.txt
+tests:
+  - cmd: true
+`, `copy destination "/etc/evil.txt" must be a relative path`},
+		"shared copy empty source": {`
+shared:
+  copy:
+    dest.txt: ""
+tests:
+  - cmd: true
+`, `copy destination "dest.txt" must name a non-empty source path`},
+		"shared name in both files and copy": {`
+shared:
+  files:
+    dup.txt: content
+  copy:
+    dup.txt: some/source.txt
+tests:
+  - cmd: true
+`, `"dup.txt" is declared under both files and copy`},
+		"shared block with only copy is not empty": {`
+shared:
+  copy: {}
+tests:
+  - cmd: true
+`, "shared: must declare at least one file under files or copy"},
+		"inputs copy traversal name": {`
+tests:
+  - cmd: true
+    inputs:
+      copy:
+        ../evil.txt: some/source.txt
+`, `copy destination "../evil.txt" must be a relative path`},
+		"inputs copy empty source": {`
+tests:
+  - cmd: true
+    inputs:
+      copy:
+        dest.txt: ""
+`, `copy destination "dest.txt" must name a non-empty source path`},
+		"inputs name in both files and copy": {`
+tests:
+  - cmd: true
+    inputs:
+      files:
+        dup.txt: content
+      copy:
+        dup.txt: some/source.txt
+`, `"dup.txt" is declared under both files and copy`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParseFile_HeredocRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"cmd": {`
+tests:
+  - cmd: |
+      cat <<EOF > out.txt
+      hello
+      EOF
+`, "test 1: cmd: must not use a shell heredoc"},
+		"setup": {`
+setup: |
+  cat <<-EOF
+  hi
+  EOF
+tests:
+  - cmd: true
+`, "setup: command: must not use a shell heredoc"},
+		"teardown": {`
+teardown:
+  - "cat <<~EOF\nhi\nEOF"
+tests:
+  - cmd: true
+`, "teardown: command 1: must not use a shell heredoc"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Contains(t, err.Error(), "inputs.files/inputs.copy or shared.files/shared.copy")
+		})
+	}
+}
+
+func TestParseFile_HerestringRejected(t *testing.T) {
+	// "<<<" (a herestring) is banned too, distinctly from a heredoc: it
+	// redirects stdin from the end of the line rather than embedding a file.
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"cmd": {`
+tests:
+  - cmd: cat <<< "hello"
+`, "test 1: cmd: must not use a shell herestring"},
+		"setup": {`
+setup: cat <<< "hello"
+tests:
+  - cmd: true
+`, "setup: command: must not use a shell herestring"},
+		"teardown": {`
+teardown: cat <<< "hello"
+tests:
+  - cmd: true
+`, "teardown: command: must not use a shell herestring"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Contains(t, err.Error(), "inputs.stdin")
+		})
+	}
+}
+
+func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
+	// A bare "<<" with a third "<" is a herestring; without one, a heredoc.
+	// Each gets its own, distinct error message.
+	heredocPath := writeTempDats(t, "tests:\n  - cmd: |\n      cat <<EOF\n      hi\n      EOF\n")
+	_, err := ParseFile(heredocPath)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must not use a shell heredoc")
+	assert.NotContains(t, err.Error(), "herestring")
+
+	herestringPath := writeTempDats(t, `
+tests:
+  - cmd: cat <<< "hi"
+`)
+	_, err = ParseFile(herestringPath)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must not use a shell herestring")
+	assert.NotContains(t, err.Error(), "heredoc")
 }
