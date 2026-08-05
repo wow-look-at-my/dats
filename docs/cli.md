@@ -167,11 +167,15 @@ The flag is the outer bound: a file can narrow what the CLI selected, never wide
 ### What it does and does not isolate
 
 - **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to
-  outlive the run). There is deliberately no way to declare additional writable host paths:
+  outlive the run). There is deliberately no way to declare additional writable HOST paths:
   something to write is the temp directory — a real filesystem inside every backend — and a
   command that genuinely needs the host is not a sandboxed command, so it says
   `sandbox: false`. That includes a binary that rewrites itself on first run, such as an APE:
-  copy it into the temp directory and run it from there, or run the file unsandboxed.
+  copy it into the temp directory and run it from there, or run the file unsandboxed. To pull
+  an *existing* host file into the temp directory so a command can modify a copy of it, use
+  `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy))
+  — the read-write counterpart of the working directory's read-only bind mount, resolved and
+  copied before the sandbox starts.
 - **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the
   working directory, and the paths the file declared — not `$HOME`, not `/var`, not another
   checkout on the machine. bwrap used to bind `/` read-only, which made every suite a reader

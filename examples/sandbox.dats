@@ -33,3 +33,33 @@ tests:
     outputs:
       stdout:
         - generated
+
+  # The working directory is bind-mounted read-only, so a plain read still
+  # works but a write to it would fail. inputs.copy is the read-write way in:
+  # it copies an existing host file into the sandbox's writable temp
+  # directory before the command runs, so this test can freely modify its
+  # own copy without touching the real fixture on disk.
+  - desc: inputs.copy pulls a host file in, writable
+    inputs:
+      copy:
+        source.txt: host-files/readonly-source.txt
+    cmd: |
+      echo "modified inside the sandbox" >> {inputs.source.txt}
+      cat {inputs.source.txt}
+    outputs:
+      stdout:
+        - "the source lives on the host"
+        - "modified inside the sandbox"
+
+  # The host fixture itself is read-only from inside the sandbox (and never
+  # touched by the copy above, which wrote to the temp directory instead).
+  # cmd runs in dats' own working directory (unlike inputs.copy sources,
+  # which resolve relative to this .dats file), so the path is spelled from
+  # the repo root -- the directory `just test` runs `dats examples/` from.
+  - desc: the host fixture the copy came from is untouched
+    cmd: cat examples/host-files/readonly-source.txt
+    outputs:
+      stdout:
+        - "the source lives on the host"
+      "!stdout":
+        - "modified inside the sandbox"

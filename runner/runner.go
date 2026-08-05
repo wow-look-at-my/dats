@@ -44,6 +44,12 @@ type Runner struct {
 	// only ever runs one file at a time -- jobs mode gives each file its own.
 	plan *sandboxPlan
 
+	// sourceDir is the directory holding the .dats file currently being run,
+	// set by RunFile/runFileParallel alongside plan. It resolves a relative
+	// inputs.copy/shared.copy source, so a copy fixture is portable
+	// regardless of dats' own working directory.
+	sourceDir string
+
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
 	// 19, best-effort; no-op on windows). Only the jobs-mode orchestration
@@ -106,6 +112,9 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
 		return nil, err
 	}
+	if r.sourceDir, err = sourceDirOf(path); err != nil {
+		return nil, err
+	}
 
 	// Expand every test into its matrix instances up front, so instance
 	// numbering, per-instance temp directories, the header's test count, the
@@ -136,14 +145,14 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	// stopping at the first failure. A failure here fails every test in the
 	// file; teardown still runs.
 	if testFile.Shared != nil {
-		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files); err != nil {
+		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files, testFile.Shared.Copy, r.sourceDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
 	}
 	if result.SetupFailure == nil {
-		for _, raw := range testFile.Setup {
-			if fail := r.runHookCommand(ctx, "setup", raw, sharedDir); fail != nil {
+		for _, hc := range testFile.Setup {
+			if fail := r.runHookCommand(ctx, "setup", hc, sharedDir); fail != nil {
 				result.SetupFailure = fail
 				r.Formatter.PrintHookFailure("setup", fail)
 				break // remaining setup commands are skipped; every test fails below
@@ -207,8 +216,8 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
 	}
-	for _, raw := range testFile.Teardown {
-		if fail := r.runHookCommand(teardownCtx, "teardown", raw, sharedDir); fail != nil {
+	for _, hc := range testFile.Teardown {
+		if fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir); fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)
 			r.Formatter.PrintHookFailure("teardown", fail)
 		}
@@ -222,23 +231,48 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 // runHookCommand executes one file-level setup or teardown command through
 // the same bash path as test commands (same working directory convention,
 // inherited environment -- including GOCOVERDIR under --coverdir, exactly
-// like test commands -- no stdin, no timeout), expanding only {shared.X}
-// placeholders. It returns nil on success (exit 0) or the failure otherwise.
-// Callers pass the live ctx for setup and a context.WithoutCancel ctx for
-// teardown, which must run even after cancellation.
-func (r *Runner) runHookCommand(ctx context.Context, kind, rawCmd, sharedDir string) *CommandFailure {
-	cmd := ExpandSharedPlaceholders(rawCmd, sharedDir)
+// like test commands -- plus hc's own env and stdin_file), expanding hc.Cmd
+// and hc.Env values through {shared.X} only. The command is bounded by
+// hc.EffectiveTimeout(): unlike a test's timeout, a hook command always has
+// one. It returns nil on success (exit 0) or the failure otherwise. Callers
+// pass the live ctx for setup and a context.WithoutCancel ctx for teardown,
+// which must run even after cancellation.
+func (r *Runner) runHookCommand(ctx context.Context, kind string, hc schema.HookCommand, sharedDir string) *CommandFailure {
+	cmd := ExpandSharedPlaceholders(hc.Cmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
-	env, added := r.commandEnv()
+
+	var extra []string
+	for _, key := range sortedStringKeys(hc.Env) {
+		extra = append(extra, key+"="+ExpandSharedPlaceholders(hc.Env[key], sharedDir))
+	}
+	env, added := r.commandEnv(extra...)
+
+	var stdin string
+	if hc.StdinFile != "" {
+		data, err := os.ReadFile(resolveSource(hc.StdinFile, r.sourceDir))
+		if err != nil {
+			return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("reading stdin_file: %v", err)}
+		}
+		stdin = string(data)
+	}
+
 	execResult, err := execute(ctx, execRequest{
 		Cmd:         cmd,
+		Stdin:       stdin,
 		Env:         env,
 		EnvExtra:    added,
+		Timeout:     hc.EffectiveTimeout(),
 		LowPriority: r.lowPriority,
 		Sandbox:     r.plan,
 	})
 	if err != nil {
 		return &CommandFailure{Command: cmd, Detail: fmt.Sprintf("execution: %v", err)}
+	}
+	if execResult.TimedOut {
+		return &CommandFailure{
+			Command: cmd,
+			Detail:  fmt.Sprintf("command timed out after %s", hc.EffectiveTimeout()),
+		}
 	}
 	if execResult.ExitCode != 0 {
 		return &CommandFailure{
@@ -287,6 +321,19 @@ func signalSuffix(execResult *ExecResult) string {
 	return fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
 }
 
+// sourceDirOf returns the absolute directory holding the .dats file at path,
+// which resolveSource in fixtures.go joins with a relative inputs.copy or
+// shared.copy source. Absolute, rather than left relative to the process's
+// current directory, so the resolution is stable even if that ever changes
+// mid-run.
+func sourceDirOf(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving %s: %w", path, err)
+	}
+	return filepath.Dir(abs), nil
+}
+
 // testName returns the display name for a test: its desc, falling back to
 // the command.
 func testName(test *schema.Test) string {
@@ -320,7 +367,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	}
 
 	// Setup fixtures
-	fixtures, err := SetupFixtures(baseDir, index, test)
+	fixtures, err := SetupFixtures(baseDir, index, test, r.sourceDir)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("fixture setup: %v", err))
 		result.Duration = time.Since(start)

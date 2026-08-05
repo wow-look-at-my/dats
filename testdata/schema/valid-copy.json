@@ -1,0 +1,41 @@
+{
+  "shared": {
+    "files": {
+      "config.json": "{\"debug\": true}"
+    },
+    "copy": {
+      "fixture.bin": "../fixtures/fixture.bin"
+    }
+  },
+  "tests": [
+    {
+      "desc": "copies a host file in, writable",
+      "cmd": "echo appended >> {inputs.data.txt}; cat {inputs.data.txt}",
+      "inputs": {
+        "copy": {
+          "data.txt": "testdata/data.txt"
+        }
+      },
+      "outputs": {
+        "stdout": [
+          "appended"
+        ]
+      }
+    },
+    {
+      "desc": "matrix source varies per instance",
+      "cmd": "cat {inputs.variant.bin}",
+      "matrix": {
+        "variant": [
+          "a",
+          "b"
+        ]
+      },
+      "inputs": {
+        "copy": {
+          "variant.bin": "fixtures/{matrix.variant}.bin"
+        }
+      }
+    }
+  ]
+}

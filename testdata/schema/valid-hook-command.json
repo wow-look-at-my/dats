@@ -1,0 +1,35 @@
+{
+  "shared": {
+    "files": {
+      "marker.txt": "from-shared"
+    }
+  },
+  "setup": [
+    {
+      "cmd": "echo \"$FOO/$BAR\" > {shared.out.txt}",
+      "env": {
+        "FOO": "bar",
+        "BAR": "{shared.marker.txt}"
+      },
+      "timeout": 5
+    },
+    "echo plain string entries still work"
+  ],
+  "teardown": {
+    "cmd": "cat > {shared.teardown.txt}",
+    "stdin_file": "fixtures/teardown-input.txt",
+    "timeout": "2s"
+  },
+  "tests": [
+    {
+      "desc": "reads what setup wrote",
+      "cmd": "cat {shared.out.txt}",
+      "outputs": {
+        "stdout": [
+          "bar/",
+          "/shared/marker.txt"
+        ]
+      }
+    }
+  ]
+}
