@@ -20,11 +20,11 @@ func writeDats(t *testing.T, name, content string) string {
 
 func TestRunTests(t *testing.T) {
 	datsFile := writeDats(t, "test.dats", `tests:
-  - desc: simple test
-    cmd: echo hello
-    outputs:
-      stdout:
-        - "hello"
+	- desc: simple test
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
 `)
 
 	var out bytes.Buffer
@@ -42,11 +42,11 @@ func TestRunTestsInvalidFile(t *testing.T) {
 
 func TestRunTestsFailure(t *testing.T) {
 	datsFile := writeDats(t, "fail.dats", `tests:
-  - desc: failing test
-    cmd: echo wrong
-    outputs:
-      stdout:
-        - "expected-text"
+	- desc: failing test
+	  cmd: echo wrong
+	  outputs:
+		stdout:
+			- expected-text
 `)
 
 	var out bytes.Buffer
@@ -59,7 +59,7 @@ func TestRunTestsTeardownFailure(t *testing.T) {
 	// A teardown failure fails the run (exit 1) even when every test passed.
 	datsFile := writeDats(t, "teardown.dats", `teardown: exit 1
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 
 	var out bytes.Buffer
@@ -73,7 +73,7 @@ func TestRunTestsMultipleFiles(t *testing.T) {
 	f1 := filepath.Join(tmp, "a.dats")
 	f2 := filepath.Join(tmp, "b.dats")
 	content := `tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `
 	require.Nil(t, os.WriteFile(f1, []byte(content), 0644))
 	require.Nil(t, os.WriteFile(f2, []byte(content), 0644))
@@ -90,8 +90,8 @@ func TestRunTestsMultipleFilesFailure(t *testing.T) {
 	tmp := t.TempDir()
 	pass := filepath.Join(tmp, "pass.dats")
 	fail := filepath.Join(tmp, "fail.dats")
-	require.Nil(t, os.WriteFile(pass, []byte("tests:\n  - cmd: echo hi\n"), 0644))
-	require.Nil(t, os.WriteFile(fail, []byte("tests:\n  - cmd: exit 3\n"), 0644))
+	require.Nil(t, os.WriteFile(pass, []byte("tests:\n\t- cmd: echo hi\n"), 0644))
+	require.Nil(t, os.WriteFile(fail, []byte("tests:\n\t- cmd: exit 3\n"), 0644))
 
 	var out bytes.Buffer
 	err := runTests(context.Background(), []string{pass, fail}, &out, 0, nil)

@@ -29,8 +29,8 @@ func writeSuite(t *testing.T, body string) string {
 // tests, so "nothing to assert" still needs one command.
 const minimalSuite = `
 tests:
-  - desc: trivial
-    cmd: 'true'
+	- desc: trivial
+	  cmd: "true"
 `
 
 // hostOpts is the common shape: run these files, on the host, capturing
@@ -49,14 +49,16 @@ func TestRunReportsFailingTestsInTheResultNotAsAnError(t *testing.T) {
 	// tell "your tests failed" from "dats could not run them".
 	suite := writeSuite(t, `
 tests:
-  - desc: passes
-    cmd: 'echo hello'
-    outputs:
-      stdout: ["hello"]
-  - desc: fails
-    cmd: 'echo nope'
-    outputs:
-      stdout: ["expected-this-instead"]
+	- desc: passes
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
+	- desc: fails
+	  cmd: echo nope
+	  outputs:
+		stdout:
+			- expected-this-instead
 `)
 
 	var out bytes.Buffer
@@ -73,10 +75,11 @@ tests:
 func TestRunAllPassing(t *testing.T) {
 	suite := writeSuite(t, `
 tests:
-  - desc: passes
-    cmd: 'echo hello'
-    outputs:
-      stdout: ["hello"]
+	- desc: passes
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
 `)
 
 	var out bytes.Buffer
@@ -94,12 +97,13 @@ func TestRunTeardownFailureFailsTheRunEvenWithEveryTestPassing(t *testing.T) {
 	// Ok() is not "Failed == 0": a broken teardown is a failed run.
 	suite := writeSuite(t, `
 teardown:
-  - 'exit 3'
+	- exit 3
 tests:
-  - desc: passes
-    cmd: 'echo hello'
-    outputs:
-      stdout: ["hello"]
+	- desc: passes
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
 `)
 
 	var out bytes.Buffer
@@ -112,17 +116,19 @@ tests:
 func TestRunTotalsAcrossFiles(t *testing.T) {
 	a := writeSuite(t, `
 tests:
-  - desc: a
-    cmd: 'echo a'
-    outputs:
-      stdout: ["a"]
+	- desc: a
+	  cmd: echo a
+	  outputs:
+		stdout:
+			- a
 `)
 	b := writeSuite(t, `
 tests:
-  - desc: b
-    cmd: 'echo b'
-    outputs:
-      stdout: ["nope"]
+	- desc: b
+	  cmd: echo b
+	  outputs:
+		stdout:
+			- nope
 `)
 
 	var out bytes.Buffer
@@ -139,12 +145,13 @@ func TestRunEnvAppliesToTestsAndHooks(t *testing.T) {
 	// asserts it too, and a setup failure would fail every test below.
 	suite := writeSuite(t, `
 setup:
-  - '[ "$FROM_CALLER" = "yes" ]'
+	- "[ \"$FROM_CALLER\" = \"yes\" ]"
 tests:
-  - desc: sees the caller env
-    cmd: 'echo "$FROM_CALLER"'
-    outputs:
-      stdout: ["yes"]
+	- desc: sees the caller env
+	  cmd: echo "$FROM_CALLER"
+	  outputs:
+		stdout:
+			- yes
 `)
 
 	var out bytes.Buffer
@@ -161,10 +168,11 @@ func TestRunEnvEmptyValueClearsAnInheritedVariable(t *testing.T) {
 	t.Setenv("DATS_TEST_INHERITED", "leaked")
 	suite := writeSuite(t, `
 tests:
-  - desc: does not inherit
-    cmd: 'echo "[$DATS_TEST_INHERITED]"'
-    outputs:
-      stdout: ["[]"]
+	- desc: does not inherit
+	  cmd: echo "[$DATS_TEST_INHERITED]"
+	  outputs:
+		stdout:
+			- "[]"
 `)
 
 	var out bytes.Buffer
@@ -178,13 +186,14 @@ tests:
 func TestRunTestEnvWinsOverCallerEnv(t *testing.T) {
 	suite := writeSuite(t, `
 tests:
-  - desc: file wins
-    cmd: 'echo "$WHO"'
-    inputs:
-      env:
-        WHO: file
-    outputs:
-      stdout: ["file"]
+	- desc: file wins
+	  cmd: echo "$WHO"
+	  inputs:
+		env:
+			WHO: file
+	  outputs:
+		stdout:
+			- file
 `)
 
 	var out bytes.Buffer
@@ -198,14 +207,16 @@ tests:
 func TestRunJobsModeMatchesSerialOutcome(t *testing.T) {
 	suite := writeSuite(t, `
 tests:
-  - desc: one
-    cmd: 'echo one'
-    outputs:
-      stdout: ["one"]
-  - desc: two
-    cmd: 'echo two'
-    outputs:
-      stdout: ["two"]
+	- desc: one
+	  cmd: echo one
+	  outputs:
+		stdout:
+			- one
+	- desc: two
+	  cmd: echo two
+	  outputs:
+		stdout:
+			- two
 `)
 
 	var out bytes.Buffer
@@ -226,7 +237,7 @@ func TestRunHardErrors(t *testing.T) {
 	})
 
 	t.Run("unparsable file", func(t *testing.T) {
-		suite := writeSuite(t, "tests: [this is not a test]\n")
+		suite := writeSuite(t, "tests:\n\t- this is not a test\n")
 		_, err := Run(context.Background(), hostOpts(&out, suite))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "running ")
@@ -292,10 +303,11 @@ func TestSandboxConfig(t *testing.T) {
 func TestResultReports(t *testing.T) {
 	suite := writeSuite(t, `
 tests:
-  - desc: passes
-    cmd: 'echo hello'
-    outputs:
-      stdout: ["hello"]
+	- desc: passes
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
 `)
 
 	var out bytes.Buffer
@@ -317,11 +329,11 @@ func TestRunUpdateRewritesGoldensAndCountsThem(t *testing.T) {
 	suite := filepath.Join(dir, "suite.dats")
 	require.NoError(t, os.WriteFile(suite, []byte(`
 tests:
-  - desc: snapshots stdout
-    cmd: 'echo hello'
-    outputs:
-      snapshot:
-        stdout: true
+	- desc: snapshots stdout
+	  cmd: echo hello
+	  outputs:
+		snapshot:
+			stdout: true
 `), 0o644))
 
 	var out bytes.Buffer
@@ -346,10 +358,11 @@ func TestRunDiscoversFromWorkingDirectoryWhenNoPathsGiven(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "suite.dats"), []byte(`
 tests:
-  - desc: passes
-    cmd: 'echo hello'
-    outputs:
-      stdout: ["hello"]
+	- desc: passes
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
 `), 0o644))
 	t.Chdir(dir)
 
@@ -378,8 +391,8 @@ func TestRunNilOutputDoesNotPanic(t *testing.T) {
 func TestRunCanceledContextFailsInstances(t *testing.T) {
 	suite := writeSuite(t, `
 tests:
-  - desc: sleeps
-    cmd: 'sleep 30'
+	- desc: sleeps
+	  cmd: sleep 30
 `)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -398,7 +411,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	t.Run("invalid", func(t *testing.T) {
-		err := Validate([]string{writeSuite(t, "tests: [this is not a test]\n")})
+		err := Validate([]string{writeSuite(t, "tests:\n\t- this is not a test\n")})
 		require.Error(t, err)
 	})
 

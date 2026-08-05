@@ -1,41 +1,30 @@
 package schema
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 // ParseFile reads and parses a .dats file, returning the parsed TestFile or an error.
 // Unknown keys are rejected: a misspelled field (e.g. "stdotu") would otherwise be
-// silently dropped, leaving its assertion unenforced.
+// silently dropped, leaving its assertion unenforced. A second "---" document is a
+// parse error too (yaml-fixed's Parse rejects a multi-document stream outright) rather
+// than being silently dropped.
 func ParseFile(path string) (*TestFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading input file: %w", err)
 	}
 
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true)
-
 	var testFile TestFile
-	if err := dec.Decode(&testFile); err != nil && !errors.Is(err, io.EOF) {
+	if err := yamlfixed.UnmarshalStrict(data, &testFile); err != nil {
 		return nil, fmt.Errorf("parsing YAML: %w", err)
-	}
-
-	// Only the first "---" document is decoded above; anything after it would
-	// be silently dropped, so reject it instead.
-	var extra yaml.Node
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("multiple YAML documents are not supported")
 	}
 
 	if len(testFile.Tests) == 0 {

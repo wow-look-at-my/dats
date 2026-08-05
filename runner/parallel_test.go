@@ -43,10 +43,18 @@ func TestRunFilesParallelBarriers(t *testing.T) {
 setup: sleep 0.3 && echo ready > {shared.gate.txt}
 teardown: test "$(ls %[1]s | wc -l)" -eq %[2]d
 tests:
-  - desc: gated instance
-    cmd: grep -q ready {shared.gate.txt} && touch %[1]s/m-{matrix.i}.txt
-    matrix:
-      i: [1, 2, 3, 4, 5, 6, 7, 8]
+	- desc: gated instance
+	  cmd: grep -q ready {shared.gate.txt} && touch %[1]s/m-{matrix.i}.txt
+	  matrix:
+		i:
+			- 1
+			- 2
+			- 3
+			- 4
+			- 5
+			- 6
+			- 7
+			- 8
 `, markerDir, instances)
 		paths = append(paths, writeParallelDats(t, fmt.Sprintf("barrier-%d.dats", f), content))
 		markerDirs = append(markerDirs, markerDir)
@@ -80,10 +88,10 @@ func TestRunFilesParallelSetupFailureFailsEveryInstance(t *testing.T) {
 setup: exit 3
 teardown: touch `+teardownMarker+`
 tests:
-  - desc: never runs
-    cmd: touch `+ranMarker+`
-    matrix:
-      i: [1, 2, 3]
+	- desc: never runs
+	  cmd: touch `+ranMarker+`
+	  matrix:
+		i: [1, 2, 3]
 `)
 
 	var buf bytes.Buffer
@@ -135,13 +143,13 @@ func TestRunFilesParallelCrossFileConcurrency(t *testing.T) {
 	}
 	fileA := writeParallelDats(t, "a.dats", fmt.Sprintf(`
 tests:
-  - desc: writes a, waits for b
-    cmd: touch %s; %s
+	- desc: writes a, waits for b
+	  cmd: touch %s; %s
 `, aMarker, wait(bMarker)))
 	fileB := writeParallelDats(t, "b.dats", fmt.Sprintf(`
 tests:
-  - desc: waits for a, writes b
-    cmd: %s && touch %s
+	- desc: waits for a, writes b
+	  cmd: %s && touch %s
 `, wait(aMarker), bMarker))
 
 	var buf bytes.Buffer
@@ -161,12 +169,12 @@ func TestRunFilesParallelParseErrorFailsFast(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran.txt")
 	good := writeParallelDats(t, "good.dats", `
 tests:
-  - cmd: touch `+marker+`
+	- cmd: touch `+marker+`
 `)
 	bad := writeParallelDats(t, "bad.dats", `
 tests:
-  - cmd: echo hi
-    bogus_key: nope
+	- cmd: echo hi
+	  bogus_key: nope
 `)
 
 	var buf bytes.Buffer
@@ -196,8 +204,8 @@ func TestRunFilesParallelCanceledContextTeardownStillRuns(t *testing.T) {
 	path := writeParallelDats(t, "cancel.dats", `
 teardown: touch `+marker+`
 tests:
-  - desc: long sleeper
-    cmd: sleep 5
+	- desc: long sleeper
+	  cmd: sleep 5
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

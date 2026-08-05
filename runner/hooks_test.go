@@ -30,24 +30,24 @@ func TestRunFileSharedPlaceholderInCmdContentsAndEnv(t *testing.T) {
 	// the command, inputs.files contents, and inputs.env values.
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    config.json: '{"debug": true}'
+	files:
+		config.json: "{\"debug\": true}"
 tests:
-  - desc: cmd expansion
-    cmd: cat {shared.config.json}
-    outputs:
-      stdout:
-        - '"debug": true'
-  - desc: input contents and env expansion
-    cmd: 'diff "$SHARED_PATH" {shared.config.json} && cat {inputs.pointer.txt}'
-    inputs:
-      files:
-        pointer.txt: "{shared.config.json}"
-      env:
-        SHARED_PATH: "{shared.config.json}"
-    outputs:
-      stdout:
-        - "/shared/config.json"
+	- desc: cmd expansion
+	  cmd: cat {shared.config.json}
+	  outputs:
+		stdout:
+			- "\"debug\": true"
+	- desc: input contents and env expansion
+	  cmd: diff "$SHARED_PATH" {shared.config.json} && cat {inputs.pointer.txt}
+	  inputs:
+		files:
+			pointer.txt: "{shared.config.json}"
+		env:
+			SHARED_PATH: "{shared.config.json}"
+	  outputs:
+		stdout:
+			- /shared/config.json
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -62,15 +62,15 @@ func TestRunFileStdinNotExpanded(t *testing.T) {
 	// namespace, including {shared.X}, is expanded in it.
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    config.json: content
+	files:
+		config.json: content
 tests:
-  - cmd: cat
-    inputs:
-      stdin: "{shared.config.json}"
-    outputs:
-      stdout:
-        - "{shared.config.json}"
+	- cmd: cat
+	  inputs:
+		stdin: "{shared.config.json}"
+	  outputs:
+		stdout:
+			- "{shared.config.json}"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -82,10 +82,10 @@ tests:
 func TestRunFileNonLocalSharedPlaceholderLeftVerbatim(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
-  - cmd: echo '{shared.../escape}'
-    outputs:
-      stdout:
-        - "{shared.../escape}"
+	- cmd: echo '{shared.../escape}'
+	  outputs:
+		stdout:
+			- "{shared.../escape}"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -98,12 +98,12 @@ func TestRunFileSetupRunsBeforeTests(t *testing.T) {
 	// Setup output is observable from the tests, proving it ran first.
 	path := writeRunnerDats(t, `
 setup:
-  - echo generated-by-setup > {shared.marker.txt}
+	- echo generated-by-setup > {shared.marker.txt}
 tests:
-  - cmd: cat {shared.marker.txt}
-    outputs:
-      stdout:
-        - "generated-by-setup"
+	- cmd: cat {shared.marker.txt}
+	  outputs:
+		stdout:
+			- generated-by-setup
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -118,16 +118,16 @@ func TestRunFileSetupFailureFailsEveryTestAndRunsTeardown(t *testing.T) {
 	neverMarker := filepath.Join(t.TempDir(), "never.txt")
 	path := writeRunnerDats(t, `
 setup:
-  - echo before-failure
-  - exit 3
-  - touch `+neverMarker+`
+	- echo before-failure
+	- exit 3
+	- touch `+neverMarker+`
 teardown:
-  - touch `+teardownMarker+`
+	- touch `+teardownMarker+`
 tests:
-  - desc: first
-    cmd: echo one
-  - desc: second
-    cmd: echo two
+	- desc: first
+	  cmd: echo one
+	- desc: second
+	  cmd: echo two
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -165,9 +165,9 @@ tests:
 
 func TestRunFileSetupFailureShowsCapturedOutput(t *testing.T) {
 	path := writeRunnerDats(t, `
-setup: 'echo partial output; echo boom >&2; exit 7'
+setup: echo partial output; echo boom >&2; exit 7
 tests:
-  - cmd: echo never runs
+	- cmd: echo never runs
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -189,13 +189,13 @@ func TestRunFileSharedWriteFailureFailsEveryTest(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "teardown-ran.txt")
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    sub/inner.txt: makes sub a directory
-    sub: collides with the directory
+	files:
+		sub/inner.txt: makes sub a directory
+		sub: collides with the directory
 teardown: touch `+marker+`
 tests:
-  - desc: never runs
-    cmd: echo hi
+	- desc: never runs
+	  cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -216,10 +216,10 @@ func TestRunFileTeardownFailureFailsFile(t *testing.T) {
 	path := writeRunnerDats(t, `
 teardown: exit 1
 tests:
-  - cmd: echo ok
-    outputs:
-      stdout:
-        - "ok"
+	- cmd: echo ok
+	  outputs:
+		stdout:
+			- ok
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -244,11 +244,11 @@ func TestRunFileTeardownRunsAfterTestFailuresAndContinuesPastFailures(t *testing
 	last := filepath.Join(dir, "last.txt")
 	path := writeRunnerDats(t, `
 teardown:
-  - touch `+first+`
-  - exit 7
-  - touch `+last+`
+	- touch `+first+`
+	- exit 7
+	- touch `+last+`
 tests:
-  - cmd: exit 5
+	- cmd: exit 5
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -269,20 +269,20 @@ tests:
 func TestRunFileSharedNestedNamesAndContentExpansion(t *testing.T) {
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    sub/dir/base.txt: base-content
-    pointer.txt: "{shared.sub/dir/base.txt}"
+	files:
+		sub/dir/base.txt: base-content
+		pointer.txt: "{shared.sub/dir/base.txt}"
 tests:
-  - desc: nested file exists with parents created
-    cmd: cat {shared.sub/dir/base.txt}
-    outputs:
-      stdout:
-        - "base-content"
-  - desc: shared contents expand shared placeholders
-    cmd: cat "$(cat {shared.pointer.txt})"
-    outputs:
-      stdout:
-        - "base-content"
+	- desc: nested file exists with parents created
+	  cmd: cat {shared.sub/dir/base.txt}
+	  outputs:
+		stdout:
+			- base-content
+	- desc: shared contents expand shared placeholders
+	  cmd: cat "$(cat {shared.pointer.txt})"
+	  outputs:
+		stdout:
+			- base-content
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -302,7 +302,7 @@ func TestRunFileHooksReceiveCoverDir(t *testing.T) {
 setup: echo "$GOCOVERDIR" > `+setupMarker+`
 teardown: echo "$GOCOVERDIR" > `+teardownMarker+`
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	coverDir := filepath.Join(t.TempDir(), "coverage")
 	var buf bytes.Buffer
@@ -328,7 +328,7 @@ func TestRunFileHooksWithoutCoverDirInheritPlainEnv(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup: echo "cover=$GOCOVERDIR" > `+marker+`
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -346,7 +346,7 @@ func TestRunFileVerboseShowsHookCommands(t *testing.T) {
 setup: echo prepare
 teardown: echo cleanup
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, true, false, "")
@@ -362,19 +362,19 @@ func TestRunFileHookEnvApplied(t *testing.T) {
 	// values themselves and their placeholder expansion reach the command.
 	path := writeRunnerDats(t, `
 shared:
-  files:
-    marker.txt: from-shared
+	files:
+		marker.txt: from-shared
 setup:
-  - cmd: 'echo "$FOO/$BAR" > {shared.out.txt}'
-    env:
-      FOO: bar
-      BAR: "{shared.marker.txt}"
+	- cmd: echo "$FOO/$BAR" > {shared.out.txt}
+	  env:
+		FOO: bar
+		BAR: "{shared.marker.txt}"
 tests:
-  - cmd: cat {shared.out.txt}
-    outputs:
-      stdout:
-        - "bar/"
-        - "/shared/marker.txt"
+	- cmd: cat {shared.out.txt}
+	  outputs:
+		stdout:
+			- bar/
+			- /shared/marker.txt
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -388,14 +388,14 @@ func TestRunFileHookEnvNotInheritedByTests(t *testing.T) {
 	// test commands that run afterward.
 	path := writeRunnerDats(t, `
 setup:
-  - cmd: 'true'
-    env:
-      FOO: bar
+	- cmd: "true"
+	  env:
+		FOO: bar
 tests:
-  - cmd: 'echo "[$FOO]"'
-    outputs:
-      stdout:
-        - "[]"
+	- cmd: echo "[$FOO]"
+	  outputs:
+		stdout:
+			- "[]"
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -410,13 +410,13 @@ func TestRunFileHookStdinFile(t *testing.T) {
 	path := filepath.Join(dir, "runner.dats")
 	require.Nil(t, os.WriteFile(path, []byte(`
 setup:
-  - cmd: cat > {shared.out.txt}
-    stdin_file: in.txt
+	- cmd: cat > {shared.out.txt}
+	  stdin_file: in.txt
 tests:
-  - cmd: cat {shared.out.txt}
-    outputs:
-      stdout:
-        - "piped content"
+	- cmd: cat {shared.out.txt}
+	  outputs:
+		stdout:
+			- piped content
 `), 0644))
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -428,10 +428,10 @@ tests:
 func TestRunFileHookStdinFileMissingFailsLoudly(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup:
-  - cmd: cat
-    stdin_file: does-not-exist.txt
+	- cmd: cat
+	  stdin_file: does-not-exist.txt
 tests:
-  - cmd: echo never
+	- cmd: echo never
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -444,10 +444,10 @@ tests:
 func TestRunFileHookTimeoutEnforced(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup:
-  - cmd: sleep 5
-    timeout: 200ms
+	- cmd: sleep 5
+	  timeout: 200ms
 tests:
-  - cmd: echo never
+	- cmd: echo never
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -466,7 +466,7 @@ func TestRunFileHookDefaultTimeoutDoesNotFireEarly(t *testing.T) {
 	path := writeRunnerDats(t, `
 setup: echo quick
 tests:
-  - cmd: echo hi
+	- cmd: echo hi
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -483,8 +483,8 @@ func TestRunFileCanceledContextTeardownStillRuns(t *testing.T) {
 	path := writeRunnerDats(t, `
 teardown: touch `+marker+`
 tests:
-  - desc: long sleeper
-    cmd: sleep 5
+	- desc: long sleeper
+	  cmd: sleep 5
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")

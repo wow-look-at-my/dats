@@ -16,7 +16,7 @@ package schema
 import (
 	"fmt"
 
-	"gopkg.in/yaml.v3"
+	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 // SandboxSpec is a file's `sandbox` block. A nil *SandboxSpec (key absent, or
@@ -66,39 +66,25 @@ func (s *SandboxSpec) NetworkEnabled() bool {
 
 // UnmarshalYAML decodes the two accepted sandbox shapes: a scalar boolean
 // (`sandbox: false` opts the file out; `sandbox: true` is the explicit
-// opt-in, identical to omitting the key) or a mapping of the keys above. The
-// mapping node is iterated directly, which bypasses yaml.v3's own
-// duplicate-key detection and KnownFields checking, so unknown and duplicate
-// keys are rejected here -- mirroring SnapshotCheck and Matrix.
-func (s *SandboxSpec) UnmarshalYAML(node *yaml.Node) error {
-	switch node.Kind {
-	case yaml.ScalarNode:
-		var enabled bool
-		if err := node.Decode(&enabled); err != nil {
-			return fmt.Errorf("sandbox: must be true, false, or a mapping (enabled, network, image)")
-		}
+// opt-in, identical to omitting the key) or a mapping of the keys above. A
+// parsed *yamlfixed.Map can never hold a duplicate key (the parser rejects
+// that before this ever runs), so no manual duplicate-key bookkeeping is
+// needed; unknown keys are still rejected here, mirroring SnapshotCheck and
+// Matrix.
+func (s *SandboxSpec) UnmarshalYAML(value any) error {
+	switch v := value.(type) {
+	case bool:
+		enabled := v
 		*s = SandboxSpec{Enabled: &enabled}
 		return nil
-	case yaml.MappingNode:
+	case *yamlfixed.Map:
 		spec := SandboxSpec{}
-		seen := make(map[string]bool, len(node.Content)/2)
-		for i := 0; i < len(node.Content); i += 2 {
-			keyNode, valNode := node.Content[i], node.Content[i+1]
-			key := keyNode.Value
-			switch key {
-			case "enabled", "network", "image":
-			default:
-				return fmt.Errorf("sandbox: unknown key %q (allowed: enabled, network, image)", key)
-			}
-			if seen[key] {
-				return fmt.Errorf("sandbox: %s declared more than once", key)
-			}
-			seen[key] = true
-
+		for _, key := range v.Keys {
+			val, _ := v.Get(key)
 			switch key {
 			case "enabled", "network":
-				var flag bool
-				if valNode.Kind != yaml.ScalarNode || valNode.Decode(&flag) != nil {
+				flag, ok := val.(bool)
+				if !ok {
 					return fmt.Errorf("sandbox: %s must be a boolean", key)
 				}
 				if key == "enabled" {
@@ -107,15 +93,18 @@ func (s *SandboxSpec) UnmarshalYAML(node *yaml.Node) error {
 					spec.Network = &flag
 				}
 			case "image":
-				if valNode.Kind != yaml.ScalarNode || valNode.Tag != "!!str" || valNode.Value == "" {
+				image, ok := val.(string)
+				if !ok || image == "" {
 					return fmt.Errorf("sandbox: image must be a non-empty string")
 				}
-				spec.Image = valNode.Value
+				spec.Image = image
+			default:
+				return fmt.Errorf("sandbox: unknown key %q (allowed: enabled, network, image)", key)
 			}
 		}
 		// A mapping that states nothing looks like configuration but
 		// configures nothing -- it can only be a mistake.
-		if len(seen) == 0 {
+		if v.Len() == 0 {
 			return fmt.Errorf("sandbox: mapping must set at least one of enabled, network, image")
 		}
 		*s = spec

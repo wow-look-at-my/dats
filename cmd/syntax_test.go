@@ -12,7 +12,7 @@ import (
 
 func TestRunSyntax_Valid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ok.dats")
-	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - cmd: echo hi\n"), 0644))
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n\t- cmd: echo hi\n"), 0644))
 
 	var out, errw bytes.Buffer
 	ok := runSyntax([]string{path}, &out, &errw)
@@ -24,7 +24,7 @@ func TestRunSyntax_Valid(t *testing.T) {
 func TestRunSyntax_Invalid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.dats")
 	// Missing the required 'cmd' field.
-	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - desc: no command\n"), 0644))
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n\t- desc: no command\n"), 0644))
 
 	var out, errw bytes.Buffer
 	ok := runSyntax([]string{path}, &out, &errw)
@@ -34,7 +34,7 @@ func TestRunSyntax_Invalid(t *testing.T) {
 
 func TestSyntaxCmd_FailureReturnsSentinel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.dats")
-	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - desc: no command\n"), 0644))
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n\t- desc: no command\n"), 0644))
 
 	err := syntaxCmd.RunE(syntaxCmd, []string{path})
 	assert.ErrorIs(t, err, errSyntaxFailed)
@@ -42,7 +42,7 @@ func TestSyntaxCmd_FailureReturnsSentinel(t *testing.T) {
 
 func TestSyntaxCmd_ValidReturnsNil(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ok.dats")
-	require.Nil(t, os.WriteFile(path, []byte("tests:\n  - cmd: echo hi\n"), 0644))
+	require.Nil(t, os.WriteFile(path, []byte("tests:\n\t- cmd: echo hi\n"), 0644))
 
 	err := syntaxCmd.RunE(syntaxCmd, []string{path})
 	assert.Nil(t, err)

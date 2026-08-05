@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	yaml "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 func TestSetupCommands_UnmarshalYAML_Forms(t *testing.T) {
@@ -35,12 +35,13 @@ func TestTeardownCommands_UnmarshalYAML_ErrorsNameKey(t *testing.T) {
 func TestHookCommand_MappingForm(t *testing.T) {
 	var s SetupCommands
 	require.Nil(t, yaml.Unmarshal([]byte(`
-- cmd: echo hi
-  env:
-    FOO: bar
-    BAZ: qux
-  stdin_file: fixtures/in.txt
-  timeout: 5
+-
+	cmd: echo hi
+	env:
+		FOO: bar
+		BAZ: qux
+	stdin_file: fixtures/in.txt
+	timeout: 5
 `), &s))
 	require.Len(t, s, 1)
 	hc := s[0]
@@ -54,7 +55,7 @@ func TestHookCommand_MappingForm(t *testing.T) {
 
 func TestHookCommand_MappingForm_CmdOnlyDefaultsTimeout(t *testing.T) {
 	var s SetupCommands
-	require.Nil(t, yaml.Unmarshal([]byte("- cmd: echo hi\n"), &s))
+	require.Nil(t, yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n"), &s))
 	require.Len(t, s, 1)
 	hc := s[0]
 	assert.Equal(t, "echo hi", hc.Cmd)
@@ -72,49 +73,51 @@ func TestHookCommand_BareStringDefaultsTimeout(t *testing.T) {
 
 func TestHookCommand_MappingForm_MissingCmd(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- env:\n    FOO: bar\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tenv:\n\t\tFOO: bar\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "setup: command 1: must set cmd")
 }
 
 func TestHookCommand_MappingForm_UnknownKey(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  bogus: 1\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\tbogus: 1\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), `unknown key "bogus"`)
 }
 
 func TestHookCommand_MappingForm_DuplicateKey(t *testing.T) {
+	// A duplicate key is rejected by the parser itself before HookCommand's
+	// own decoding ever runs.
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  cmd: echo bye\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\tcmd: echo bye\n"), &s)
 	require.NotNil(t, err)
-	assert.Contains(t, err.Error(), "cmd declared more than once")
+	assert.Contains(t, err.Error(), `duplicate mapping key "cmd"`)
 }
 
 func TestHookCommand_MappingForm_EnvMustBeMapping(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  env: not a mapping\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\tenv: not a mapping\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "env must be a mapping of variable name to value")
 }
 
 func TestHookCommand_MappingForm_StdinFileMustBeNonEmptyString(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  stdin_file: \"\"\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\tstdin_file: \"\"\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "stdin_file must be a non-empty string")
 }
 
 func TestHookCommand_MappingForm_TimeoutMustBePositive(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  timeout: 0\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\ttimeout: 0\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "timeout must be greater than 0")
 }
 
 func TestHookCommand_MappingForm_TimeoutRejectsNegative(t *testing.T) {
 	var s SetupCommands
-	err := yaml.Unmarshal([]byte("- cmd: echo hi\n  timeout: -1\n"), &s)
+	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\ttimeout: -1\n"), &s)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "must not be negative")
 }
@@ -214,7 +217,7 @@ func TestOutputCheck_UnmarshalYAML_Patterns(t *testing.T) {
 
 func TestOutputCheck_UnmarshalYAML_LineChecks(t *testing.T) {
 	var o OutputCheck
-	err := yaml.Unmarshal([]byte("0: \"^line0$\"\n2: \"^line2$\""), &o)
+	err := yaml.Unmarshal([]byte("\"0\": ^line0$\n\"2\": ^line2$\n"), &o)
 	require.Nil(t, err)
 
 	require.Equal(t, 2, len(o.LineChecks))
@@ -247,23 +250,23 @@ func TestOutputCheck_IsEmpty(t *testing.T) {
 func TestOutputBlock_UnmarshalYAML(t *testing.T) {
 	input := `
 stdout:
-  - "hello"
+	- hello
 stderr:
-  - "error"
+	- error
 "!stdout":
-  - "bad"
+	- bad
 "!stderr":
-  - "warning"
+	- warning
 files:
-  binary:
-    exists: true
-    match:
-      - "ELF"
-    notMatch:
-      - "corrupted"
+	binary:
+		exists: true
+		match:
+			- ELF
+		notMatch:
+			- corrupted
 "!files":
-  error.log:
-    exists: false
+	error.log:
+		exists: false
 `
 	var o OutputBlock
 	err := yaml.Unmarshal([]byte(input), &o)
@@ -296,7 +299,7 @@ files:
 func TestOutputBlock_JSONOutput(t *testing.T) {
 	// Present: an object value
 	var o OutputBlock
-	err := yaml.Unmarshal([]byte("json_output:\n  name: dats\n  count: 2\n"), &o)
+	err := yaml.Unmarshal([]byte("json_output:\n\tname: dats\n\tcount: 2\n"), &o)
 	require.Nil(t, err)
 	require.True(t, o.HasJSONOutput())
 	v, err := o.JSONOutputValue()
@@ -317,7 +320,7 @@ func TestOutputBlock_JSONOutput(t *testing.T) {
 
 	// Absent: no json_output key
 	var oAbsent OutputBlock
-	err = yaml.Unmarshal([]byte("stdout:\n  - hi\n"), &oAbsent)
+	err = yaml.Unmarshal([]byte("stdout:\n\t- hi\n"), &oAbsent)
 	require.Nil(t, err)
 	assert.False(t, oAbsent.HasJSONOutput())
 }
@@ -332,8 +335,8 @@ func TestSnapshotCheck_UnmarshalYAML_Forms(t *testing.T) {
 		{"scalar false is the zero value", "false", SnapshotCheck{}},
 		{"stderr only", "stderr: true", SnapshotCheck{Enabled: true, Stderr: true}},
 		{"stdout only", "stdout: true", SnapshotCheck{Enabled: true, Stdout: true}},
-		{"both streams", "stdout: true\nstderr: true", SnapshotCheck{Enabled: true, Stdout: true, Stderr: true}},
-		{"explicit false stream", "stdout: true\nstderr: false", SnapshotCheck{Enabled: true, Stdout: true}},
+		{"both streams", "stdout: true\nstderr: true\n", SnapshotCheck{Enabled: true, Stdout: true, Stderr: true}},
+		{"explicit false stream", "stdout: true\nstderr: false\n", SnapshotCheck{Enabled: true, Stdout: true}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -352,15 +355,15 @@ func TestSnapshotCheck_UnmarshalYAML_Errors(t *testing.T) {
 	}{
 		{"non-bool scalar", "banana", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
 		{"sequence", "[true]", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
-		// Iterating the mapping node directly bypasses yaml.v3's own
-		// duplicate-key detection, so the unmarshaler must catch this itself.
-		{"duplicate key", "stdout: true\nstdout: false", "snapshot: stdout declared more than once"},
+		// A duplicate key is rejected by the parser itself before
+		// SnapshotCheck's own decoding ever runs.
+		{"duplicate key", "stdout: true\nstdout: false", `duplicate mapping key "stdout"`},
 		{"unknown key", "files: true", `snapshot: unknown key "files" (allowed: stdout, stderr)`},
 		{"non-bool value", "stdout: 1", "snapshot: stdout must be a boolean"},
 		{"sequence value", "stderr: [true]", "snapshot: stderr must be a boolean"},
 		{"empty map", "{}", "snapshot: must enable at least one of stdout, stderr"},
 		{"single false stream", "stdout: false", "snapshot: must enable at least one of stdout, stderr"},
-		{"all-false map", "stdout: false\nstderr: false", "snapshot: must enable at least one of stdout, stderr"},
+		{"all-false map", "stdout: false\nstderr: false\n", "snapshot: must enable at least one of stdout, stderr"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -375,11 +378,12 @@ func TestSnapshotCheck_UnmarshalYAML_Errors(t *testing.T) {
 func TestOutputBlock_SnapshotAbsentAndNull(t *testing.T) {
 	// An omitted snapshot key stays the zero value...
 	var absent OutputBlock
-	require.Nil(t, yaml.Unmarshal([]byte("stdout:\n  - hi\n"), &absent))
+	require.Nil(t, yaml.Unmarshal([]byte("stdout:\n\t- hi\n"), &absent))
 	assert.Equal(t, SnapshotCheck{}, absent.Snapshot)
 
-	// ...and so does an explicit null (yaml.v3 never invokes the unmarshaler
-	// for null nodes), matching how `matrix:` with explicit null is absent.
+	// ...and so does an explicit null (SnapshotCheck.UnmarshalYAML treats a
+	// nil value the same as an absent key), matching how `matrix:` with
+	// explicit null is absent.
 	var null OutputBlock
 	require.Nil(t, yaml.Unmarshal([]byte("snapshot: null\n"), &null))
 	assert.Equal(t, SnapshotCheck{}, null.Snapshot)
@@ -388,15 +392,15 @@ func TestOutputBlock_SnapshotAbsentAndNull(t *testing.T) {
 func TestTestFile_UnmarshalYAML(t *testing.T) {
 	input := `
 tests:
-  - desc: test one
-    exit: 0
-    cmd: echo hello
-    outputs:
-      stdout:
-        - "hello"
-  - desc: test two
-    exit: EXIT_FAILURE
-    cmd: exit 1
+	- desc: test one
+	  exit: 0
+	  cmd: echo hello
+	  outputs:
+		stdout:
+			- hello
+	- desc: test two
+	  exit: EXIT_FAILURE
+	  cmd: exit 1
 `
 	var tf TestFile
 	err := yaml.Unmarshal([]byte(input), &tf)
