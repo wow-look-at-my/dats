@@ -111,7 +111,38 @@ func commandFromNode(node *yaml.Node, key, label string) (string, error) {
 	if strings.TrimSpace(node.Value) == "" {
 		return "", fmt.Errorf("%s: %s must not be empty", key, label)
 	}
+	if containsHeredoc(node.Value) {
+		return "", fmt.Errorf("%s: %s: %s", key, label, heredocBanMessage)
+	}
 	return node.Value, nil
+}
+
+// heredocBanMessage is the error text for every heredoc rejection (test cmd,
+// setup, teardown), naming the mechanisms that replace the heredoc.
+const heredocBanMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
+
+// containsHeredoc reports whether s contains a shell heredoc redirection
+// (<<WORD, <<-WORD, or <<~WORD). It does not match "<<<" (a herestring: a
+// single-line construct, not the multi-line embedded-file pattern heredocs
+// enable) -- a run of three or more "<" is skipped in full so a herestring's
+// trailing "<<" is never mistaken for a heredoc start.
+func containsHeredoc(s string) bool {
+	for i := 0; i+1 < len(s); i++ {
+		if s[i] != '<' || s[i+1] != '<' {
+			continue
+		}
+		if i+2 < len(s) && s[i+2] == '<' {
+			// Skip the whole run of "<" so none of it is rescanned.
+			j := i + 2
+			for j < len(s) && s[j] == '<' {
+				j++
+			}
+			i = j - 1
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // Shared declares file-level fixture files, written once into the file's
@@ -120,7 +151,13 @@ func commandFromNode(node *yaml.Node, key, label string) (string, error) {
 type Shared struct {
 	// Files maps file name to content. Contents go through {shared.X}
 	// placeholder expansion only; names must be local relative paths.
-	Files map[string]string `yaml:"files"`
+	Files map[string]string `yaml:"files,omitempty"`
+	// Copy maps a fixture name to a host file to copy into the shared
+	// directory, writable -- the read-write counterpart of the sandbox's
+	// read-only bind mount of the working directory. A relative source
+	// resolves against the directory holding the .dats file; names follow
+	// the same locality rule as Files, and a name may not appear in both.
+	Copy map[string]string `yaml:"copy,omitempty"`
 }
 
 // Test represents a single test case
@@ -141,6 +178,13 @@ type Test struct {
 type InputBlock struct {
 	Stdin string            `yaml:"stdin,omitempty"`
 	Files map[string]string `yaml:"files,omitempty"`
+	// Copy maps a fixture name to a host file to copy into the test's input
+	// directory, writable -- the read-write counterpart of the sandbox's
+	// read-only bind mount of the working directory: a file the test needs
+	// to modify. A relative source resolves against the directory holding
+	// the .dats file; names follow the same locality rule as Files, and a
+	// name may not appear in both.
+	Copy map[string]string `yaml:"copy,omitempty"`
 	// Env maps environment variable names to values. The variables are added
 	// to the inherited environment for the test's command; values go through
 	// the same placeholder expansion as the command.

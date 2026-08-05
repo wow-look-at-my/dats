@@ -44,6 +44,12 @@ type Runner struct {
 	// only ever runs one file at a time -- jobs mode gives each file its own.
 	plan *sandboxPlan
 
+	// sourceDir is the directory holding the .dats file currently being run,
+	// set by RunFile/runFileParallel alongside plan. It resolves a relative
+	// inputs.copy/shared.copy source, so a copy fixture is portable
+	// regardless of dats' own working directory.
+	sourceDir string
+
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
 	// 19, best-effort; no-op on windows). Only the jobs-mode orchestration
@@ -106,6 +112,9 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
 		return nil, err
 	}
+	if r.sourceDir, err = sourceDirOf(path); err != nil {
+		return nil, err
+	}
 
 	// Expand every test into its matrix instances up front, so instance
 	// numbering, per-instance temp directories, the header's test count, the
@@ -136,7 +145,7 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	// stopping at the first failure. A failure here fails every test in the
 	// file; teardown still runs.
 	if testFile.Shared != nil {
-		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files); err != nil {
+		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files, testFile.Shared.Copy, r.sourceDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
@@ -287,6 +296,19 @@ func signalSuffix(execResult *ExecResult) string {
 	return fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
 }
 
+// sourceDirOf returns the absolute directory holding the .dats file at path,
+// which resolveSource in fixtures.go joins with a relative inputs.copy or
+// shared.copy source. Absolute, rather than left relative to the process's
+// current directory, so the resolution is stable even if that ever changes
+// mid-run.
+func sourceDirOf(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolving %s: %w", path, err)
+	}
+	return filepath.Dir(abs), nil
+}
+
 // testName returns the display name for a test: its desc, falling back to
 // the command.
 func testName(test *schema.Test) string {
@@ -320,7 +342,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	}
 
 	// Setup fixtures
-	fixtures, err := SetupFixtures(baseDir, index, test)
+	fixtures, err := SetupFixtures(baseDir, index, test, r.sourceDir)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("fixture setup: %v", err))
 		result.Duration = time.Since(start)

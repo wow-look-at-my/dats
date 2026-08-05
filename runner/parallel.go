@@ -141,6 +141,9 @@ func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *sch
 	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
 		return nil, err
 	}
+	if r.sourceDir, err = sourceDirOf(path); err != nil {
+		return nil, err
+	}
 
 	instances := make([]schema.TestInstance, 0, len(testFile.Tests))
 	for i := range testFile.Tests {
@@ -164,7 +167,7 @@ func (r *Runner) runFileParallel(ctx context.Context, path string, testFile *sch
 	// instance starts. Hooks stay sequential within the file (their declared
 	// order is semantic); each holds a pool slot while its command runs.
 	if testFile.Shared != nil {
-		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files); err != nil {
+		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files, testFile.Shared.Copy, r.sourceDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}

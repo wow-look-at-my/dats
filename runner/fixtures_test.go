@@ -26,7 +26,7 @@ func TestSetupFixtures(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	// Input file should exist
@@ -44,7 +44,7 @@ func TestSetupFixturesNoFiles(t *testing.T) {
 	tmp := t.TempDir()
 	test := &schema.Test{Cmd: "echo hi"}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 	assert.Empty(t, ctx.InputPaths)
 	assert.Empty(t, ctx.OutputPaths)
@@ -61,7 +61,7 @@ func TestSetupFixturesNestedInputFile(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	content, err := os.ReadFile(ctx.InputPaths["sub/dir/file.txt"])
@@ -86,7 +86,7 @@ func TestSetupFixturesExpandsPlaceholdersInContents(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	// Placeholders in contents expand to the same paths as in cmd; unknown
@@ -114,7 +114,7 @@ func TestSetupFixturesContentSelfReference(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	content, err := os.ReadFile(ctx.InputPaths["self.txt"])
@@ -133,7 +133,7 @@ func TestSetupFixturesOutputPlaceholderWithoutFilesCheck(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	// {outputs.X} resolves even when no files check references X
@@ -210,7 +210,7 @@ func TestExpandPlaceholdersSharedNamespace(t *testing.T) {
 
 func TestSetupFixturesSetsSharedDir(t *testing.T) {
 	tmp := t.TempDir()
-	ctx, err := SetupFixtures(tmp, 0, &schema.Test{Cmd: "true"})
+	ctx, err := SetupFixtures(tmp, 0, &schema.Test{Cmd: "true"}, "")
 	require.Nil(t, err)
 	assert.Equal(t, filepath.Join(tmp, "shared"), ctx.SharedDir)
 	// The shared directory exists so {shared.X} resolves to a writable path
@@ -227,7 +227,7 @@ func TestSetupSharedFixtures(t *testing.T) {
 		"config.json":  `{"debug": true}`,
 		"sub/deep.txt": "path: {shared.config.json}",
 	}
-	require.Nil(t, SetupSharedFixtures(sharedDir, files))
+	require.Nil(t, SetupSharedFixtures(sharedDir, files, nil, ""))
 
 	data, err := os.ReadFile(filepath.Join(sharedDir, "config.json"))
 	require.Nil(t, err)
@@ -244,7 +244,7 @@ func TestSetupSharedFixturesLeavesTestNamespacesVerbatim(t *testing.T) {
 	require.Nil(t, os.MkdirAll(sharedDir, 0755))
 	require.Nil(t, SetupSharedFixtures(sharedDir, map[string]string{
 		"script.sh": "cp {inputs.a.txt} {outputs.b.txt}",
-	}))
+	}, nil, ""))
 	data, err := os.ReadFile(filepath.Join(sharedDir, "script.sh"))
 	require.Nil(t, err)
 	assert.Equal(t, "cp {inputs.a.txt} {outputs.b.txt}", string(data))
@@ -255,7 +255,7 @@ func TestSetupSharedFixturesRejectsNonLocalNames(t *testing.T) {
 	sharedDir := filepath.Join(tmp, "shared")
 	require.Nil(t, os.MkdirAll(sharedDir, 0755))
 	for _, name := range []string{"../evil.txt", "/abs/evil.txt", ".."} {
-		err := SetupSharedFixtures(sharedDir, map[string]string{name: "pwned"})
+		err := SetupSharedFixtures(sharedDir, map[string]string{name: "pwned"}, nil, "")
 		require.NotNil(t, err, "shared name %q must be rejected", name)
 		assert.Contains(t, err.Error(), "must be a relative path that stays inside the shared directory")
 	}
@@ -271,7 +271,7 @@ func TestSetupFixturesRejectsTraversalInputName(t *testing.T) {
 			Cmd:    "true",
 			Inputs: schema.InputBlock{Files: map[string]string{name: "pwned"}},
 		}
-		_, err := SetupFixtures(tmp, 0, test)
+		_, err := SetupFixtures(tmp, 0, test, "")
 		require.NotNil(t, err, "input name %q must be rejected", name)
 		assert.Contains(t, err.Error(), "input file name")
 		assert.Contains(t, err.Error(), "must be a relative path that stays inside the test directory")
@@ -290,7 +290,7 @@ func TestSetupFixturesRejectsTraversalOutputName(t *testing.T) {
 			Files: map[string]schema.FileCheck{"../../evil.txt": {}},
 		},
 	}
-	_, err := SetupFixtures(tmp, 0, test)
+	_, err := SetupFixtures(tmp, 0, test, "")
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "output file name")
 	assert.Contains(t, err.Error(), "must be a relative path that stays inside the test directory")
@@ -302,7 +302,7 @@ func TestSetupFixturesRejectsTraversalOutputName(t *testing.T) {
 			NotFiles: map[string]schema.FileCheck{"/etc/passwd": {}},
 		},
 	}
-	_, err = SetupFixtures(tmp, 1, test2)
+	_, err = SetupFixtures(tmp, 1, test2, "")
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "output file name")
 }
@@ -316,7 +316,7 @@ func TestSetupFixturesCreatesNestedOutputParents(t *testing.T) {
 		},
 	}
 
-	ctx, err := SetupFixtures(tmp, 0, test)
+	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
 	// The registered output's parent directory exists so commands can write
@@ -337,6 +337,125 @@ func TestExpandPlaceholdersNonLocalOutputLeftVerbatim(t *testing.T) {
 	// they stay inside it; traversal and absolute names are left verbatim.
 	assert.Equal(t, "cat {outputs.../../evil}", ExpandPlaceholders("cat {outputs.../../evil}", ctx))
 	assert.Equal(t, "cat {outputs./etc/passwd}", ExpandPlaceholders("cat {outputs./etc/passwd}", ctx))
+}
+
+func TestSetupFixturesCopy(t *testing.T) {
+	sourceDir := t.TempDir()
+	require.Nil(t, os.WriteFile(filepath.Join(sourceDir, "script.sh"), []byte("#!/bin/sh\necho hi\n"), 0755))
+
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd: "cat {inputs.script.sh}",
+		Inputs: schema.InputBlock{
+			Copy: map[string]string{"script.sh": "script.sh"},
+		},
+	}
+	ctx, err := SetupFixtures(tmp, 0, test, sourceDir)
+	require.Nil(t, err)
+
+	content, err := os.ReadFile(ctx.InputPaths["script.sh"])
+	require.Nil(t, err)
+	assert.Equal(t, "#!/bin/sh\necho hi\n", string(content))
+
+	// The copy preserves the source's permission bits (the executable bit
+	// matters for a script pulled in to be run).
+	info, err := os.Stat(ctx.InputPaths["script.sh"])
+	require.Nil(t, err)
+	assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
+}
+
+func TestSetupFixturesCopyAbsoluteSource(t *testing.T) {
+	sourceDir := t.TempDir()
+	abs := filepath.Join(t.TempDir(), "data.bin")
+	require.Nil(t, os.WriteFile(abs, []byte("binary data"), 0644))
+
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd:    "true",
+		Inputs: schema.InputBlock{Copy: map[string]string{"data.bin": abs}},
+	}
+	ctx, err := SetupFixtures(tmp, 0, test, sourceDir)
+	require.Nil(t, err)
+
+	content, err := os.ReadFile(ctx.InputPaths["data.bin"])
+	require.Nil(t, err)
+	assert.Equal(t, "binary data", string(content))
+}
+
+func TestSetupFixturesCopyMissingSourceFails(t *testing.T) {
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd:    "true",
+		Inputs: schema.InputBlock{Copy: map[string]string{"data.txt": "nope/does-not-exist.txt"}},
+	}
+	_, err := SetupFixtures(tmp, 0, test, t.TempDir())
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "copying input file data.txt")
+}
+
+func TestSetupFixturesCopyCollisionWithFiles(t *testing.T) {
+	// ParseFile already rejects this; SetupFixtures checks again for a
+	// library caller constructing a Test directly.
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd: "true",
+		Inputs: schema.InputBlock{
+			Files: map[string]string{"dup.txt": "content"},
+			Copy:  map[string]string{"dup.txt": "some/source.txt"},
+		},
+	}
+	_, err := SetupFixtures(tmp, 0, test, t.TempDir())
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), `"dup.txt" is declared under both files and copy`)
+}
+
+func TestSetupFixturesCopyNestedDestination(t *testing.T) {
+	sourceDir := t.TempDir()
+	require.Nil(t, os.WriteFile(filepath.Join(sourceDir, "src.txt"), []byte("nested"), 0644))
+
+	tmp := t.TempDir()
+	test := &schema.Test{
+		Cmd:    "true",
+		Inputs: schema.InputBlock{Copy: map[string]string{"sub/dir/dest.txt": "src.txt"}},
+	}
+	ctx, err := SetupFixtures(tmp, 0, test, sourceDir)
+	require.Nil(t, err)
+
+	content, err := os.ReadFile(ctx.InputPaths["sub/dir/dest.txt"])
+	require.Nil(t, err)
+	assert.Equal(t, "nested", string(content))
+}
+
+func TestSetupSharedFixturesCopy(t *testing.T) {
+	sourceDir := t.TempDir()
+	require.Nil(t, os.WriteFile(filepath.Join(sourceDir, "fixture.bin"), []byte("shared binary"), 0644))
+
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	require.Nil(t, SetupSharedFixtures(sharedDir, nil, map[string]string{"fixture.bin": "fixture.bin"}, sourceDir))
+
+	content, err := os.ReadFile(filepath.Join(sharedDir, "fixture.bin"))
+	require.Nil(t, err)
+	assert.Equal(t, "shared binary", string(content))
+}
+
+func TestSetupSharedFixturesCopyRejectsTraversalName(t *testing.T) {
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	err := SetupSharedFixtures(sharedDir, nil, map[string]string{"../evil.txt": "some/source.txt"}, t.TempDir())
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "must be a relative path that stays inside the shared directory")
+}
+
+func TestSetupSharedFixturesCopyCollisionWithFiles(t *testing.T) {
+	sharedDir := filepath.Join(t.TempDir(), "shared")
+	require.Nil(t, os.MkdirAll(sharedDir, 0755))
+	err := SetupSharedFixtures(sharedDir,
+		map[string]string{"dup.txt": "content"},
+		map[string]string{"dup.txt": "some/source.txt"},
+		t.TempDir())
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), `"dup.txt" is declared under both files and copy`)
 }
 
 func TestCleanup(t *testing.T) {

@@ -469,3 +469,144 @@ tests:
 	require.Nil(t, err)
 	assert.Equal(t, 1, len(tf.Tests))
 }
+
+func TestParseFile_CopyAccepted(t *testing.T) {
+	path := writeTempDats(t, `
+shared:
+  copy:
+    fixture.bin: ../fixtures/fixture.bin
+tests:
+  - cmd: cat {inputs.data.txt}
+    inputs:
+      copy:
+        data.txt: testdata/data.txt
+`)
+	tf, err := ParseFile(path)
+	require.Nil(t, err)
+	require.Equal(t, "../fixtures/fixture.bin", tf.Shared.Copy["fixture.bin"])
+	require.Equal(t, "testdata/data.txt", tf.Tests[0].Inputs.Copy["data.txt"])
+}
+
+func TestParseFile_CopyRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"shared copy traversal name": {`
+shared:
+  copy:
+    ../evil.txt: some/source.txt
+tests:
+  - cmd: true
+`, `copy destination "../evil.txt" must be a relative path`},
+		"shared copy absolute name": {`
+shared:
+  copy:
+    /etc/evil.txt: some/source.txt
+tests:
+  - cmd: true
+`, `copy destination "/etc/evil.txt" must be a relative path`},
+		"shared copy empty source": {`
+shared:
+  copy:
+    dest.txt: ""
+tests:
+  - cmd: true
+`, `copy destination "dest.txt" must name a non-empty source path`},
+		"shared name in both files and copy": {`
+shared:
+  files:
+    dup.txt: content
+  copy:
+    dup.txt: some/source.txt
+tests:
+  - cmd: true
+`, `"dup.txt" is declared under both files and copy`},
+		"shared block with only copy is not empty": {`
+shared:
+  copy: {}
+tests:
+  - cmd: true
+`, "shared: must declare at least one file under files or copy"},
+		"inputs copy traversal name": {`
+tests:
+  - cmd: true
+    inputs:
+      copy:
+        ../evil.txt: some/source.txt
+`, `copy destination "../evil.txt" must be a relative path`},
+		"inputs copy empty source": {`
+tests:
+  - cmd: true
+    inputs:
+      copy:
+        dest.txt: ""
+`, `copy destination "dest.txt" must name a non-empty source path`},
+		"inputs name in both files and copy": {`
+tests:
+  - cmd: true
+    inputs:
+      files:
+        dup.txt: content
+      copy:
+        dup.txt: some/source.txt
+`, `"dup.txt" is declared under both files and copy`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParseFile_HeredocRejected(t *testing.T) {
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"cmd": {`
+tests:
+  - cmd: |
+      cat <<EOF > out.txt
+      hello
+      EOF
+`, "test 1: cmd: must not use a shell heredoc"},
+		"setup": {`
+setup: |
+  cat <<-EOF
+  hi
+  EOF
+tests:
+  - cmd: true
+`, "setup: command: must not use a shell heredoc"},
+		"teardown": {`
+teardown:
+  - "cat <<~EOF\nhi\nEOF"
+tests:
+  - cmd: true
+`, "teardown: command 1: must not use a shell heredoc"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Contains(t, err.Error(), "inputs.files/inputs.copy or shared.files/shared.copy")
+		})
+	}
+}
+
+func TestParseFile_HerestringAllowed(t *testing.T) {
+	// "<<<" is a herestring, not a heredoc, and is not banned.
+	path := writeTempDats(t, `
+tests:
+  - cmd: cat <<< "hello"
+    outputs:
+      stdout:
+        - hello
+`)
+	_, err := ParseFile(path)
+	require.Nil(t, err)
+}

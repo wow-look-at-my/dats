@@ -44,10 +44,12 @@ tests:
 
 `setup` and `teardown` each accept either a single command string or a sequence of command
 strings; blank commands, non-string entries, and empty lists are parse errors
-(`setup: must list at least one command`). `shared` must declare at least one file under
-`files` (`shared: must declare at least one file under files`); the file names follow the
-same locality rule as `inputs.files` names — relative paths that stay inside the shared
-directory, nested names like `sub/file.txt` allowed.
+(`setup: must list at least one command`). `shared` must declare at least one fixture across
+`files` and `copy` combined (`shared: must declare at least one file under files or copy`) —
+see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`. File names in either
+map follow the same locality rule as `inputs.files` names — relative paths that stay inside
+the shared directory, nested names like `sub/file.txt` allowed — and a name may appear in
+only one of the two maps.
 
 ### `{shared.X}` Placeholders
 
@@ -121,7 +123,10 @@ sandbox:
 There is no key for extra writable host paths, and that is deliberate. Somewhere to write is
 the file's temp directory, which every backend gives you; a command that genuinely needs the
 host is not a sandboxed command and says `sandbox: false`. A per-path hole is neither, and
-its consequences are invisible to the person reading the file.
+its consequences are invisible to the person reading the file. To bring an *existing* host
+file into that writable temp directory — not a new path on the host, a copy inside the
+sandbox's own writable area — use `inputs.copy`/`shared.copy`; see
+[Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
 The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks
 alike. It is file-level, not per-test: one file's commands share one temp directory, one
@@ -152,6 +157,75 @@ sandbox is resolved once per file, before any matrix instance exists.
   rather than a list of paths that quietly adds up to the same thing.
 - Under the docker backend the command runs inside the image, so the tools available are the
   image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
+
+## Copy Fixtures: `inputs.copy` and `shared.copy`
+
+`inputs.files`/`shared.files` author a fixture's content inline as YAML text. `copy` is the
+other way to get a file into the writable temp directory: instead of content, it names an
+**existing host file** to copy in.
+
+```yaml
+shared:
+  copy:
+    fixture.bin: ../fixtures/fixture.bin   # once per file, into shared/
+
+tests:
+  - desc: modifies a copied-in fixture
+    inputs:
+      copy:
+        config.json: fixtures/config.json  # once per test, into the test's inputs/
+    cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
+```
+
+Each is a map of **destination filename** (addressed the same way as a `files` entry —
+`{inputs.X}`/`{shared.X}`) to a **host source path**. A relative source resolves against the
+directory holding the `.dats` file being run, so a copy source is portable regardless of
+dats' own working directory; an absolute source is used as-is. The copy runs on the host,
+before the sandbox starts — the destination lands in the same writable temp directory as
+every other fixture, so a sandboxed command can modify its own copy freely without touching
+the original.
+
+This is the read-write counterpart of the sandbox's read-only bind mount of the working
+directory (see [Sandbox](#sandbox) above): reach for `copy` when a test needs to *mutate* a
+real fixture, or when the fixture is too large or too binary to spell out as YAML text under
+`files`. The copy preserves the source's permission bits, so a script pulled in this way keeps
+its executable bit.
+
+A destination name follows the same locality rule as a `files` name (relative, no `..`, no
+absolute paths — rejected at parse time) and may not also appear under `files` in the same
+block (`"X" is declared under both files and copy`); an empty source path is also a parse
+error. `inputs.copy` is inside the matrix substitution scope — `{matrix.X}` substitutes into
+the **source** path first, so a copy source can vary per instance:
+
+```yaml
+tests:
+  - cmd: cat {inputs.variant.bin}
+    matrix:
+      variant: [a, b]
+    inputs:
+      copy:
+        variant.bin: fixtures/{matrix.variant}.bin
+```
+
+`shared.copy` runs at file scope, before any matrix instance exists, so `{matrix.X}` there is
+rejected the same way it is in `shared.files` (`shared copy "X": {matrix.x} is not available
+outside tests`).
+
+### Why not a heredoc?
+
+A shell heredoc (`<<WORD`, `<<-WORD`, `<<~WORD`) in `cmd`, `setup`, or `teardown` is rejected
+at parse time:
+
+```
+test 1: cmd: must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead
+```
+
+A heredoc embeds a file's content inline in a single shell string — exactly what `files` and
+`copy` exist to do declaratively, with names dats can address via `{inputs.X}`/`{shared.X}`,
+validate for locality, and normalize in snapshot goldens. A heredoc bypasses all of that: it
+is invisible to every mechanism above. If you want a file, write the file and copy or bind
+mount it in. A herestring (`<<<`) is a single-line construct, not a heredoc, and is
+unaffected.
 
 ## Test Object
 
@@ -263,6 +337,7 @@ byte-identical instances, are parse errors.
 - `cmd`
 - `inputs.stdin`
 - `inputs.files` **contents** (values)
+- `inputs.copy` **sources** (values) — so a copy source can vary per matrix instance
 - `inputs.env` **values**
 - every output pattern string: `stdout`, `stderr`, `!stdout`, `!stderr` in both the
   list and line-map forms, and `files`/`!files` `match`/`notMatch` entries
@@ -271,9 +346,9 @@ byte-identical instances, are parse errors.
   JSON type)
 
 NOT substituted (always literal): fixture file **names** (the keys under
-`inputs.files`, `outputs.files`, `outputs.!files`), env var **names**, `exit`,
-`timeout`, and the `matrix` block itself. A file name containing `{matrix.x}` is not a
-reference — it is a (strange) literal file name.
+`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`), env var **names**,
+`exit`, `timeout`, and the `matrix` block itself. A file name containing `{matrix.x}` is
+not a reference — it is a (strange) literal file name.
 
 ### Layering with `{inputs.X}`/`{outputs.X}`/`{shared.X}`
 
@@ -314,6 +389,7 @@ All of these are parse errors (so `dats syntax` catches them without running any
 | Empty reference `{matrix.}` | `test 1: {matrix.} must name a matrix variable` |
 | `{matrix.X}` in a setup/teardown command | `setup command 1: {matrix.x} is not available outside tests` |
 | `{matrix.X}` in `shared.files` contents | `shared file "config.json": {matrix.x} is not available outside tests` |
+| `{matrix.X}` in `shared.copy` sources | `shared copy "fixture.bin": {matrix.x} is not available outside tests` |
 
 The reference check scans exactly the substitution scope above: every `{matrix.X}`
 there must name a variable declared by **that** test's matrix. Setup and teardown
@@ -341,6 +417,11 @@ Text that only *resembles* a placeholder without being one — a non-local name 
 `{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`),
 or any other brace construct — still passes through verbatim.
 
+A `cmd`, `setup`, or `teardown` string containing a shell heredoc (`<<WORD`) now fails to
+parse (see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy)) — the one genuinely
+backwards-incompatible change here, since such a file previously ran the heredoc as ordinary
+shell. Rewrite it with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy`.
+
 Sandboxing changes runtime behavior rather than parsing, and it applies to files that
 declare nothing: commands that used to write anywhere on the host now write only inside
 their temp directory, and a machine with neither backend installed fails the run instead of
@@ -354,7 +435,8 @@ host declares `sandbox: false`; a whole run opts out with `--no-sandbox`.
 
 The command is run with `bash -c` in the working directory of the `dats` invocation (the
 runner does not change directory). Fixture files live in a fresh per-run temp directory and
-are addressed by absolute path through placeholders:
+are addressed by absolute path through placeholders. A shell heredoc (`<<WORD`) in `cmd` is
+rejected at parse time — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
 ### Input Placeholders
 
@@ -503,9 +585,13 @@ inputs:
     another.txt: |
       multi-line
       content
+  copy:
+    real.bin: fixtures/real.bin   # copies an existing host file in, writable
   env:
     MY_VAR: "value"
 ```
+
+See [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`.
 
 ### `stdin`
 
@@ -856,19 +942,23 @@ See [CLI Usage](cli.md#updating-snapshots---update) for a worked example.
 shared:                    # optional file-level fixtures
   files:
     <name>: string         # filename: content ({shared.X} placeholders expanded)
+  copy:
+    <name>: string         # filename: host source path (relative to the .dats file)
 setup: string|[]           # optional; command(s) run once before the tests
 teardown: string|[]        # optional; command(s) always run once after the tests
 tests:
   - desc: string           # optional, defaults to cmd value
     exit: int|string       # optional, defaults to 0
     timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
-    cmd: string            # required
+    cmd: string            # required; a shell heredoc (<<WORD) is rejected at parse time
     matrix:                # optional; expands the test into one instance per combination
       <name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
     inputs:
       stdin: string        # optional
       files:               # optional
         <name>: string     # filename: content
+      copy:                # optional
+        <name>: string     # filename: host source path (relative to the .dats file)
       env:                 # optional
         <name>: string     # env var: value (placeholders expanded)
     outputs:

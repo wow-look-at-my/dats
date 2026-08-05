@@ -263,6 +263,25 @@ tests:
 Scratch space is the temp directory, never a host path: there is no way to declare a host
 path writable. A command that must write outside it is a `sandbox: false` file.
 
+### Pulling a host file in, writable
+
+`inputs.copy`/`shared.copy` copy an *existing* host file into that writable temp directory --
+the read-write counterpart of the working directory's read-only bind mount, for a fixture the
+test needs to mutate:
+
+```yaml
+tests:
+  - desc: modifies a copied-in fixture
+    inputs:
+      copy:
+        config.json: fixtures/config.json   # path relative to this .dats file
+    cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
+```
+
+See [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for the full
+reference, including why heredocs are rejected in `cmd`/`setup`/`teardown` in favor of this
+and `files`.
+
 ### Opting a file out
 
 For commands that genuinely need the host -- driving the local docker daemon, installing
