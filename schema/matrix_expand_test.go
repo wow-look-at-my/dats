@@ -134,9 +134,9 @@ tests:
 			- pattern {matrix.a}
 		stderr:
 			"0": line {matrix.a}
-		"!stdout":
+		!stdout:
 			- neg {matrix.a}
-		"!stderr":
+		!stderr:
 			"1": negline {matrix.a}
 		files:
 			out.txt:
@@ -144,7 +144,7 @@ tests:
 					- match {matrix.a}
 				notMatch:
 					- notmatch {matrix.a}
-		"!files":
+		!files:
 			stray.txt:
 				match:
 					- straymatch {matrix.a}

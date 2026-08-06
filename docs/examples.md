@@ -168,7 +168,7 @@ tests:
 	  outputs:
 		stdout:
 			- "success"
-		"!stdout":
+		!stdout:
 			- "error"
 			- "fail"
 			- "exception"
@@ -211,7 +211,7 @@ tests:
 	- desc: command does not create error log
 	  cmd: process --quiet
 	  outputs:
-		"!files":
+		!files:
 			error.log:
 				exists: true    # inverted: error.log must NOT exist
 ```
@@ -345,7 +345,7 @@ tests:
 	  outputs:
 		stderr:
 			- "unknown flag"
-		"!stdout":
+		!stdout:
 			- "success"
 ```
 
@@ -403,7 +403,7 @@ tests:
 	  outputs:
 		stdout:
 			- "Compiled successfully"
-		"!stderr":
+		!stderr:
 			- "error"
 			- "warning"
 
@@ -421,7 +421,7 @@ tests:
 		stderr:
 			- "syntax error"
 			- "line 1"
-		"!stdout":
+		!stdout:
 			- "Compiled successfully"
 
 	# Output file generation
