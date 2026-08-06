@@ -61,5 +61,5 @@ tests:
 	  outputs:
 		stdout:
 			- "the source lives on the host"
-		"!stdout":
+		!stdout:
 			- "modified inside the sandbox"

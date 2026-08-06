@@ -253,9 +253,9 @@ stdout:
 	- hello
 stderr:
 	- error
-"!stdout":
+!stdout:
 	- bad
-"!stderr":
+!stderr:
 	- warning
 files:
 	binary:
@@ -264,7 +264,7 @@ files:
 			- ELF
 		notMatch:
 			- corrupted
-"!files":
+!files:
 	error.log:
 		exists: false
 `

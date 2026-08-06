@@ -277,7 +277,7 @@ tests:
 		a:
 			- x
 	  outputs:
-		"!stdout":
+		!stdout:
 			- "{matrix.nope}"
 `,
 		"file check match": `
@@ -299,7 +299,7 @@ tests:
 		a:
 			- x
 	  outputs:
-		"!files":
+		!files:
 			out.txt:
 				notMatch:
 					- "{matrix.nope}"

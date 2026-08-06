@@ -77,7 +77,7 @@ tests:
 	  outputs:
 		stdout:
 			- "success"
-		"!stdout":
+		!stdout:
 			- "error"
 			- "fail"
 
@@ -100,7 +100,7 @@ tests:
 	  outputs:
 		stderr:
 			- "warning"
-		"!stderr":
+		!stderr:
 			- "panic"
 
 	# Output file validation
@@ -122,7 +122,7 @@ tests:
 	  exit: 0
 	  cmd: echo nothing
 	  outputs:
-		"!files":
+		!files:
 			unexpected.txt:
 				exists: true
 

@@ -188,7 +188,7 @@ tests:
 	  outputs:
 		stdout:
 			- "success"
-		"!stdout":
+		!stdout:
 			- "error"
 			- "fail"
 
@@ -208,7 +208,7 @@ tests:
 	- desc: no stray file
 	  cmd: echo nothing
 	  outputs:
-		"!files":
+		!files:
 			unexpected.txt:
 				exists: true
 

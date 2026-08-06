@@ -47,7 +47,8 @@ go test -cover ./...
 
 ### Core Flow
 1. `.dats` YAML file is parsed using [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed) — tabs-only indentation, no
-   anchors/aliases, canonical scalar reformatting; see `docs/file-format.md#yaml-dialect`
+   anchors/aliases, no tags (so the negated keys are written bare: `!stdout:`, quoted still accepted), canonical scalar
+   reformatting; see `docs/file-format.md#yaml-dialect`
 2. Every test is expanded up front into its matrix instances (`schema.ExpandMatrix`; non-matrix tests = one instance) — the header count, instance numbering, temp dirs, summary counts, and setup-failure reporting all operate on the expanded list; every instance always runs (no test filtering/selection by design)
 3. Per file: the file's sandbox is resolved (`Runner.newSandboxPlan`) BEFORE anything runs — a file that must be sandboxed and cannot be fails outright; then a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test instance in the file — reported as failures, never "skipped" — but teardown still runs)
 4. For each test instance, fixtures are set up in a temp directory
@@ -164,7 +165,7 @@ tests:
 		# stdout:
 		#   0: "^first line$"
 		#   2: "^third line$"
-		"!stdout":              # Patterns that must NOT appear (also accepts the line-number map form)
+		!stdout:              # Patterns that must NOT appear (also accepts the line-number map form)
 			- "error"
 		stderr:
 			- "warning"
@@ -175,7 +176,7 @@ tests:
 					- "expected content"
 				notMatch:
 					- "error"
-		"!files":               # Negated output file validation (each check inverted)
+		!files:               # Negated output file validation (each check inverted)
 			unexpected.txt:
 				exists: true        # must NOT exist
 		snapshot: true          # Golden-file assertion: stdout must byte-match

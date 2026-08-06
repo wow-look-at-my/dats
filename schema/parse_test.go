@@ -180,7 +180,7 @@ tests:
 tests:
 	- cmd: echo hi
 	  outputs:
-		"!files":
+		!files:
 			../evil.txt:
 				exists: true
 `,
@@ -467,7 +467,7 @@ tests:
 		files:
 			sub/out.txt:
 				exists: false
-		"!files":
+		!files:
 			other/missing.txt:
 				exists: true
 `)
