@@ -77,7 +77,7 @@ tests:
 	  outputs:
 		stdout:
 			- payload {matrix.v}
-		"!stdout":
+		!stdout:
 			- payload alpha payload beta
 `)
 	var buf bytes.Buffer
@@ -282,7 +282,7 @@ tests:
 	  outputs:
 		stdout:
 			- matrix.b
-		"!stdout":
+		!stdout:
 			- real
 `)
 	var buf bytes.Buffer

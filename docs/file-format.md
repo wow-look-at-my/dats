@@ -33,6 +33,9 @@ existing file must satisfy:
   command reindents an existing space-indented file (it does not preserve comments).
 - **No anchors or aliases.** `&name`/`*name` are not a YAML feature here — they parse as literal
   scalar text, not a reference. Duplicate a value instead of anchoring it.
+- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`,
+  `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser would have needed
+  `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
 - **Scalars reformat to their canonical spelling**, not the source text: a float like `1.50`
   round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see
   [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an
@@ -319,7 +322,7 @@ tests:
 			- "pattern to match"
 		stderr:
 			- "expected stderr"
-		"!stdout":
+		!stdout:
 			- "must not appear"
 		files:
 			result.txt:
@@ -706,10 +709,10 @@ over a test's own `GOCOVERDIR` entry.
 outputs:
 	stdout:        # patterns that MUST appear (or line-number map)
 	stderr:        # patterns that MUST appear (or line-number map)
-	"!stdout":     # patterns that must NOT appear (or line-number map)
-	"!stderr":     # patterns that must NOT appear (or line-number map)
+	!stdout:     # patterns that must NOT appear (or line-number map)
+	!stderr:     # patterns that must NOT appear (or line-number map)
 	files:         # output file checks
-	"!files":      # negated output file checks
+	!files:      # negated output file checks
 	snapshot:      # golden-file (snapshot) assertion on stdout/stderr
 	json_output:   # expected JSON value of the whole stdout
 ```
@@ -752,10 +755,10 @@ format or the other.
 
 ```yaml
 outputs:
-	"!stdout":
+	!stdout:
 		- "error"
 		- "failed"
-	"!stderr":
+	!stderr:
 		- "warning"
 ```
 
@@ -765,7 +768,7 @@ exist passes — there is nothing there to match:
 
 ```yaml
 outputs:
-	"!stdout":
+	!stdout:
 		0: "error"        # line 0 must not contain "error"
 		2: "^warning"     # line 2 must not start with "warning" (also passes if there is no line 2)
 ```
@@ -811,7 +814,7 @@ outputs:
 	files:
 		out.txt: {}       # out.txt must exist
 		log.txt:          # null value, same meaning: log.txt must exist
-	"!files":
+	!files:
 		stray.txt: {}     # stray.txt must NOT exist
 ```
 
@@ -831,7 +834,7 @@ The common use is asserting that a file must NOT exist or must NOT contain somet
 
 ```yaml
 outputs:
-	"!files":
+	!files:
 		error.log:
 			exists: true        # error.log must NOT exist
 		report.txt:
@@ -1024,14 +1027,14 @@ tests:
 	  outputs:
 		stdout: "[]|{}"        # pattern list or line checks
 		stderr: "[]|{}"        # pattern list or line checks
-		"!stdout": "[]|{}"     # negated patterns
-		"!stderr": "[]|{}"     # negated patterns
+		!stdout: "[]|{}"     # negated patterns
+		!stderr: "[]|{}"     # negated patterns
 		files:
 			<name>:            # empty check ({}/null) = must exist
 				exists: bool
 				match: []
 				notMatch: []
-		"!files":
+		!files:
 			<name>:            # empty check ({}/null) = must NOT exist
 				exists: bool
 				match: []
