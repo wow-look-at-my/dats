@@ -41,22 +41,39 @@ runs:
       shell: bash
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
-    # Ubuntu 24.04 ships a default AppArmor restriction
-    # (kernel.apparmor_restrict_unprivileged_userns=1) that silently denies
-    # bwrap's unprivileged user namespace even once it's installed; this
-    # repo's own CI (.github/workflows/ci.yml) already proved sudo can clear
-    # it. The final bwrap check has no fallback -- a runner where this
-    # genuinely doesn't work should fail loudly here, not silently ship
+    # Two distinct kernel knobs deny bwrap's unprivileged user namespace, and
+    # which one (if either) applies depends on the runner: Ubuntu 24.04's
+    # AppArmor restriction (kernel.apparmor_restrict_unprivileged_userns) is
+    # what this repo's own GitHub-hosted CI runner has, but the org's
+    # self-hosted fleet has neither sysctl file at all (confirmed via a live
+    # run: `cannot stat .../apparmor_restrict_unprivileged_userns: No such
+    # file or directory`) and still blocks bwrap -- so the older Debian-style
+    # kernel.unprivileged_userns_clone must be the one actually in force
+    # there. Clear whichever knob actually exists rather than assuming one.
+    # The final bwrap check has no fallback -- a runner where neither knob
+    # exists and bwrap still fails should fail loudly here, not silently ship
     # unsandboxed test runs.
     - name: Configure bubblewrap so it actually works (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        # The sysctl write can itself fail harmlessly (e.g. a kernel with no
-        # such knob) -- `|| true` keeps this a probe, not an abort, so the
-        # bwrap re-check below stays the one authoritative pass/fail signal.
-        bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true \
-          || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
+          echo "bwrap already works, no sysctl change needed"
+          exit 0
+        fi
+
+        echo "bwrap blocked; diagnosing before attempting a fix"
+        uname -a
+        for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone; do
+          path="/proc/sys/${knob//./\/}"
+          if [ -f "$path" ]; then
+            echo "$knob = $(cat "$path")"
+            sudo sysctl -w "$knob=0" || true
+          else
+            echo "$knob: not present on this kernel"
+          fi
+        done
+
         bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
 
     - name: Run dats
