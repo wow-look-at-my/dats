@@ -41,29 +41,31 @@ runs:
       shell: bash
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
-    # Two distinct kernel knobs deny bwrap's unprivileged user namespace, and
-    # which one (if either) applies depends on the runner: Ubuntu 24.04's
-    # AppArmor restriction (kernel.apparmor_restrict_unprivileged_userns) is
-    # what this repo's own GitHub-hosted CI runner has, but the org's
-    # self-hosted fleet has neither sysctl file at all (confirmed via a live
-    # run: `cannot stat .../apparmor_restrict_unprivileged_userns: No such
-    # file or directory`) and still blocks bwrap -- so the older Debian-style
-    # kernel.unprivileged_userns_clone must be the one actually in force
-    # there. Clear whichever knob actually exists rather than assuming one.
-    # The final bwrap check has no fallback -- a runner where neither knob
-    # exists and bwrap still fails should fail loudly here, not silently ship
-    # unsandboxed test runs.
-    - name: Configure bubblewrap so it actually works (Linux)
+    # bwrap's unprivileged user namespace can be blocked two different ways,
+    # and only one of them is fixable from here. Ubuntu 24.04's AppArmor
+    # restriction (kernel.apparmor_restrict_unprivileged_userns) is a real
+    # kernel sysctl a workflow step can clear -- confirmed on this repo's own
+    # GitHub-hosted CI runner. The org's self-hosted wow-linux fleet has
+    # neither that sysctl nor the older kernel.unprivileged_userns_clone
+    # (confirmed via a live run: both report "no such file"), yet bwrap still
+    # refuses -- there the runner's own container was never started with the
+    # capability bwrap needs, and no workflow step can grant a capability the
+    # container doesn't have. So: try the sysctl fix where a sysctl exists,
+    # then fall through to dats' own docker backend (bwrap -> seatbelt ->
+    # docker is dats' own auto order) when docker is usable. Only fail when
+    # NEITHER works -- a caller whose job silently fell back to --no-sandbox
+    # would trade real isolation for green CI, and this is the one place that
+    # catches it before dats ever runs.
+    - name: Make sure a real sandbox backend is usable (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
         if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
-          echo "bwrap already works, no sysctl change needed"
+          echo "bwrap works, no further action needed"
           exit 0
         fi
 
-        echo "bwrap blocked; diagnosing before attempting a fix"
-        uname -a
+        echo "bwrap blocked; trying known kernel-level fixes"
         for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone; do
           path="/proc/sys/${knob//./\/}"
           if [ -f "$path" ]; then
@@ -74,7 +76,19 @@ runs:
           fi
         done
 
-        bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
+        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
+          echo "bwrap works after clearing the restriction"
+          exit 0
+        fi
+
+        echo "bwrap still blocked -- likely the runner's own container lacks the capability, not a kernel sysctl"
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+          echo "docker is available; dats will fall back to it automatically"
+          exit 0
+        fi
+
+        echo "::error::No usable sandbox backend on this runner: bwrap is blocked and docker is unavailable. Use a runner with a docker daemon (e.g. CI_RUNNER_DIND) instead."
+        exit 1
 
     - name: Run dats
       shell: bash

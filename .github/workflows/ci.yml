@@ -60,12 +60,15 @@ jobs:
           files: testdata/schema/*.json
 
   # Consumers reference this repo's own action.yml (wow-look-at-my/dats@master)
-  # to get a real bwrap sandbox on the org's self-hosted fleet -- a class of
-  # runner this repo's other jobs never touch (they're all ubuntu-latest). Run
-  # the action against itself here, on that same fleet, so a userns-restriction
-  # regression is caught before a consumer's CI catches it instead.
+  # to get real sandboxing on the org's self-hosted fleet -- a class of runner
+  # this repo's other jobs never touch (they're all ubuntu-latest). bwrap
+  # cannot work at all on the plain wow-linux pool (the runner's own container
+  # lacks the capability -- confirmed live, not a fixable kernel sysctl), so
+  # this uses the dind pool the way a real consumer should, and dats' own
+  # bwrap -> seatbelt -> docker order lands on docker. Catches a regression in
+  # either the action or dats' docker backend before a consumer's CI does.
   self-hosted-sandbox:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./
