@@ -78,8 +78,9 @@ Sandbox{Mode: runner.SandboxNone}          // host — the explicit opt-out
 The zero value sandboxes, so a caller that says nothing about isolation gets
 it. Running suite commands straight on the host is a decision someone makes on
 purpose, never one the library makes on their behalf by defaulting to the
-weaker thing. Individual files can still narrow this (`sandbox: false`, or an
-`image:`) — a file can only ever narrow what the caller allowed.
+weaker thing. Individual files can still narrow this (`network: false`, or an
+`image:`) — a file can only ever narrow what the caller allowed, and a file
+asking to run unsandboxed is a parse error, not a permission.
 
 ### Env: additions, and deletions
 

@@ -2,7 +2,7 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
-Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out — `--no-sandbox`, or `sandbox: false` in a file that needs it. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
 
 Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
 

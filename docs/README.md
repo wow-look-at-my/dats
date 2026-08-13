@@ -47,7 +47,8 @@ Results are printed in a TAP-like format and the process exits non-zero if any t
 - **Snapshots** (`snapshot`) byte-compare stdout/stderr against golden files stored next to
   the `.dats` file; `dats --update` rewrites them from actual output
 - **Sandboxing** is on by default (bubblewrap, falling back to docker): commands may only
-  write inside their temp directory. Opt out with `--no-sandbox` or `sandbox: false`
+  write inside their temp directory. `--no-sandbox` is the only opt-out, and it belongs to
+  whoever runs the file — a `.dats` file can narrow its own sandbox but never switch it off
 - **Copy fixtures** (`inputs.copy`, `shared.copy`) pull an existing host file into that
   writable temp directory — the read-write counterpart of the sandbox's read-only bind mount
   of the working directory. Heredocs and herestrings in `cmd`/`setup`/`teardown` are rejected

@@ -1,8 +1,8 @@
 package schema
 
-// Tests for the file-level sandbox block: the two accepted shapes, the
-// defaults an unstated key carries, and the parse errors that keep a
-// misspelled key from silently disabling isolation.
+// Tests for the file-level sandbox block: the shape it accepts, the defaults
+// an unstated key carries, and the parse errors that keep a file from
+// disabling isolation -- deliberately or through a misspelled key.
 
 import (
 	"testing"
@@ -24,8 +24,7 @@ func TestParseSandboxAbsent(t *testing.T) {
 	tf, err := parseSandbox(t, "")
 	require.Nil(t, err)
 	assert.Nil(t, tf.Sandbox)
-	// The nil spec is the "CLI decides" case, and its accessors say so.
-	assert.True(t, tf.Sandbox.IsEnabled())
+	// The nil spec is the "nothing narrowed" case, and its accessor says so.
 	assert.True(t, tf.Sandbox.NetworkEnabled())
 }
 
@@ -35,40 +34,54 @@ func TestParseSandboxExplicitNullIsAbsent(t *testing.T) {
 	assert.Nil(t, tf.Sandbox)
 }
 
-func TestParseSandboxScalarBool(t *testing.T) {
-	tf, err := parseSandbox(t, "sandbox: false\n")
-	require.Nil(t, err)
-	require.NotNil(t, tf.Sandbox)
-	assert.False(t, tf.Sandbox.IsEnabled())
-
-	tf, err = parseSandbox(t, "sandbox: true\n")
-	require.Nil(t, err)
-	require.NotNil(t, tf.Sandbox)
-	assert.True(t, tf.Sandbox.IsEnabled())
-	assert.True(t, tf.Sandbox.NetworkEnabled(), "an unstated network key keeps the network")
-}
-
 func TestParseSandboxMapping(t *testing.T) {
 	tf, err := parseSandbox(t, `sandbox:
-	enabled: true
 	network: false
 	image: alpine:3.20
 `)
 	require.Nil(t, err)
 	require.NotNil(t, tf.Sandbox)
-	assert.True(t, tf.Sandbox.IsEnabled())
 	assert.False(t, tf.Sandbox.NetworkEnabled())
 	assert.Equal(t, "alpine:3.20", tf.Sandbox.Image)
 }
 
+// TestParseSandboxCannotDisableItself is the protection this whole block
+// exists under: a file states how its commands are confined, never whether
+// they are. Every spelling of "off" is a parse error naming the flag that
+// really does it, because a file that could quietly run on the host would take
+// the isolation away from the person who never asked for that.
+func TestParseSandboxCannotDisableItself(t *testing.T) {
+	for _, body := range []string{
+		"sandbox: false\n",
+		"sandbox:\n\tenabled: false\n",
+		"sandbox:\n\tenabled: false\n\tnetwork: false\n",
+	} {
+		_, err := parseSandbox(t, body)
+		require.NotNil(t, err, "body: %q", body)
+		assert.Contains(t, err.Error(), "a file cannot turn its own sandbox off")
+		assert.Contains(t, err.Error(), "--no-sandbox")
+	}
+}
+
+// TestParseSandboxRejectsStatingTheDefault keeps the counterpart honest: an
+// accepted `sandbox: true` would read as the file having secured something,
+// when it secured nothing and the operator could still be running --no-sandbox.
+func TestParseSandboxRejectsStatingTheDefault(t *testing.T) {
+	for _, body := range []string{"sandbox: true\n", "sandbox:\n\tenabled: true\n"} {
+		_, err := parseSandbox(t, body)
+		require.NotNil(t, err, "body: %q", body)
+		assert.Contains(t, err.Error(), "commands are sandboxed unless the run opts out")
+	}
+}
+
 // TestParseSandboxRejectsWritableKey pins the removal: declaring extra
 // writable HOST paths is not a thing a file can do. Somewhere to write is the
-// file's temp directory; needing the host itself is `sandbox: false`.
+// file's temp directory; needing the host itself is a --no-sandbox run.
 func TestParseSandboxRejectsWritableKey(t *testing.T) {
 	_, err := parseSandbox(t, "sandbox:\n\twritable:\n\t\t- /var/data\n")
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), `unknown key "writable"`)
-	assert.Contains(t, err.Error(), "allowed: enabled, network, image")
+	assert.Contains(t, err.Error(), "allowed: network, image")
 }
 
 func TestParseSandboxErrors(t *testing.T) {
@@ -79,13 +92,13 @@ func TestParseSandboxErrors(t *testing.T) {
 	}{
 		{"unknown key", "sandbox:\n\tenable: true\n", `unknown key "enable"`},
 		{"duplicate key", "sandbox:\n\tnetwork: true\n\tnetwork: false\n", `duplicate mapping key "network"`},
-		{"non-bool enabled", "sandbox:\n\tenabled: yes-please\n", "enabled must be a boolean"},
+		{"non-bool enabled", "sandbox:\n\tenabled: yes-please\n", "a file cannot turn its own sandbox off"},
 		{"non-bool network", "sandbox:\n\tnetwork:\n\t\t- 1\n", "network must be a boolean"},
 		{"empty image", "sandbox:\n\timage: \"\"\n", "image must be a non-empty string"},
 		{"non-string image", "sandbox:\n\timage: 42\n", "image must be a non-empty string"},
 		{"empty mapping", "sandbox:\n\t{}\n", "must set at least one of"},
-		{"wrong kind", "sandbox:\n\t- false\n", "must be true, false, or a mapping"},
-		{"scalar not bool", "sandbox: maybe\n", "must be true, false, or a mapping"},
+		{"wrong kind", "sandbox:\n\t- false\n", "must be a mapping"},
+		{"scalar not bool", "sandbox: maybe\n", "must be a mapping"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

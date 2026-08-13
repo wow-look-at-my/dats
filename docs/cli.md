@@ -138,7 +138,7 @@ substitution.
 ### Selection and failure
 
 Detection is lazy and cached — probed at most once per run, and only when a file actually
-needs a sandbox, so a corpus whose files all opt out runs on a machine with no backend at
+needs a sandbox, so `--no-sandbox` and `dats syntax` run on a machine with no backend at
 all. Every probe exercises what it will use: bubblewrap is routinely installed on kernels
 that deny it the user namespace it needs, `sandbox-exec` ships on every mac but is refused
 in some hardened contexts, and the docker CLI is routinely installed with no daemon behind
@@ -148,7 +148,7 @@ When no backend can be provided, the run **fails** — it never quietly falls ba
 
 ```
 Error: running tests.dats: no usable sandbox backend: bwrap: not found in $PATH; sandbox-exec: not found in $PATH; docker: not found in $PATH
-install bubblewrap (Linux), or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)
+install bubblewrap (Linux), or start docker, or opt out with --no-sandbox
 ```
 
 An explicitly requested backend never falls back either: `--sandbox=bwrap` gets bubblewrap or
@@ -156,10 +156,14 @@ an error — including on macOS, where it can only ever be an error.
 
 ### Opting out
 
-- `--no-sandbox` (or `--sandbox=none`) for a whole run.
-- `sandbox: false` in a file whose commands genuinely need the host — see
-  [file-format.md](file-format.md#sandbox). The same block can also cut the network, pick the
-  docker image.
+`--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats`
+file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file
+that writes either one fails to parse with a message naming this flag.
+
+That asymmetry is the point. Running a file means running commands you did not write, and the
+person typing `dats` is the one who pays for the sandbox coming down — so they are the one
+who takes it down, in a flag they can see. What a file *can* do is narrow its own sandbox
+(cut the network, pick the docker image) — see [file-format.md](file-format.md#sandbox).
 
 The flag is the outer bound: a file can narrow what the CLI selected, never widen it. Under
 `--no-sandbox`, a file's `sandbox:` block is inert.
@@ -169,8 +173,8 @@ The flag is the outer bound: a file can narrow what the CLI selected, never wide
 - **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to
   outlive the run). There is deliberately no way to declare additional writable HOST paths:
   something to write is the temp directory — a real filesystem inside every backend — and a
-  command that genuinely needs the host is not a sandboxed command, so it says
-  `sandbox: false`. That includes a binary that rewrites itself on first run, such as an APE:
+  command that genuinely needs the host is not a sandboxed command, so it belongs to a
+  `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE:
   copy it into the temp directory and run it from there, or run the file unsandboxed. To pull
   an *existing* host file into the temp directory so a command can modify a copy of it, use
   `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy))

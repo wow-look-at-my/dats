@@ -101,7 +101,6 @@ func TestSandboxBackendAutoWithNoBackendErrorsAndNamesTheOptOut(t *testing.T) {
 	assert.Contains(t, err.Error(), "seatbelt: unavailable")
 	assert.Contains(t, err.Error(), "docker: unavailable")
 	assert.Contains(t, err.Error(), "--no-sandbox")
-	assert.Contains(t, err.Error(), "sandbox: false")
 }
 
 func TestSandboxBackendExplicitDoesNotFallBack(t *testing.T) {
@@ -349,7 +348,7 @@ func TestDockerArgvWritableWorkdirIsNotRemountedReadOnly(t *testing.T) {
 }
 
 func TestNewSandboxPlanDisabledPaths(t *testing.T) {
-	enabled, disabled := true, false
+	network := false
 
 	// No config at all: the library default, commands run on the host.
 	r := &Runner{}
@@ -357,33 +356,38 @@ func TestNewSandboxPlanDisabledPaths(t *testing.T) {
 	require.Nil(t, err)
 	assert.Nil(t, plan)
 
-	// --sandbox=none wins over a file that asks to be sandboxed: the
-	// operator's choice is the outer bound, a file can only narrow it.
+	// --sandbox=none is the ONLY way a plan comes out nil with a file that
+	// narrowed its sandbox: the operator's choice is the outer bound, and a
+	// file's own block can only tighten what it is handed.
 	r = &Runner{Sandbox: sandboxConfigWithProbe(SandboxNone, probeAlways(nil))}
-	plan, err = r.newSandboxPlan(&schema.SandboxSpec{Enabled: &enabled}, "/tmp/w")
-	require.Nil(t, err)
-	assert.Nil(t, plan)
-
-	// The file-level opt-out, with a backend available.
-	r = &Runner{Sandbox: sandboxConfigWithProbe(SandboxAuto, probeAlways(nil))}
-	plan, err = r.newSandboxPlan(&schema.SandboxSpec{Enabled: &disabled}, "/tmp/w")
+	plan, err = r.newSandboxPlan(&schema.SandboxSpec{Network: &network}, "/tmp/w")
 	require.Nil(t, err)
 	assert.Nil(t, plan)
 }
 
 func TestNewSandboxPlanOptOutNeedsNoBackend(t *testing.T) {
-	// A file that opts out must run on a machine with no backend installed:
-	// resolution is lazy precisely so `sandbox: false` costs nothing.
-	disabled := false
+	// An opted-out run must work on a machine with no backend installed:
+	// resolution is lazy precisely so --no-sandbox costs nothing.
 	probed := false
-	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxAuto, func(SandboxMode) error {
+	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxNone, func(SandboxMode) error {
 		probed = true
 		return assertError("unavailable")
 	})}
-	plan, err := r.newSandboxPlan(&schema.SandboxSpec{Enabled: &disabled}, "/tmp/w")
+	plan, err := r.newSandboxPlan(nil, "/tmp/w")
 	require.Nil(t, err)
 	assert.Nil(t, plan)
-	assert.False(t, probed, "an opted-out file must not probe for a backend")
+	assert.False(t, probed, "an opted-out run must not probe for a backend")
+}
+
+// TestNewSandboxPlanFileNarrowingStillSandboxes pins the direction of travel:
+// a file that states anything about its sandbox still gets one.
+func TestNewSandboxPlanFileNarrowingStillSandboxes(t *testing.T) {
+	network := false
+	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxAuto, probeAlways(nil))}
+	plan, err := r.newSandboxPlan(&schema.SandboxSpec{Network: &network}, "/tmp/w")
+	require.Nil(t, err)
+	require.NotNil(t, plan)
+	assert.False(t, plan.network)
 }
 
 func TestNewSandboxPlanFields(t *testing.T) {
@@ -545,8 +549,8 @@ func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
 // surface: the file's temp directory, and --coverdir when the run collects
 // coverage. There is no third entry and no way to add one -- scratch goes in
 // the temp directory (a real filesystem inside every backend), and a command
-// that needs the host is a `sandbox: false` file, not a hole in a sandboxed
-// one.
+// that needs the host belongs in a --no-sandbox run, not in a hole punched
+// through a sandboxed one.
 func TestSandboxPlanExposesOnlyTempDirAndCoverDir(t *testing.T) {
 	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/repo"}
 	assert.Equal(t, []string{"/tmp/dats-1"}, plan.writablePaths())

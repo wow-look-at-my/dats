@@ -2,9 +2,9 @@ package cmd
 
 // The sandbox flags: --sandbox, --no-sandbox, and --sandbox-image. Test
 // commands are sandboxed by DEFAULT (--sandbox=auto: bubblewrap, falling back
-// to docker), so running them straight on the host is an explicit opt-out --
-// either here, for a whole run, or with `sandbox: false` in a file that
-// genuinely needs the host.
+// to docker), so running them straight on the host is an explicit opt-out,
+// and it is made HERE: a file can narrow its own sandbox but never turn one
+// off, so this is the only place the isolation comes down.
 //
 // Registration and resolution live here; the backends themselves are
 // runner.SandboxConfig.
@@ -30,9 +30,8 @@ func registerSandboxFlags(flags *pflag.FlagSet) {
 
 // resolveSandbox turns the parsed flags into the run's sandbox configuration,
 // or nil when the run is opting out. Nothing is probed here: the backend is
-// resolved lazily, on the first file that actually needs one, so a corpus
-// whose files all declare `sandbox: false` runs fine on a machine with
-// neither backend installed.
+// resolved lazily, on the first file that actually needs one, so --no-sandbox
+// and `dats syntax` run fine on a machine with no backend installed.
 func resolveSandbox(flags *pflag.FlagSet) (*runner.SandboxConfig, error) {
 	name, err := flags.GetString("sandbox")
 	if err != nil {

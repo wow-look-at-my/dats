@@ -261,7 +261,8 @@ tests:
 ```
 
 Scratch space is the temp directory, never a host path: there is no way to declare a host
-path writable. A command that must write outside it is a `sandbox: false` file.
+path writable, and no way for a file to switch its own sandbox off. A command that must write
+outside the temp directory needs a `--no-sandbox` run.
 
 ### Pulling a host file in, writable
 
@@ -282,17 +283,25 @@ See [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for
 reference, including why heredocs and herestrings are rejected in `cmd`/`setup`/`teardown` in
 favor of this, `files`, and `inputs.stdin`.
 
-### Opting a file out
+### Commands that need the host
 
-For commands that genuinely need the host -- driving the local docker daemon, installing
-packages, writing outside the temp tree:
+A file cannot opt itself out -- `sandbox: false` and `sandbox.enabled` are parse errors. For
+commands that genuinely need the host -- driving the local docker daemon, installing
+packages, writing outside the temp tree -- whoever runs the file decides:
+
+```bash
+dats --no-sandbox needs-the-host.dats
+```
 
 ```yaml
-sandbox: false
+# needs-the-host.dats -- an ordinary file; nothing in it asks for the host
 tests:
 	- desc: the docker daemon is reachable
 	  cmd: docker info
 ```
+
+Under a sandboxed run that file fails, loudly, instead of reaching a daemon the runner never
+agreed to expose.
 
 ### Picking the image for the docker backend
 

@@ -120,33 +120,21 @@
       }
     },
     "sandbox": {
-      "description": "File-level sandbox settings for every command this file runs (its tests AND its setup/teardown hooks). The CLI sandboxes commands by default (--sandbox=auto: bubblewrap, falling back to docker); this block can narrow that choice for one file, never widen it. Write `false` to opt the file out entirely -- the declarative counterpart of --no-sandbox, for files whose commands genuinely need the host. Under --sandbox=none the whole block is inert.",
-      "oneOf": [
-        {
+      "description": "File-level sandbox settings for every command this file runs (its tests AND its setup/teardown hooks). The CLI sandboxes commands by default (--sandbox=auto: bubblewrap, falling back to docker); this block can only narrow that for one file. Turning the sandbox OFF is not something a file can do -- it is the operator's call, made with --no-sandbox, so a file nobody has read cannot quietly run on the host. Under --sandbox=none the whole block is inert.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "network": {
           "type": "boolean",
-          "description": "false opts this file out of sandboxing; true is the explicit opt-in, identical to omitting the key"
+          "description": "Whether sandboxed commands keep network access (default true). false runs them in an empty network namespace (bwrap) or with --network none (docker)."
         },
-        {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "description": "Whether this file's commands are sandboxed (default true). false is the same opt-out as `sandbox: false`."
-            },
-            "network": {
-              "type": "boolean",
-              "description": "Whether sandboxed commands keep network access (default true). false runs them in an empty network namespace (bwrap) or with --network none (docker)."
-            },
-            "image": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Container image the docker backend runs this file's commands in, overriding --sandbox-image. Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
-            }
-          }
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Container image the docker backend runs this file's commands in, overriding --sandbox-image. Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
         }
-      ]
+      }
     },
     "test": {
       "type": "object",

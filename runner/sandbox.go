@@ -25,8 +25,14 @@ package runner
 //	          machines with neither native backend, not an equivalent.
 //
 // Backend selection is lazy and cached: the probe runs at most once per
-// process, and only when a file actually needs a sandbox -- so a corpus whose
-// files all opt out never needs a backend installed at all.
+// process, and only when a file actually needs a sandbox -- so a run that
+// opted out never needs a backend installed at all, and `dats syntax` never
+// probes.
+//
+// Sandboxing is the operator's call and only theirs. A .dats file can narrow
+// its own sandbox (cut the network, name a docker image); it has no way to
+// turn one off, because the person running an unfamiliar file is the one who
+// would pay for that.
 
 import (
 	"context"
@@ -156,7 +162,7 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 
 // sandboxOptOutHint is appended to every backend-resolution failure: the
 // error is only actionable if it says how to run without a sandbox.
-const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)"
+const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox"
 
 // probeBackend reports whether backend is usable on this host. Presence on
 // $PATH is not enough for any of them -- bwrap is routinely installed on
@@ -236,8 +242,8 @@ type sandboxPlan struct {
 	// coverDir is the one host path made writable on top of work: --coverdir,
 	// where instrumented binaries write coverage data that must SURVIVE the
 	// run. There is deliberately no general "extra writable paths" knob --
-	// scratch belongs in the sandbox's own writable temp directory, and a
-	// command that genuinely needs the host is a `sandbox: false` file.
+	// scratch belongs in the sandbox's own writable temp directory, and
+	// commands that genuinely need the host are run with --no-sandbox.
 	coverDir string
 	// workdir is the process working directory, exposed to the command so
 	// relative paths keep resolving as they do on the host (read-only under
@@ -270,14 +276,11 @@ func (p *sandboxPlan) describe() string {
 // unsandboxed.
 //
 // The CLI's choice is the outer bound: --sandbox=none disables sandboxing for
-// every file, including one whose block asks for it. A file's block can
-// narrow that choice (opt out, cut the network) or adjust it (image), never
-// widen it.
+// every file. A file's block can narrow that choice (cut the network) or
+// adjust it (image); nothing in a file can widen it, and nothing in a file can
+// switch the sandbox off.
 func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sandboxPlan, error) {
 	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
-		return nil, nil
-	}
-	if !spec.IsEnabled() {
 		return nil, nil
 	}
 	backend, err := r.Sandbox.Backend()

@@ -90,8 +90,9 @@ type Options struct {
 }
 
 // Sandbox selects the sandbox backend for a run. The zero value means auto:
-// bubblewrap, then seatbelt, then docker. Individual files can still opt out
-// with `sandbox: false`, or pin a docker image, in the file itself.
+// bubblewrap, then seatbelt, then docker. This is the only place a sandbox is
+// turned off: a file can narrow its own (cut the network, pin a docker image),
+// never switch it off.
 type Sandbox struct {
 	// Mode is the backend: runner.SandboxAuto (or ""), SandboxBwrap,
 	// SandboxSeatbelt, SandboxDocker, or SandboxNone to run on the host.
