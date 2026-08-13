@@ -387,11 +387,19 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 // Missing entries are fine -- each bind is a `-try` -- so one list covers
 // merged-/usr and split-/usr distributions alike. /nix covers NixOS, where the
 // tools live nowhere else, and /opt covers add-on toolchains installed outside
-// the distribution's own tree -- notably GitHub Actions' hosted tool cache
-// (/opt/hostedtoolcache), which is where actions/setup-go, -node and -python
-// put the toolchain they just put on PATH. Leaving it out does not make a
-// command safer, it makes it fail to find the interpreter the workflow
+// the distribution's own tree -- notably GitHub Actions' HOSTED-runner tool
+// cache (/opt/hostedtoolcache), which is where actions/setup-go, -node and
+// -python put the toolchain they just put on PATH. Leaving it out does not
+// make a command safer, it makes it fail to find the interpreter the workflow
 // installed for it, several steps away from any mention of a sandbox.
+//
+// A self-hosted runner's tool cache is NOT under /opt -- it defaults to
+// <runner-dir>/_work/_tool (confirmed live: exit 127, "command not found",
+// for every command needing a setup-node-installed interpreter or an
+// npm-linked binary, on a runner whose RUNNER_TOOL_CACHE was
+// /home/runner/_work/_tool). bwrapIsolationArgs binds that path too, from the
+// same env var actions/setup-* itself reads, so this covers any runner's
+// actual tool-cache location instead of only the hosted-runner default.
 var toolTreePaths = []string{
 	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix", "/opt",
 }
@@ -415,6 +423,9 @@ func bwrapIsolationArgs() []string {
 	args := make([]string, 0, 3*len(toolTreePaths)+16)
 	for _, dir := range toolTreePaths {
 		args = append(args, "--ro-bind-try", dir, dir)
+	}
+	if cache := os.Getenv("RUNNER_TOOL_CACHE"); cache != "" && !underToolTree(cache) {
+		args = append(args, "--ro-bind-try", cache, cache)
 	}
 	if target, ok := resolvConfTarget(); ok {
 		args = append(args, "--ro-bind-try", target, target)
