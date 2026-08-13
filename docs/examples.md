@@ -306,7 +306,9 @@ agreed to expose.
 ### Picking the image for the docker backend
 
 Only used when the docker backend is selected (bubblewrap runs commands against the host's
-own filesystem and ignores this). The image must ship bash:
+own filesystem and ignores this), and only when the run did not pin an image itself: a typed
+`--sandbox-image` outranks this, and the run's `# sandbox:` line says the file's was refused.
+The image must ship bash:
 
 ```yaml
 sandbox:

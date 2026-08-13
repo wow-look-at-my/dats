@@ -396,7 +396,6 @@ func TestNewSandboxPlanFields(t *testing.T) {
 		Sandbox:  sandboxConfigWithProbe(SandboxDocker, probeAlways(nil)),
 		CoverDir: t.TempDir(),
 	}
-	r.Sandbox.Image = "custom:tag"
 	plan, err := r.newSandboxPlan(&schema.SandboxSpec{
 		Network: &network,
 		Image:   "file:tag",
@@ -405,13 +404,46 @@ func TestNewSandboxPlanFields(t *testing.T) {
 	require.NotNil(t, plan)
 
 	assert.Equal(t, SandboxDocker, plan.backend)
-	assert.Equal(t, "file:tag", plan.image, "the file's image overrides the CLI's")
+	assert.Equal(t, "file:tag", plan.image, "with no image from the operator, the file picks")
 	assert.False(t, plan.network)
 	assert.Equal(t, "/tmp/dats-2", plan.work)
 	// Coverage data is written by the sandboxed process into a host directory
 	// outside the temp tree, so it has to be writable too.
 	assert.Contains(t, plan.writablePaths(), r.CoverDir)
 	assert.Equal(t, "docker file:tag (no network)", plan.describe())
+}
+
+// TestNewSandboxPlanImagePrecedence: an image the operator typed is a decision
+// about what gets pulled and run on their machine, so a file cannot swap it
+// out -- the same rule as the sandbox itself, one level down. When both name
+// one, the run SAYS the file's was refused; a suite quietly running in an
+// image it did not ask for fails later, somewhere that never mentions images.
+func TestNewSandboxPlanImagePrecedence(t *testing.T) {
+	newRunner := func(operatorImage string) *Runner {
+		r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxDocker, probeAlways(nil))}
+		r.Sandbox.Image = operatorImage
+		return r
+	}
+
+	// Operator pinned one, file wants another: the operator's wins, out loud.
+	plan, err := newRunner("pinned:tag").newSandboxPlan(&schema.SandboxSpec{Image: "file:tag"}, "/tmp/w")
+	require.Nil(t, err)
+	assert.Equal(t, "pinned:tag", plan.image)
+	assert.Equal(t, "file:tag", plan.refusedImage)
+	assert.Equal(t, "docker pinned:tag (--sandbox-image; file asked for file:tag)", plan.describe())
+
+	// Agreeing on the same image is not a refusal to announce.
+	plan, err = newRunner("same:tag").newSandboxPlan(&schema.SandboxSpec{Image: "same:tag"}, "/tmp/w")
+	require.Nil(t, err)
+	assert.Equal(t, "same:tag", plan.image)
+	assert.Equal(t, "", plan.refusedImage)
+	assert.Equal(t, "docker same:tag", plan.describe())
+
+	// Neither named one: the default, and nothing to announce.
+	plan, err = newRunner("").newSandboxPlan(nil, "/tmp/w")
+	require.Nil(t, err)
+	assert.Equal(t, DefaultSandboxImage, plan.image)
+	assert.Equal(t, "", plan.refusedImage)
 }
 
 func TestSandboxPlanDescribe(t *testing.T) {

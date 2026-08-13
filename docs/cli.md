@@ -48,7 +48,7 @@ the current directory tree.
 | `--update` | Rewrite snapshot golden files from actual output instead of failing, and prune stale ones (see [Updating Snapshots](#updating-snapshots---update)) |
 | `--sandbox <mode>` | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, or `none` (see [Sandboxing](#sandboxing---sandbox)) |
 | `--no-sandbox` | Run test commands directly on the host; same as `--sandbox=none`. Combining it with a different `--sandbox` value is an error |
-| `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`) |
+| `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`). Typing it pins the image for the whole run: it then outranks any file's `image:` |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |

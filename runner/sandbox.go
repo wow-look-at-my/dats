@@ -97,7 +97,10 @@ func ParseSandboxMode(s string) (SandboxMode, error) {
 // Backend resolution is memoized: Backend probes at most once per config, no
 // matter how many files or how many concurrent workers ask for it.
 type SandboxConfig struct {
-	Mode  SandboxMode
+	Mode SandboxMode
+	// Image is the operator's docker image, and empty means they named none.
+	// That distinction is what lets a file's `image:` pick one without ever
+	// overruling an image the operator typed out.
 	Image string
 
 	once    sync.Once
@@ -109,12 +112,11 @@ type SandboxConfig struct {
 	probe func(SandboxMode) error
 }
 
-// NewSandboxConfig builds a config for mode. An empty image means the default
-// image; the value is only ever consulted by the docker backend.
+// NewSandboxConfig builds a config for mode. An empty image means the operator
+// said nothing, which leaves the choice to the file (and DefaultSandboxImage
+// when it says nothing either); a non-empty one is their pin, and it outranks
+// any file's `image:`. The value is only ever consulted by the docker backend.
 func NewSandboxConfig(mode SandboxMode, image string) *SandboxConfig {
-	if image == "" {
-		image = DefaultSandboxImage
-	}
 	return &SandboxConfig{Mode: mode, Image: image, probe: probeBackend}
 }
 
@@ -234,7 +236,12 @@ func probeFailure(out []byte, err error) string {
 type sandboxPlan struct {
 	backend SandboxMode
 	image   string // docker only
-	network bool
+	// refusedImage is the file's own `image:` when the operator pinned a
+	// different one on the command line. Kept so describe can say the file
+	// asked and did not get it: a suite silently running in an image it did
+	// not ask for fails later, somewhere that never mentions the image.
+	refusedImage string
+	network      bool
 	// work is the file's temp directory -- the shared directory and every
 	// per-instance test directory live under it, so binding it read-write is
 	// exactly the access a passing test needs.
@@ -262,6 +269,9 @@ func (p *sandboxPlan) describe() string {
 	desc := string(p.backend)
 	if p.backend == SandboxDocker {
 		desc += " " + p.image
+		if p.refusedImage != "" {
+			desc += fmt.Sprintf(" (--sandbox-image; file asked for %s)", p.refusedImage)
+		}
 	}
 	if !p.network {
 		desc += " (no network)"
@@ -297,11 +307,19 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 		network: spec.NetworkEnabled(),
 		work:    workDir,
 	}
+	// A typed --sandbox-image is the operator choosing what runs on their
+	// machine, so a file cannot swap it out underneath them. It only picks the
+	// image when they named none -- and when both name one, the file's is
+	// refused OUT LOUD (describe), never dropped on the floor.
+	if fileImage := spec.ImageName(); fileImage != "" {
+		if plan.image == "" {
+			plan.image = fileImage
+		} else if fileImage != plan.image {
+			plan.refusedImage = fileImage
+		}
+	}
 	if plan.image == "" {
 		plan.image = DefaultSandboxImage
-	}
-	if spec != nil && spec.Image != "" {
-		plan.image = spec.Image
 	}
 	// Coverage data is written by the sandboxed process itself, into a host
 	// directory that is deliberately outside the temp tree -- it has to

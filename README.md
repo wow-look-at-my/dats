@@ -105,7 +105,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
 | `--sandbox <mode>` | Global | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, `none`. See [docs/cli.md](docs/cli.md#sandboxing---sandbox) |
 | `--no-sandbox` | Global | Run test commands directly on the host (same as `--sandbox=none`) |
-| `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`) |
+| `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`); typed, it pins the run and outranks a file's `image:` |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |

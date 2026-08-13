@@ -58,9 +58,14 @@ func resolveSandbox(flags *pflag.FlagSet) (*runner.SandboxConfig, error) {
 	if mode == runner.SandboxNone {
 		return nil, nil
 	}
-	image, err := flags.GetString("sandbox-image")
-	if err != nil {
-		return nil, err
+	// Only a TYPED --sandbox-image is carried through. Left at its default the
+	// value is nobody's choice, so it travels as "" and a file's `image:` is
+	// free to pick; typed, it is the operator's, and it outranks the file.
+	var image string
+	if flags.Changed("sandbox-image") {
+		if image, err = flags.GetString("sandbox-image"); err != nil {
+			return nil, err
+		}
 	}
 	return runner.NewSandboxConfig(mode, image), nil
 }

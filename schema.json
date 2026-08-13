@@ -132,7 +132,7 @@
         "image": {
           "type": "string",
           "minLength": 1,
-          "description": "Container image the docker backend runs this file's commands in, overriding --sandbox-image. Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
+          "description": "Container image the docker backend runs this file's commands in, used when the run did not pin one with --sandbox-image (a typed --sandbox-image wins, and the run says so). Ignored by the bwrap backend, which uses the host's own filesystem. The image must provide bash."
         }
       }
     },

@@ -53,6 +53,16 @@ func (s *SandboxSpec) NetworkEnabled() bool {
 	return *s.Network
 }
 
+// ImageName reports the docker image the file asked for, empty when it asked
+// for none. It is a request, not a decision: an image the operator named on
+// the command line wins over it.
+func (s *SandboxSpec) ImageName() string {
+	if s == nil {
+		return ""
+	}
+	return s.Image
+}
+
 // errSandboxOff is the parse error for a file trying to turn its own sandbox
 // off. It names the flag that actually does it, because the file's author is
 // not always the person who will run the file -- and only that person gets to

@@ -99,7 +99,9 @@ type Sandbox struct {
 	Mode runner.SandboxMode
 
 	// Image is the container image the docker backend runs commands in.
-	// Empty means runner.DefaultSandboxImage. The other backends ignore it.
+	// Empty leaves the choice to the file (and runner.DefaultSandboxImage
+	// when it names none); set, it is the caller's and a file's `image:`
+	// cannot displace it. The other backends ignore it.
 	Image string
 }
 
@@ -118,11 +120,9 @@ func (s Sandbox) config() (*runner.SandboxConfig, error) {
 	if mode == runner.SandboxNone {
 		return nil, nil
 	}
-	image := s.Image
-	if image == "" {
-		image = runner.DefaultSandboxImage
-	}
-	return runner.NewSandboxConfig(mode, image), nil
+	// Image travels verbatim, empty included: "" is the caller naming none,
+	// which is what lets a file pick one without overruling a caller who did.
+	return runner.NewSandboxConfig(mode, s.Image), nil
 }
 
 // Result is the outcome of a Run: the per-file results plus the totals the

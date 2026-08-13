@@ -155,8 +155,9 @@ optional file-level `sandbox` key narrows that for one file:
 ```yaml
 sandbox:
 	network: false      # default true; false runs commands with no network
-	image: alpine:3.20  # docker backend only; overrides --sandbox-image (must ship bash).
-		# Ignored by bwrap and seatbelt, which use the host's own filesystem
+	image: alpine:3.20  # docker backend only, and only when the run did not pin an
+		# image with --sandbox-image (must ship bash). Ignored by bwrap and
+		# seatbelt, which use the host's own filesystem
 ```
 
 **A file cannot turn its own sandbox off.** There is no `sandbox: false` and no `enabled`
@@ -179,7 +180,11 @@ shared directory, and one hook lifecycle, so a per-test sandbox would make those
 mean different things to different tests.
 
 The CLI's choice is the outer bound. A file can narrow it (cut the network) or adjust it
-(image), never widen it: under `--no-sandbox` the whole block is inert.
+(image), never widen it: under `--no-sandbox` the whole block is inert, and a `--sandbox-image`
+the operator typed outranks the file's `image:` — the run then says so on its `# sandbox:` line
+(`docker pinned:tag (--sandbox-image; file asked for other:tag)`) rather than leaving the file
+to fail somewhere that never mentions images. Choosing which image gets pulled and run is the
+operator's call for the same reason the sandbox itself is.
 
 The block is validated strictly: unknown or duplicate keys, a non-boolean `network`, an empty
 `image`, an empty mapping, and any non-mapping value are all parse errors — a misspelled key
