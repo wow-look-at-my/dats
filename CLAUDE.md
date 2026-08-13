@@ -278,6 +278,15 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with two jobs:
 - `test` - installs bubblewrap, clears ubuntu-24.04's `kernel.apparmor_restrict_unprivileged_userns` (which otherwise denies bwrap the user namespace it needs, silently turning every bwrap test into a skip) and runs the bwrap probe as its own step so an unusable backend fails with its own error; then builds the Go binary (multi-platform), runs tests via `wow-look-at-my/go-toolchain`, and creates releases on master pushes. The sandbox integration tests skip themselves when no backend is usable, so that probe step -- not any env knob -- is what stops a skip from passing for isolation coverage in CI; the docker tests use the runner's own daemon and skip if the image cannot be fetched (a registry outage says nothing about the code). `artifact-metadata: write` is required by the publish step (job-level permissions REPLACE workflow-level ones)
 - `schema` - validates `testdata/schema/*.json` fixtures against `schema.json` using the `wow-look-at-my/json-validator` action, guarding against schema drift
 
+## Consuming dats from another repo's CI
+
+`action.yml` at repo root makes this a composite GitHub Action:
+`uses: wow-look-at-my/dats@master` downloads the newest build from buildhost
+(never pinned) and runs it via one `args:` input — see the README's
+"GitHub Actions" section. It wraps
+`wow-look-at-my/buildhost/.github/actions/buildhost-download` (`project:
+dats`), the same download every consumer used to hand-roll with curl/chmod.
+
 ## JSON Schema
 
 `schema.json` provides IDE validation for `.dats` files. Can be used with YAML language servers.
