@@ -228,6 +228,10 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with two jobs:
 "GitHub Actions" section. It wraps
 `wow-look-at-my/buildhost/.github/actions/buildhost-download` (`project:
 dats`), the same download every consumer used to hand-roll with curl/chmod.
+On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
+24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
+way this repo's own CI does (see "CI/CD" above) — so a caller gets real
+sandboxing without needing `--no-sandbox` to work around the runner.
 
 ## JSON Schema
 

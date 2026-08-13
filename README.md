@@ -17,12 +17,16 @@ just install        # Symlink binary to ~/.local/bin/dats
 
 `wow-look-at-my/dats@master` is a composite action: it downloads the newest
 `dats` build from buildhost (no pinned version to drift behind) and runs it,
-so a workflow doesn't have to hand-roll the download.
+so a workflow doesn't have to hand-roll the download. On Linux it also makes
+sure bubblewrap sandboxing actually works first (installing it if missing,
+and clearing Ubuntu 24.04's default AppArmor restriction on unprivileged user
+namespaces if it's blocking bwrap) -- a caller should never have to reach for
+`--no-sandbox` just to work around runner infrastructure.
 
 ```yaml
 - uses: wow-look-at-my/dats@master
   with:
-    args: --no-sandbox test tests/
+    args: test tests/
 ```
 
 | Input | Required | Default | Description |

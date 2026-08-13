@@ -31,6 +31,34 @@ runs:
         project: dats
         version: ${{ inputs.version }}
 
+    # dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on
+    # macOS, docker otherwise) -- real isolation, not a formality, so a caller
+    # should never have to reach for --no-sandbox just to work around
+    # infrastructure. Skips on non-Linux (macOS's seatbelt sandbox needs
+    # neither of these steps).
+    - name: Install bubblewrap (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
+
+    # Ubuntu 24.04 ships a default AppArmor restriction
+    # (kernel.apparmor_restrict_unprivileged_userns=1) that silently denies
+    # bwrap's unprivileged user namespace even once it's installed; this
+    # repo's own CI (.github/workflows/ci.yml) already proved sudo can clear
+    # it. The final bwrap check has no fallback -- a runner where this
+    # genuinely doesn't work should fail loudly here, not silently ship
+    # unsandboxed test runs.
+    - name: Configure bubblewrap so it actually works (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # The sysctl write can itself fail harmlessly (e.g. a kernel with no
+        # such knob) -- `|| true` keeps this a probe, not an abort, so the
+        # bwrap re-check below stays the one authoritative pass/fail signal.
+        bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true \
+          || sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+        bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
+
     - name: Run dats
       shell: bash
       working-directory: ${{ inputs.working-directory }}
