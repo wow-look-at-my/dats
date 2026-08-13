@@ -47,18 +47,27 @@ func TestSandboxFlagResolution(t *testing.T) {
 		wantErr   string
 	}{
 		{
-			name:      "absent means auto -- sandboxing is the default",
-			args:      nil,
-			wantMode:  runner.SandboxAuto,
-			wantImage: runner.DefaultSandboxImage,
+			// An untyped --sandbox-image travels empty, not as its default
+			// value: the runner reads "" as "nobody chose", which is what
+			// leaves a file's own image: free to pick one.
+			name:     "absent means auto -- sandboxing is the default",
+			args:     nil,
+			wantMode: runner.SandboxAuto,
 		},
-		{name: "--sandbox=bwrap", args: []string{"--sandbox=bwrap"}, wantMode: runner.SandboxBwrap, wantImage: runner.DefaultSandboxImage},
-		{name: "--sandbox=docker", args: []string{"--sandbox=docker"}, wantMode: runner.SandboxDocker, wantImage: runner.DefaultSandboxImage},
+		{name: "--sandbox=bwrap", args: []string{"--sandbox=bwrap"}, wantMode: runner.SandboxBwrap},
+		{name: "--sandbox=docker", args: []string{"--sandbox=docker"}, wantMode: runner.SandboxDocker},
 		{
-			name:      "--sandbox-image overrides the default image",
+			name:      "a typed --sandbox-image is carried through as the operator's pin",
 			args:      []string{"--sandbox=docker", "--sandbox-image=alpine:3.20"},
 			wantMode:  runner.SandboxDocker,
 			wantImage: "alpine:3.20",
+		},
+		{
+			// Typing the default explicitly still counts as choosing it.
+			name:      "--sandbox-image set to the default is still a choice",
+			args:      []string{"--sandbox=docker", "--sandbox-image=" + runner.DefaultSandboxImage},
+			wantMode:  runner.SandboxDocker,
+			wantImage: runner.DefaultSandboxImage,
 		},
 		{name: "--sandbox=none opts out", args: []string{"--sandbox=none"}},
 		{name: "--no-sandbox opts out", args: []string{"--no-sandbox"}},

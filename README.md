@@ -2,7 +2,7 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
-Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out — `--no-sandbox`, or `sandbox: false` in a file that needs it. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
 
 Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
 
@@ -105,7 +105,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
 | `--sandbox <mode>` | Global | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, `none`. See [docs/cli.md](docs/cli.md#sandboxing---sandbox) |
 | `--no-sandbox` | Global | Run test commands directly on the host (same as `--sandbox=none`) |
-| `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`) |
+| `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`); typed, it pins the run and outranks a file's `image:` |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |

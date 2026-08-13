@@ -25,8 +25,14 @@ package runner
 //	          machines with neither native backend, not an equivalent.
 //
 // Backend selection is lazy and cached: the probe runs at most once per
-// process, and only when a file actually needs a sandbox -- so a corpus whose
-// files all opt out never needs a backend installed at all.
+// process, and only when a file actually needs a sandbox -- so a run that
+// opted out never needs a backend installed at all, and `dats syntax` never
+// probes.
+//
+// Sandboxing is the operator's call and only theirs. A .dats file can narrow
+// its own sandbox (cut the network, name a docker image); it has no way to
+// turn one off, because the person running an unfamiliar file is the one who
+// would pay for that.
 
 import (
 	"context"
@@ -91,7 +97,10 @@ func ParseSandboxMode(s string) (SandboxMode, error) {
 // Backend resolution is memoized: Backend probes at most once per config, no
 // matter how many files or how many concurrent workers ask for it.
 type SandboxConfig struct {
-	Mode  SandboxMode
+	Mode SandboxMode
+	// Image is the operator's docker image, and empty means they named none.
+	// That distinction is what lets a file's `image:` pick one without ever
+	// overruling an image the operator typed out.
 	Image string
 
 	once    sync.Once
@@ -103,12 +112,11 @@ type SandboxConfig struct {
 	probe func(SandboxMode) error
 }
 
-// NewSandboxConfig builds a config for mode. An empty image means the default
-// image; the value is only ever consulted by the docker backend.
+// NewSandboxConfig builds a config for mode. An empty image means the operator
+// said nothing, which leaves the choice to the file (and DefaultSandboxImage
+// when it says nothing either); a non-empty one is their pin, and it outranks
+// any file's `image:`. The value is only ever consulted by the docker backend.
 func NewSandboxConfig(mode SandboxMode, image string) *SandboxConfig {
-	if image == "" {
-		image = DefaultSandboxImage
-	}
 	return &SandboxConfig{Mode: mode, Image: image, probe: probeBackend}
 }
 
@@ -156,7 +164,7 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 
 // sandboxOptOutHint is appended to every backend-resolution failure: the
 // error is only actionable if it says how to run without a sandbox.
-const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox (or `sandbox: false` in the file)"
+const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox"
 
 // probeBackend reports whether backend is usable on this host. Presence on
 // $PATH is not enough for any of them -- bwrap is routinely installed on
@@ -228,7 +236,12 @@ func probeFailure(out []byte, err error) string {
 type sandboxPlan struct {
 	backend SandboxMode
 	image   string // docker only
-	network bool
+	// refusedImage is the file's own `image:` when the operator pinned a
+	// different one on the command line. Kept so describe can say the file
+	// asked and did not get it: a suite silently running in an image it did
+	// not ask for fails later, somewhere that never mentions the image.
+	refusedImage string
+	network      bool
 	// work is the file's temp directory -- the shared directory and every
 	// per-instance test directory live under it, so binding it read-write is
 	// exactly the access a passing test needs.
@@ -236,8 +249,8 @@ type sandboxPlan struct {
 	// coverDir is the one host path made writable on top of work: --coverdir,
 	// where instrumented binaries write coverage data that must SURVIVE the
 	// run. There is deliberately no general "extra writable paths" knob --
-	// scratch belongs in the sandbox's own writable temp directory, and a
-	// command that genuinely needs the host is a `sandbox: false` file.
+	// scratch belongs in the sandbox's own writable temp directory, and
+	// commands that genuinely need the host are run with --no-sandbox.
 	coverDir string
 	// workdir is the process working directory, exposed to the command so
 	// relative paths keep resolving as they do on the host (read-only under
@@ -256,6 +269,9 @@ func (p *sandboxPlan) describe() string {
 	desc := string(p.backend)
 	if p.backend == SandboxDocker {
 		desc += " " + p.image
+		if p.refusedImage != "" {
+			desc += fmt.Sprintf(" (--sandbox-image; file asked for %s)", p.refusedImage)
+		}
 	}
 	if !p.network {
 		desc += " (no network)"
@@ -270,14 +286,11 @@ func (p *sandboxPlan) describe() string {
 // unsandboxed.
 //
 // The CLI's choice is the outer bound: --sandbox=none disables sandboxing for
-// every file, including one whose block asks for it. A file's block can
-// narrow that choice (opt out, cut the network) or adjust it (image), never
-// widen it.
+// every file. A file's block can narrow that choice (cut the network) or
+// adjust it (image); nothing in a file can widen it, and nothing in a file can
+// switch the sandbox off.
 func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sandboxPlan, error) {
 	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
-		return nil, nil
-	}
-	if !spec.IsEnabled() {
 		return nil, nil
 	}
 	backend, err := r.Sandbox.Backend()
@@ -294,11 +307,19 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 		network: spec.NetworkEnabled(),
 		work:    workDir,
 	}
+	// A typed --sandbox-image is the operator choosing what runs on their
+	// machine, so a file cannot swap it out underneath them. It only picks the
+	// image when they named none -- and when both name one, the file's is
+	// refused OUT LOUD (describe), never dropped on the floor.
+	if fileImage := spec.ImageName(); fileImage != "" {
+		if plan.image == "" {
+			plan.image = fileImage
+		} else if fileImage != plan.image {
+			plan.refusedImage = fileImage
+		}
+	}
 	if plan.image == "" {
 		plan.image = DefaultSandboxImage
-	}
-	if spec != nil && spec.Image != "" {
-		plan.image = spec.Image
 	}
 	// Coverage data is written by the sandboxed process itself, into a host
 	// directory that is deliberately outside the temp tree -- it has to
