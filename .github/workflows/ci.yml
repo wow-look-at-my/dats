@@ -58,3 +58,16 @@ jobs:
         with:
           schema: schema.json
           files: testdata/schema/*.json
+
+  # Consumers reference this repo's own action.yml (wow-look-at-my/dats@master)
+  # to get a real bwrap sandbox on the org's self-hosted fleet -- a class of
+  # runner this repo's other jobs never touch (they're all ubuntu-latest). Run
+  # the action against itself here, on that same fleet, so a userns-restriction
+  # regression is caught before a consumer's CI catches it instead.
+  self-hosted-sandbox:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          args: test examples/sandbox.dats
