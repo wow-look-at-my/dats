@@ -1,6 +1,5 @@
 {
   "sandbox": {
-    "enabled": true,
     "network": false,
     "image": "alpine:3.20"
   },

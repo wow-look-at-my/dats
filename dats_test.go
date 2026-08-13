@@ -270,7 +270,9 @@ func TestZeroSandboxIsAuto(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, runner.SandboxAuto, cfg.Mode)
-	assert.Equal(t, runner.DefaultSandboxImage, cfg.Image)
+	// No image named: the file may pick one, and the runner falls back to
+	// DefaultSandboxImage when it does not.
+	assert.Equal(t, "", cfg.Image)
 
 	// And the zero Options value carries that same default.
 	cfg, err = (Options{}).Sandbox.config()

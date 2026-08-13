@@ -93,8 +93,10 @@ tests:
 	assert.Equal(t, 1, result.Failed)
 }
 
-func TestRunFileSandboxFileOptOutRunsOnHost(t *testing.T) {
-	requireBwrap(t)
+// TestRunFileSandboxFileCannotOptOut is the guarantee the file format gives
+// whoever runs a .dats file they did not write: the sandbox comes down when
+// THEY say so, and a file asking for the host does not run at all.
+func TestRunFileSandboxFileCannotOptOut(t *testing.T) {
 	hostDir := t.TempDir()
 	probe := filepath.Join(hostDir, "written.txt")
 
@@ -108,10 +110,31 @@ tests:
 	r := NewRunner(&buf, false, false, "")
 	r.Sandbox = NewSandboxConfig(SandboxBwrap, "")
 
+	_, err := r.RunFile(context.Background(), path)
+	require.NotNil(t, err)
+	assert.Contains(t, err.Error(), "a file cannot turn its own sandbox off")
+	assert.NoFileExists(t, probe, "a refused file runs nothing")
+}
+
+// TestRunFileRunLevelOptOutRunsOnHost is the other half: the operator's own
+// opt-out still hands commands straight to the host.
+func TestRunFileRunLevelOptOutRunsOnHost(t *testing.T) {
+	hostDir := t.TempDir()
+	probe := filepath.Join(hostDir, "written.txt")
+
+	path := writeRunnerDats(t, `
+tests:
+	- desc: writes to the host
+	  cmd: echo produced > `+probe+`
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	r.Sandbox = NewSandboxConfig(SandboxNone, "")
+
 	result, err := r.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
-	assert.FileExists(t, probe, "an opted-out file runs on the host")
+	assert.FileExists(t, probe, "an opted-out run runs on the host")
 	assert.NotContains(t, buf.String(), "# sandbox:", "an unsandboxed file announces nothing")
 }
 
@@ -144,7 +167,7 @@ tests:
 // file's own temp directory, on every backend, and a host path it was not
 // given stays refused. There is no third option by design -- an escape hatch
 // per path is a hole in the isolation whose consequences the file's author
-// cannot see, and a command that truly needs the host says `sandbox: false`.
+// cannot see, and a command that truly needs the host needs a --no-sandbox run.
 func TestRunFileSandboxScratchGoesInTheTempDir(t *testing.T) {
 	requireBwrap(t)
 	hostDir := t.TempDir()
