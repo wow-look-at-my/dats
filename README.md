@@ -13,6 +13,26 @@ just build          # Build the dats binary to build/dats
 just install        # Symlink binary to ~/.local/bin/dats
 ```
 
+### GitHub Actions
+
+`wow-look-at-my/dats@master` is a composite action: it downloads the newest
+`dats` build from buildhost (no pinned version to drift behind) and runs it,
+so a workflow doesn't have to hand-roll the download.
+
+```yaml
+- uses: wow-look-at-my/dats@master
+  with:
+    args: --no-sandbox test tests/
+```
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `args` | Yes | — | Arguments passed to `dats` |
+| `working-directory` | No | `.` | Directory to run `dats` from |
+| `version` | No | Newest on the default branch | `dats` release version to download |
+
+Outputs `path`, the full path to the downloaded binary.
+
 ## Usage
 
 ```bash
