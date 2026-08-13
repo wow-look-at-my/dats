@@ -5,10 +5,11 @@
 # temp directory -- fixtures, {outputs.X}, {shared.X} -- can be written. Nothing
 # in a .dats file has to change for that: the tests below are ordinary tests.
 #
-# The optional file-level `sandbox` block narrows the sandbox for one file.
-# Write `sandbox: false` instead to opt a file out entirely, for commands that
-# genuinely need the host. Either way the CLI is the outer bound: under
-# --no-sandbox this block is inert and everything here still runs (and passes).
+# The optional file-level `sandbox` block narrows the sandbox for one file. It
+# cannot widen it, and there is no way for a file to switch its sandbox off:
+# commands that need the host need a run someone started with --no-sandbox. The
+# CLI is the outer bound, so under --no-sandbox this block is inert and
+# everything here still runs (and passes).
 sandbox:
 	network: false # this file's commands need no network, so they get none
 
