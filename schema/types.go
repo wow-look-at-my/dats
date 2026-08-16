@@ -6,15 +6,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
 // exitCodeNames are the symbolic exit code names the runner can resolve.
 // Only these parse; any other name could never pass a run.
-var exitCodeNames = map[string]bool{
-	"EXIT_SUCCESS": true, // 0
-	"EXIT_FAILURE": true, // 1
-}
+var exitCodeNames = set.Of(
+	"EXIT_SUCCESS", // 0
+	"EXIT_FAILURE", // 1
+)
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
@@ -335,7 +336,7 @@ func (e *ExitCode) UnmarshalYAML(value any) error {
 			e.Value = intVal
 			return nil
 		}
-		if !exitCodeNames[v] {
+		if !exitCodeNames.Contains(v) {
 			return fmt.Errorf("exit %q is not a recognized exit code name (use EXIT_SUCCESS, EXIT_FAILURE, or an integer 0-255)", v)
 		}
 		e.Variable = v
