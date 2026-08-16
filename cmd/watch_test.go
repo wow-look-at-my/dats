@@ -17,6 +17,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 func TestRelevantChange(t *testing.T) {
@@ -29,10 +30,10 @@ func TestRelevantChange(t *testing.T) {
 	report := filepath.Join(tmp, "tree", "report.json")
 
 	scope := &watchScope{
-		files:    map[string]bool{resolved: true},
+		files:    set.Of(resolved),
 		snapDirs: []string{snapDir},
 		dirTrees: []string{dirArg},
-		reports:  map[string]bool{report: true},
+		reports:  set.Of(report),
 	}
 	scopeUpdate := &watchScope{
 		files:    scope.files,

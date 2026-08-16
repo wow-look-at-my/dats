@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/wow-look-at-my/go-containers/set"
 	yamlfixed "github.com/wow-look-at-my/yaml-fixed/yaml"
 )
 
@@ -80,7 +81,7 @@ func (m *Matrix) UnmarshalYAML(value any) error {
 			return fmt.Errorf("matrix variable %q must list at least one value", name)
 		}
 		values := make([]string, 0, len(valueList))
-		seen := make(map[string]bool, len(valueList))
+		seen := set.New[string](len(valueList))
 		for j, item := range valueList {
 			// Only scalar values make sense as substitution text; null has no
 			// text at all, and a mapping/sequence has no scalar text either.
@@ -91,10 +92,9 @@ func (m *Matrix) UnmarshalYAML(value any) error {
 			// Duplicates are compared after stringification: 1.50 and "1.50"
 			// would produce byte-identical instances, so the repeat can only
 			// be a mistake.
-			if seen[text] {
+			if !seen.Add(text) {
 				return fmt.Errorf("matrix variable %q lists duplicate value %q", name, text)
 			}
-			seen[text] = true
 			values = append(values, text)
 		}
 		vars = append(vars, MatrixVariable{Name: name, Values: values})

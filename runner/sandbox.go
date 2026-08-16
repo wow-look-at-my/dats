@@ -47,6 +47,7 @@ import (
 	"time"
 
 	"github.com/wow-look-at-my/dats/schema"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // SandboxMode is the requested sandbox backend: a concrete backend, automatic
@@ -521,16 +522,15 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 	// writable path that happens to be (or contain) the working directory
 	// must not be demoted to the read-only working-directory mount, and a
 	// repeated path would make docker refuse to start at all.
-	seen := make(map[string]bool)
+	seen := set.New[string]()
 	for _, dir := range p.writablePaths() {
-		if seen[dir] {
+		if !seen.Add(dir) {
 			continue
 		}
-		seen[dir] = true
 		argv = append(argv, "-v", dir+":"+dir)
 	}
 	if p.workdir != "" {
-		if !seen[p.workdir] {
+		if !seen.Contains(p.workdir) {
 			argv = append(argv, "-v", p.workdir+":"+p.workdir+":ro")
 		}
 		argv = append(argv, "-w", p.workdir)
@@ -554,10 +554,10 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 // outside it -- a host PATH with no matching binaries, a $HOME nobody mounted
 // -- so the image's own values win. Everything else the run exported is the
 // caller's data and travels.
-var imageOwnedEnv = map[string]bool{
-	"PATH": true, "HOME": true, "HOSTNAME": true, "PWD": true, "OLDPWD": true,
-	"SHLVL": true, "TMPDIR": true, "USER": true, "LOGNAME": true, "_": true,
-}
+var imageOwnedEnv = set.Of(
+	"PATH", "HOME", "HOSTNAME", "PWD", "OLDPWD",
+	"SHLVL", "TMPDIR", "USER", "LOGNAME", "_",
+)
 
 // inheritedEnv is the parent environment minus the image-owned names, as
 // KEY=VALUE entries, so the docker backend can hand a command the same
@@ -567,7 +567,7 @@ func inheritedEnv() []string {
 	out := make([]string, 0, len(env))
 	for _, entry := range env {
 		name, _, ok := strings.Cut(entry, "=")
-		if !ok || imageOwnedEnv[name] {
+		if !ok || imageOwnedEnv.Contains(name) {
 			continue
 		}
 		out = append(out, entry)
