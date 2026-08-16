@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/wow-look-at-my/dats/schema"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // SnapshotDir returns the directory golden files for datsPath live in: the
@@ -227,7 +228,7 @@ func firstDifference(golden, actual string) string {
 // is never created here. Successfully pruned paths land sorted in
 // fileResult.PrunedGoldens.
 func (r *Runner) pruneStaleGoldens(fileResult *FileResult, instances []schema.TestInstance, datsPath string) {
-	expected := make(map[string]bool)
+	expected := set.New[string]()
 	for i := range instances {
 		check := instances[i].Test.Outputs.Snapshot
 		if !check.Enabled {
@@ -235,10 +236,10 @@ func (r *Runner) pruneStaleGoldens(fileResult *FileResult, instances []schema.Te
 		}
 		name := instanceName(&instances[i])
 		if check.Stdout {
-			expected[GoldenFileName(i, name, "stdout")] = true
+			expected.Add(GoldenFileName(i, name, "stdout"))
 		}
 		if check.Stderr {
-			expected[GoldenFileName(i, name, "stderr")] = true
+			expected.Add(GoldenFileName(i, name, "stderr"))
 		}
 	}
 
@@ -251,7 +252,7 @@ func (r *Runner) pruneStaleGoldens(fileResult *FileResult, instances []schema.Te
 	}
 	remaining := 0
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".golden") || expected[entry.Name()] {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".golden") || expected.Contains(entry.Name()) {
 			remaining++
 			continue
 		}

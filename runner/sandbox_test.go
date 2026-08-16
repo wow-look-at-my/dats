@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/wow-look-at-my/dats/schema"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // requireBwrap skips a test that needs real isolation when bubblewrap is
@@ -564,17 +565,17 @@ func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
 		"without it a sandboxed command has no DNS at all on a systemd-resolved host")
 
 	// ...and it is the one allowance: everything else still matches docker.
-	hostBinds := map[string]bool{}
+	hostBinds := set.New[string]()
 	argv := plan.bwrapArgv("true")
 	for i, arg := range argv {
 		if i+1 >= len(argv) || underToolTree(argv[i+1]) || argv[i+1] == stub {
 			continue
 		}
 		if arg == "--ro-bind" || arg == "--ro-bind-try" || arg == "--bind" {
-			hostBinds[argv[i+1]] = true
+			hostBinds.Add(argv[i+1])
 		}
 	}
-	assert.Equal(t, map[string]bool{"/tmp/dats-1": true, "/home/user/project": true}, hostBinds)
+	assert.Equal(t, set.Of("/tmp/dats-1", "/home/user/project"), hostBinds)
 }
 
 // TestSandboxPlanExposesOnlyTempDirAndCoverDir pins the whole writable

@@ -378,6 +378,33 @@ tests:
 	assert.Equal(t, 1, res.Passed)
 }
 
+func TestRunDiscoversNestedSuitesWhenNoPathsGiven(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "a", "b")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "root.dats"), []byte(`
+tests:
+	- desc: root
+	  cmd: echo root
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "nested.dats"), []byte(`
+tests:
+	- desc: nested
+	  cmd: echo nested
+`), 0o644))
+	t.Chdir(dir)
+
+	var out bytes.Buffer
+	res, err := Run(context.Background(), Options{
+		Output:  &out,
+		Sandbox: Sandbox{Mode: runner.SandboxNone},
+	})
+	require.NoError(t, err)
+	assert.True(t, res.Ok(), out.String())
+	assert.Equal(t, 2, res.Passed)
+	assert.Len(t, res.Files, 2)
+}
+
 func TestRunNilOutputDoesNotPanic(t *testing.T) {
 	// Output defaults to os.Stdout; the point is that the zero value is
 	// usable, not where the bytes land.

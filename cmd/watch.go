@@ -26,6 +26,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/wow-look-at-my/dats/runner"
+	"github.com/wow-look-at-my/go-containers/set"
 
 	dats "github.com/wow-look-at-my/dats"
 	"github.com/wow-look-at-my/dats/internal/paths"
@@ -306,10 +307,10 @@ func pumpEvents(watcher *fsnotify.Watcher, scope *watchScope, out chan<- watchEv
 // is immutable once built and holds no handles, so relevantChange is a pure
 // function of its inputs.
 type watchScope struct {
-	files    map[string]bool // resolved .dats files
+	files    set.Set[string] // resolved .dats files
 	snapDirs []string        // the resolved files' snapshot golden directories
 	dirTrees []string        // directory arguments (or the cwd in no-arg mode)
-	reports  map[string]bool // --report-junit/--report-json output paths
+	reports  set.Set[string] // --report-junit/--report-json output paths
 	update   bool            // --update: the run itself rewrites goldens
 }
 
@@ -318,13 +319,13 @@ type watchScope struct {
 // flags.
 func buildWatchScope(files, args []string) *watchScope {
 	scope := &watchScope{
-		files:   make(map[string]bool, len(files)),
-		reports: make(map[string]bool, 2),
+		files:   set.New[string](len(files)),
+		reports: set.New[string](2),
 		update:  updateGoldens,
 	}
 	for _, file := range files {
 		abs := watchAbs(file)
-		scope.files[abs] = true
+		scope.files.Add(abs)
 		// All snapshot dirs count for relevance whether or not they exist
 		// yet -- in tree mode a freshly blessed golden arrives via the tree
 		// watch. (Existence gates only the watch-dir registration.)
@@ -333,7 +334,7 @@ func buildWatchScope(files, args []string) *watchScope {
 	scope.dirTrees = watchDirTrees(args)
 	for _, path := range []string{reportJUnit, reportJSON} {
 		if path != "" {
-			scope.reports[watchAbs(path)] = true
+			scope.reports.Add(watchAbs(path))
 		}
 	}
 	return scope
@@ -377,7 +378,7 @@ func (s *watchScope) relevantChange(op fsnotify.Op, path string, isDir bool) boo
 		return false
 	}
 	abs := watchAbs(path)
-	if s.reports[abs] {
+	if s.reports.Contains(abs) {
 		return false
 	}
 	if isDir {
@@ -385,7 +386,7 @@ func (s *watchScope) relevantChange(op fsnotify.Op, path string, isDir bool) boo
 	}
 	switch filepath.Ext(abs) {
 	case ".dats":
-		if s.files[abs] {
+		if s.files.Contains(abs) {
 			return true
 		}
 		return !strings.HasPrefix(filepath.Base(abs), ".") && underAny(abs, s.dirTrees)

@@ -71,6 +71,28 @@ func TestFindFilesDiscovery(t *testing.T) {
 	assert.Len(t, files, 2)
 }
 
+func TestFindFilesDiscoveryRecursesIntoSubdirectories(t *testing.T) {
+	tmp := t.TempDir()
+	nested := filepath.Join(tmp, "a", "b", "c")
+	hiddenDir := filepath.Join(tmp, ".hidden")
+	require.Nil(t, os.MkdirAll(nested, 0755))
+	require.Nil(t, os.MkdirAll(hiddenDir, 0755))
+	require.Nil(t, os.WriteFile(filepath.Join(tmp, "root.dats"), []byte(""), 0644))
+	require.Nil(t, os.WriteFile(filepath.Join(tmp, "a", "shallow.dats"), []byte(""), 0644))
+	require.Nil(t, os.WriteFile(filepath.Join(nested, "deep.dats"), []byte(""), 0644))
+	require.Nil(t, os.WriteFile(filepath.Join(hiddenDir, "skipped.dats"), []byte(""), 0644))
+
+	t.Chdir(tmp)
+
+	files, err := FindFiles(nil)
+	require.Nil(t, err)
+	assert.ElementsMatch(t, []string{
+		filepath.Join(tmp, "root.dats"),
+		filepath.Join(tmp, "a", "shallow.dats"),
+		filepath.Join(nested, "deep.dats"),
+	}, files)
+}
+
 func TestFindFilesDiscoveryNone(t *testing.T) {
 	t.Chdir(t.TempDir())
 
