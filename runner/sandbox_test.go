@@ -298,6 +298,29 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
 }
 
+// TestDockerArgvDefaultsHOMEToTmp pins the fix for a command that fails
+// under --user <host-uid> with no matching /etc/passwd entry: Docker's own
+// fallback for that case sets HOME=/, which is unwritable by that uid and
+// breaks anything expecting a real per-user directory (confirmed directly:
+// `docker run --user 1001:1001 ... sh -c 'echo $HOME'` prints "/"). bwrap's
+// child gets a real HOME for free by running as the actual host user; the
+// docker backend must hand out an equivalent on its own, not leave it to
+// Docker's broken default.
+func TestDockerArgvDefaultsHOMEToTmp(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxDocker, image: "img", network: true, work: "/tmp/w"}
+	assert.Contains(t, strings.Join(plan.dockerArgv("n", "true", nil), " "), "-e HOME=/tmp")
+}
+
+// TestDockerArgvExtraEnvOverridesDefaultHOME confirms a test's own
+// inputs.env still wins: dats' baseline HOME is a default, not a floor.
+func TestDockerArgvExtraEnvOverridesDefaultHOME(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxDocker, image: "img", network: true, work: "/tmp/w"}
+	joined := strings.Join(plan.dockerArgv("n", "true", []string{"HOME=/custom"}), " ")
+	assert.Contains(t, joined, "-e HOME=/custom")
+	assert.Less(t, strings.Index(joined, "-e HOME=/tmp"), strings.Index(joined, "-e HOME=/custom"),
+		"dats' default must come before a test's own override, so docker's last-wins semantics let the override win")
+}
+
 func TestBwrapArgvUnshareNetWhenNetworkOff(t *testing.T) {
 	plan := &sandboxPlan{backend: SandboxBwrap, network: false, work: "/tmp/dats-1"}
 	assert.Contains(t, strings.Join(plan.bwrapArgv("true"), " "), "--unshare-net")

@@ -535,6 +535,16 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 		}
 		argv = append(argv, "-w", p.workdir)
 	}
+	// dats' own baseline first, so a command's own extraEnv (below) can still
+	// override it: --user above passes a bare host UID with no matching
+	// /etc/passwd entry inside the image, and Docker's own fallback for that
+	// case sets HOME=/ -- confirmed directly (`docker run --user 1001:1001 ...
+	// sh -c 'echo $HOME'` prints "/"). A real per-user HOME is what bwrap's
+	// child gets for free by running as the actual host user, so the docker
+	// backend must hand out an equivalent instead of a bare, unwritable "/".
+	// /tmp is world-writable in the base images this backend targets
+	// regardless of which UID asks, so it holds for every numeric --user.
+	argv = append(argv, "-e", "HOME=/tmp")
 	// The run's environment, then dats' own additions on top. A command must
 	// see the same variables under both backends -- bwrap's child inherits
 	// them as a matter of course, and a container that started from the
