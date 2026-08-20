@@ -74,3 +74,17 @@ jobs:
       - uses: ./
         with:
           args: test examples/sandbox.dats
+
+  # A caller that already spells --no-sandbox in args made an explicit,
+  # informed opt-out -- the action must not still demand a working sandbox
+  # backend before letting dats run. Deliberately plain ubuntu-latest with NO
+  # bwrap/docker setup of its own: this reproduces a runner where bwrap is
+  # blocked and docker is absent, which is exactly the case the probe used to
+  # fail closed on even though nothing here was ever going to use a sandbox.
+  no-sandbox-on-a-runner-with-no-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          args: --no-sandbox test examples/sandbox.dats
