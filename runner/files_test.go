@@ -1,6 +1,6 @@
 package runner
 
-// Tests for jobs-mode orchestration (RunFilesParallel): the per-file
+// Tests for jobs-mode orchestration (RunFiles): the per-file
 // barriers hold under a shared global pool, setup failures keep their serial
 // semantics, files genuinely run concurrently, and unparseable input aborts
 // before anything runs.
@@ -27,13 +27,13 @@ func writeParallelDats(t *testing.T, name, content string) string {
 	return path
 }
 
-// TestRunFilesParallelBarriers proves the per-file barriers hold under
+// TestRunFilesBarriers proves the per-file barriers hold under
 // parallelism: no instance starts before its file's setup finished (the
 // grep on the gate file would fail), and teardown runs only after every
 // instance finished (the marker count would come up short). Three such
 // files run in ONE parallel call, so files are concurrently in flight while
 // each file's own ordering constraints must still hold.
-func TestRunFilesParallelBarriers(t *testing.T) {
+func TestRunFilesBarriers(t *testing.T) {
 	const instances = 8
 	var paths []string
 	var markerDirs []string
@@ -62,7 +62,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(context.Background(), paths, 8)
+	results, err := r.RunFiles(context.Background(), paths, 8)
 	require.Nil(t, err)
 	require.Len(t, results, 3)
 	for i, res := range results {
@@ -76,11 +76,11 @@ tests:
 	}
 }
 
-// TestRunFilesParallelSetupFailureFailsEveryInstance pins that a setup
+// TestRunFilesSetupFailureFailsEveryInstance pins that a setup
 // failure under jobs keeps its serial semantics exactly: every instance is
 // reported failed with the same reason string, none of their commands ran,
 // teardown still ran, and the file failed.
-func TestRunFilesParallelSetupFailureFailsEveryInstance(t *testing.T) {
+func TestRunFilesSetupFailureFailsEveryInstance(t *testing.T) {
 	dir := t.TempDir()
 	ranMarker := filepath.Join(dir, "ran.txt")
 	teardownMarker := filepath.Join(dir, "teardown.txt")
@@ -96,7 +96,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(context.Background(), []string{path}, 4)
+	results, err := r.RunFiles(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 	require.Len(t, results, 1)
 	res := results[0]
@@ -125,12 +125,12 @@ tests:
 	assert.NotContains(t, out, "skip")
 }
 
-// TestRunFilesParallelCrossFileConcurrency proves instances of DIFFERENT
+// TestRunFilesCrossFileConcurrency proves instances of DIFFERENT
 // files run concurrently: file A writes its marker and then waits for file
 // B's, while file B waits for A's marker and then writes its own. Under any
 // serialized execution order one side exhausts its bounded wait and fails;
 // only genuinely overlapping execution passes.
-func TestRunFilesParallelCrossFileConcurrency(t *testing.T) {
+func TestRunFilesCrossFileConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	aMarker := filepath.Join(dir, "a.txt")
 	bMarker := filepath.Join(dir, "b.txt")
@@ -154,7 +154,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(context.Background(), []string{fileA, fileB}, 4)
+	results, err := r.RunFiles(context.Background(), []string{fileA, fileB}, 4)
 	require.Nil(t, err)
 	require.Len(t, results, 2)
 	for i, res := range results {
@@ -162,10 +162,10 @@ tests:
 	}
 }
 
-// TestRunFilesParallelParseErrorFailsFast pins the documented jobs-mode
+// TestRunFilesParseErrorFailsFast pins the documented jobs-mode
 // divergence: every file is parsed up front, so a parse error in ANY file
 // aborts before a single command runs and before anything is printed.
-func TestRunFilesParallelParseErrorFailsFast(t *testing.T) {
+func TestRunFilesParseErrorFailsFast(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran.txt")
 	good := writeParallelDats(t, "good.dats", `
 tests:
@@ -179,7 +179,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(context.Background(), []string{good, bad}, 2)
+	results, err := r.RunFiles(context.Background(), []string{good, bad}, 2)
 	require.NotNil(t, err)
 	assert.Nil(t, results)
 	assert.Contains(t, err.Error(), "bad.dats")
@@ -188,15 +188,15 @@ tests:
 	assert.Equal(t, "", buf.String(), "nothing may be printed when parsing fails")
 }
 
-func TestRunFilesParallelRejectsNonPositiveJobs(t *testing.T) {
+func TestRunFilesRejectsNonPositiveJobs(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	_, err := r.RunFilesParallel(context.Background(), nil, 0)
+	_, err := r.RunFiles(context.Background(), nil, 0)
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "at least 1")
 }
 
-func TestRunFilesParallelCanceledContextTeardownStillRuns(t *testing.T) {
+func TestRunFilesCanceledContextTeardownStillRuns(t *testing.T) {
 	// The jobs-mode path honors the same contract as serial RunFile: a
 	// canceled context kills the in-flight instances promptly, they report as
 	// failures, and teardown still runs under context.WithoutCancel.
@@ -217,7 +217,7 @@ tests:
 	}()
 
 	start := time.Now()
-	results, err := r.RunFilesParallel(ctx, []string{path}, 2)
+	results, err := r.RunFiles(ctx, []string{path}, 2)
 	elapsed := time.Since(start)
 	require.Nil(t, err)
 	require.Len(t, results, 1)

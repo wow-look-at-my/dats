@@ -11,8 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// tempDir is t.TempDir() with symlinks resolved.
+//
+// Discovery resolves a directory root through filepath.EvalSymlinks (see
+// findDatsFiles -- WalkDir will not follow a symlinked root, so without it a
+// symlinked directory arg yields nothing). On macOS the temp root reached
+// via /tmp is itself a symlink to /private/tmp, so discovery legitimately
+// returns /private/tmp/... while an unresolved t.TempDir() string still says
+// /tmp/... -- the assertion fails on a path difference the product is right
+// about. Resolving here makes the expectation match what discovery returns,
+// on every platform (a no-op where the temp dir is already a real path).
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return dir
+	}
+	return resolved
+}
+
 func TestFindFilesWithArgs(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte("tests:\n\t- cmd: echo hi\n"), 0644))
 
@@ -39,7 +59,7 @@ func TestFindFilesNonexistent(t *testing.T) {
 func TestFindFilesStatError(t *testing.T) {
 	// A path with a regular file as an intermediate component fails Stat with
 	// ENOTDIR rather than ENOENT; it must be reported, not silently accepted.
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	blocker := filepath.Join(tmp, "blocker")
 	require.Nil(t, os.WriteFile(blocker, []byte(""), 0644))
 
@@ -50,7 +70,7 @@ func TestFindFilesStatError(t *testing.T) {
 
 func TestFindFilesExplicitHiddenFile(t *testing.T) {
 	// Explicitly named files are exempt from the hidden-file discovery rule.
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	hidden := filepath.Join(tmp, ".hidden.dats")
 	require.Nil(t, os.WriteFile(hidden, []byte(""), 0644))
 
@@ -60,7 +80,7 @@ func TestFindFilesExplicitHiddenFile(t *testing.T) {
 }
 
 func TestFindFilesDiscovery(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "a.dats"), []byte(""), 0644))
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "b.dats"), []byte(""), 0644))
 
@@ -72,7 +92,7 @@ func TestFindFilesDiscovery(t *testing.T) {
 }
 
 func TestFindFilesDiscoveryRecursesIntoSubdirectories(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	nested := filepath.Join(tmp, "a", "b", "c")
 	hiddenDir := filepath.Join(tmp, ".hidden")
 	require.Nil(t, os.MkdirAll(nested, 0755))
@@ -102,7 +122,7 @@ func TestFindFilesDiscoveryNone(t *testing.T) {
 }
 
 func TestFindFilesDirectoryArg(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	subDir := filepath.Join(tmp, "sub")
 	hiddenDir := filepath.Join(tmp, ".hidden")
 	require.Nil(t, os.MkdirAll(subDir, 0755))
@@ -120,7 +140,7 @@ func TestFindFilesDirectoryArg(t *testing.T) {
 }
 
 func TestFindFilesDirectoryArgEmpty(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 
 	_, err := FindFiles([]string{tmp})
 	assert.NotNil(t, err)
@@ -131,7 +151,7 @@ func TestFindFilesSymlinkedDirArg(t *testing.T) {
 	// A symlink to a directory stats as a directory, but filepath.WalkDir does
 	// not follow a symlink root; without resolving the root first the walk
 	// yields nothing and the arg errors with "no .dats files found".
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	realDir := filepath.Join(tmp, "real")
 	require.Nil(t, os.MkdirAll(realDir, 0755))
 	require.Nil(t, os.WriteFile(filepath.Join(realDir, "linked.dats"), []byte(""), 0644))
@@ -148,7 +168,7 @@ func TestFindFilesSymlinkedDirArg(t *testing.T) {
 }
 
 func TestFindFilesDedupe(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte(""), 0644))
 
@@ -160,7 +180,7 @@ func TestFindFilesDedupe(t *testing.T) {
 }
 
 func TestFindFilesDedupeRelativeAndAbsolute(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "test.dats"), []byte(""), 0644))
 
 	t.Chdir(tmp)
@@ -171,7 +191,7 @@ func TestFindFilesDedupeRelativeAndAbsolute(t *testing.T) {
 }
 
 func TestFindDatsFiles(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	subDir := filepath.Join(tmp, "sub")
 	require.Nil(t, os.MkdirAll(subDir, 0755))
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "root.dats"), []byte(""), 0644))
@@ -187,7 +207,7 @@ func TestFindDatsFiles(t *testing.T) {
 }
 
 func TestFindDatsFilesSkipsHiddenDir(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	hiddenDir := filepath.Join(tmp, ".git")
 	require.Nil(t, os.MkdirAll(hiddenDir, 0755))
 	require.Nil(t, os.WriteFile(filepath.Join(hiddenDir, "inside.dats"), []byte(""), 0644))
@@ -199,7 +219,7 @@ func TestFindDatsFilesSkipsHiddenDir(t *testing.T) {
 }
 
 func TestFindDatsFilesSkipsHiddenFile(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, ".hidden.dats"), []byte(""), 0644))
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "visible.dats"), []byte(""), 0644))
 
@@ -211,7 +231,7 @@ func TestFindDatsFilesSkipsHiddenFile(t *testing.T) {
 func TestFindDatsFilesHiddenRoot(t *testing.T) {
 	// The walk root itself is exempt from the hidden-name rule: running inside
 	// (or on) a dotted directory must still discover its contents.
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	dottedRoot := filepath.Join(tmp, ".dotted")
 	require.Nil(t, os.MkdirAll(dottedRoot, 0755))
 	require.Nil(t, os.WriteFile(filepath.Join(dottedRoot, "found.dats"), []byte(""), 0644))
@@ -226,7 +246,7 @@ func TestFindDatsFilesUnreadableDirWarns(t *testing.T) {
 		t.Skip("directory permissions do not restrict root")
 	}
 
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	locked := filepath.Join(tmp, "locked")
 	require.Nil(t, os.MkdirAll(locked, 0755))
 	require.Nil(t, os.WriteFile(filepath.Join(tmp, "visible.dats"), []byte(""), 0644))

@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/wow-look-at-my/dats/schema"
@@ -52,8 +54,9 @@ type Runner struct {
 
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
-	// 19, best-effort; no-op on windows). Only the jobs-mode orchestration
-	// (RunFilesParallel) sets it; serial runs never touch process priority.
+	// 19, best-effort; no-op on windows). Only the multi-file orchestration
+	// (RunFiles) sets it: a many-file run can saturate the machine, while a
+	// direct RunFile call is a single file the caller asked for.
 	lowPriority bool
 }
 
@@ -87,11 +90,31 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	if err != nil {
 		return nil, err
 	}
+	// A single-file run still goes through the pool -- it is the only
+	// execution path -- so it gets its own, sized to this machine. RunFiles
+	// shares ONE pool across every file instead, which is what bounds a
+	// multi-file run globally.
+	return r.runFile(ctx, path, testFile, newSlots(runtime.NumCPU()))
+}
 
+// runFile runs one already-parsed file against a caller-provided pool. The
+// pool is what makes the concurrency global: RunFiles hands every file the
+// same one, so N bounds the whole run rather than each file separately.
+func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.TestFile, pool slots) (*FileResult, error) {
 	// Create temp directory for fixtures
 	tempDir, err := os.MkdirTemp("", "dats-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
+	}
+	// Resolve it to the path the kernel actually uses, ONCE and here, so the
+	// sandbox's bind mounts and the {inputs.X}/{outputs.X} paths inside the
+	// command can never disagree. On macOS MkdirTemp hands back /tmp/dats-*
+	// while /tmp is a symlink to /private/tmp; docker shares the real path,
+	// so binding the unresolved one mounts an empty directory -- fixtures
+	// never arrive and outputs never land back on the host. A no-op wherever
+	// the temp path is already real.
+	if resolved, rerr := filepath.EvalSymlinks(tempDir); rerr == nil {
+		tempDir = resolved
 	}
 	if !r.KeepTemp {
 		defer Cleanup(tempDir)
@@ -152,7 +175,12 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	}
 	if result.SetupFailure == nil {
 		for _, hc := range testFile.Setup {
-			if fail := r.runHookCommand(ctx, "setup", hc, sharedDir); fail != nil {
+			// Hook commands hold a pool slot exactly like instance commands,
+			// so N bounds every spawned process, not just the test ones.
+			pool.acquire()
+			fail := r.runHookCommand(ctx, "setup", hc, sharedDir)
+			pool.release()
+			if fail != nil {
 				result.SetupFailure = fail
 				r.Formatter.PrintHookFailure("setup", fail)
 				break // remaining setup commands are skipped; every test fails below
@@ -179,18 +207,34 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 		if r.Verbose && len(testFile.Setup) > 0 {
 			fmt.Fprintln(r.Formatter.Writer)
 		}
-		// Run each test instance; each gets its own test-<index> directory,
-		// so identical fixture names across matrix instances never collide.
-		// Snapshot assertions apply after the instance name is set -- the
-		// golden file name derives from it.
+		// Launch every instance; the pool bounds how many run at once. Each
+		// writes only its own slice element, its own test-<index> directory,
+		// its own (per-instance unique) golden files, and (by convention,
+		// read-only) the file's shared directory. Snapshot assertions apply
+		// after the instance name is set -- the golden file name derives from
+		// it. Results land at their canonical index, so instance numbering and
+		// print order follow expansion order regardless of completion order.
+		instanceResults := make([]TestResult, len(instances))
+		var wg sync.WaitGroup
 		for i := range instances {
-			testResult := r.RunTest(ctx, &instances[i].Test, tempDir, i)
-			testResult.Name = instanceName(&instances[i])
-			r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
-			result.Results = append(result.Results, testResult)
-			r.Formatter.PrintResult(&testResult)
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				pool.acquire()
+				defer pool.release()
+				testResult := r.RunTest(ctx, &instances[i].Test, tempDir, i)
+				testResult.Name = instanceName(&instances[i])
+				r.applySnapshot(&testResult, &instances[i], path, tempDir, i)
+				instanceResults[i] = testResult
+			}(i)
+		}
+		wg.Wait()
 
-			if testResult.Passed {
+		for i := range instanceResults {
+			result.Results = append(result.Results, instanceResults[i])
+			r.Formatter.PrintResult(&instanceResults[i])
+
+			if instanceResults[i].Passed {
 				result.Passed++
 			} else {
 				result.Failed++
@@ -217,7 +261,10 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 		fmt.Fprintln(r.Formatter.Writer)
 	}
 	for _, hc := range testFile.Teardown {
-		if fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir); fail != nil {
+		pool.acquire()
+		fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir)
+		pool.release()
+		if fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)
 			r.Formatter.PrintHookFailure("teardown", fail)
 		}

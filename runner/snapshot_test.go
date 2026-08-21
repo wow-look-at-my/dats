@@ -511,7 +511,7 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 
 	var parallel bytes.Buffer
 	rp := NewRunner(&parallel, false, false, "")
-	_, err = rp.RunFilesParallel(context.Background(), []string{path}, 4)
+	_, err = rp.RunFiles(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 
 	require.Contains(t, serial.String(), "4/4 passed")
@@ -526,7 +526,7 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 	_, err = rsf.RunFile(context.Background(), path)
 	require.Nil(t, err)
 	rpf := NewRunner(&parallelFail, false, false, "")
-	_, err = rpf.RunFilesParallel(context.Background(), []string{path}, 4)
+	_, err = rpf.RunFiles(context.Background(), []string{path}, 4)
 	require.Nil(t, err)
 	require.Contains(t, serialFail.String(), "does not exist (run with --update to create it)")
 	assert.Equal(t, serialFail.String(), parallelFail.String())
@@ -543,7 +543,7 @@ func TestSnapshotParallelUpdateWritesIdenticalGoldens(t *testing.T) {
 	var buf bytes.Buffer
 	rp := NewRunner(&buf, false, false, "")
 	rp.Update = true
-	_, err := rp.RunFilesParallel(context.Background(), []string{parallelPath}, 4)
+	_, err := rp.RunFiles(context.Background(), []string{parallelPath}, 4)
 	require.Nil(t, err)
 
 	readTree := func(dir string) map[string]string {

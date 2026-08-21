@@ -1,8 +1,8 @@
 package cmd
 
-// The -j/--jobs flag: parallel test execution. Registration, the make-style
-// -jN argv normalization, and resolution of the parsed flag into a worker
-// count live here; the orchestration itself is runner.RunFilesParallel.
+// The -j/--jobs flag: how many test commands run at once. Registration, the
+// make-style -jN argv normalization, and resolution of the parsed flag into
+// a worker count live here; the orchestration itself is runner.RunFiles.
 
 import (
 	"fmt"
@@ -13,12 +13,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// registerJobsFlag registers -j/--jobs on flags. The flag defaults to 0
-// (absent = fully serial execution, the historical behavior); a bare -j or
-// --jobs (no value) means one worker per CPU via pflag's NoOptDefVal.
+// registerJobsFlag registers -j/--jobs on flags. Parallel is the DEFAULT:
+// an absent flag means one worker per logical CPU, and -j1 is how a caller
+// asks for one command at a time. A bare -j or --jobs (no value) resolves
+// to the same per-CPU count via pflag's NoOptDefVal.
 func registerJobsFlag(flags *pflag.FlagSet) {
-	flags.IntP("jobs", "j", 0,
-		"run test commands in parallel with N workers (bare -j = one per CPU); use -jN or --jobs=N, not '-j N'")
+	flags.IntP("jobs", "j", runtime.NumCPU(),
+		"run up to N test commands concurrently (default: one per CPU; -j1 for one at a time); use -jN or --jobs=N, not '-j N'")
 	flags.Lookup("jobs").NoOptDefVal = strconv.Itoa(runtime.NumCPU())
 }
 
@@ -47,17 +48,16 @@ func normalizeJobsShorthand(args []string) []string {
 	return out
 }
 
-// resolveJobs returns the worker count from the parsed --jobs flag: 0 when
-// the flag is absent (run serially, exactly the historical code path), or N
-// when set (bare -j resolves to the per-CPU NoOptDefVal). An explicitly set
-// value below 1 is an error; the absent-flag default 0 is distinguished from
-// an explicit -j0 via Changed.
+// resolveJobs returns the worker count from the parsed --jobs flag: the
+// per-CPU default when absent, or N when set (bare -j resolves to the same
+// per-CPU NoOptDefVal). Any value below 1 is an error -- including an
+// explicit -j0, which now has no meaning of its own.
 func resolveJobs(flags *pflag.FlagSet) (int, error) {
 	jobs, err := flags.GetInt("jobs")
 	if err != nil {
 		return 0, err
 	}
-	if flags.Changed("jobs") && jobs < 1 {
+	if jobs < 1 {
 		return 0, fmt.Errorf("--jobs must be at least 1, got %d", jobs)
 	}
 	return jobs, nil

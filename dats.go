@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/wow-look-at-my/dats/report"
@@ -55,9 +56,12 @@ type Options struct {
 	// warnings for unreadable directories.
 	Output io.Writer
 
-	// Jobs runs up to N test commands concurrently across all files. 0 (the
-	// default) runs everything serially, which keeps output deterministic
-	// and is what a build pipeline usually wants.
+	// Jobs runs up to N test commands concurrently across all files. The
+	// zero value means one per logical CPU -- like Sandbox, saying nothing
+	// gets you the useful default rather than the degenerate one. Jobs: 1
+	// runs one command at a time. Output never depends on this: results are
+	// buffered per file and printed in canonical order, so any Jobs value
+	// produces identical bytes for identical outcomes.
 	Jobs int
 
 	// Verbose prints each command and its output, passing or not.
@@ -219,21 +223,22 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 	// human-readable output never mentions it.
 	start := time.Now()
 
-	var results []*runner.FileResult
-	if opts.Jobs > 0 {
-		results, err = r.RunFilesParallel(ctx, files, opts.Jobs)
-		if err != nil {
-			// Already carries the "running <path>:" context.
-			return nil, err
-		}
-	} else {
-		for _, path := range files {
-			result, err := r.RunFile(ctx, path)
-			if err != nil {
-				return nil, fmt.Errorf("running %s: %w", path, err)
-			}
-			results = append(results, result)
-		}
+	// One execution path for every run: the zero value resolves to one
+	// worker per logical CPU, and Jobs: 1 is simply that path with a
+	// single-slot pool.
+	jobs := opts.Jobs
+	if jobs == 0 {
+		jobs = runtime.NumCPU()
+	}
+	if jobs < 1 {
+		// Only the ZERO value means "choose for me". A negative is a caller
+		// bug, and silently reading it as serial would hide it.
+		return nil, fmt.Errorf("Jobs must be at least 1 (0 means one per CPU), got %d", opts.Jobs)
+	}
+	results, err := r.RunFiles(ctx, files, jobs)
+	if err != nil {
+		// Already carries the "running <path>:" context.
+		return nil, err
 	}
 
 	res := &Result{Files: results, Wall: time.Since(start)}
