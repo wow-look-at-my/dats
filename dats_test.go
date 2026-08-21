@@ -254,8 +254,25 @@ func TestRunHardErrors(t *testing.T) {
 	t.Run("invalid jobs", func(t *testing.T) {
 		opts := hostOpts(&out, writeSuite(t, minimalSuite))
 		opts.Jobs = -1
-		// Negative jobs is not "invalid": Run treats anything below 1 as
-		// serial, the same reading the CLI's absent flag gets.
+		// Only the ZERO value means "choose for me" (one per CPU). A
+		// negative is a caller bug and fails loudly rather than being
+		// silently read as something else.
+		_, err := Run(context.Background(), opts)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "at least 1")
+	})
+
+	t.Run("zero jobs means one per CPU", func(t *testing.T) {
+		opts := hostOpts(&out, writeSuite(t, minimalSuite))
+		opts.Jobs = 0
+		res, err := Run(context.Background(), opts)
+		require.NoError(t, err)
+		assert.True(t, res.Ok())
+	})
+
+	t.Run("jobs 1 runs one command at a time", func(t *testing.T) {
+		opts := hostOpts(&out, writeSuite(t, minimalSuite))
+		opts.Jobs = 1
 		res, err := Run(context.Background(), opts)
 		require.NoError(t, err)
 		assert.True(t, res.Ok())

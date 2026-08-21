@@ -42,7 +42,7 @@ the current directory tree.
 | Flag | Description |
 |------|-------------|
 | `-v, --verbose` | Show command details, durations, and full output on failure |
-| `-j, --jobs[=N]` | Run test commands in parallel with N workers (bare `-j` = one per CPU). Attach the value — `-jN`, `-j=N`, or `--jobs=N`; a space-separated `-j N` does not bind (see [Parallel Execution](#parallel-execution--j)). Without the flag, execution is fully serial |
+| `-j, --jobs[=N]` | Run up to N test commands concurrently. **Without the flag, N is one per logical CPU**; `-j1` runs one command at a time. Attach the value — `-jN`, `-j=N`, or `--jobs=N`; a space-separated `-j N` does not bind (see [Parallel Execution](#parallel-execution--j)) |
 | `--report-junit <path>` | Write a JUnit XML report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--report-json <path>` | Write a JSON report of the run to `<path>` (see [Report Files](#report-files)) |
 | `--update` | Rewrite snapshot golden files from actual output instead of failing, and prune stale ones (see [Updating Snapshots](#updating-snapshots---update)) |
@@ -196,13 +196,16 @@ The flag is the outer bound: a file can narrow what the CLI selected, never wide
 
 ## Parallel Execution (-j)
 
-`-j`/`--jobs` runs test commands in parallel. Without the flag, execution is fully serial —
-the historical behavior, unchanged.
+dats runs test commands concurrently by default — one per logical CPU. There is a single
+execution path: `-j`/`--jobs` only sizes the pool, and `-j1` is how you ask for one command
+at a time.
 
 ### Flag forms
 
-- Bare `-j` or `--jobs` — one worker per CPU.
-- `-jN`, `-j=N`, `--jobs=N` — exactly N workers. An explicit N below 1 is an error.
+- **Flag absent** — one worker per logical CPU (the default).
+- Bare `-j` or `--jobs` — the same per-CPU count, stated explicitly.
+- `-jN`, `-j=N`, `--jobs=N` — exactly N workers. `-j1` runs one command at a time. Any N
+  below 1, including an explicit `-j0`, is an error.
 - **The space-separated forms do not work**: with an optional flag value, `-j 4` and
   `--jobs 4` parse as bare `-j` (one worker per CPU) plus a positional argument `4` — the
   same trap as GNU make. Since `4` is not a `.dats` file, the run fails with
@@ -221,15 +224,16 @@ the historical behavior, unchanged.
   may run concurrently with each other and with other files' instances and hooks.
 - **Everything still runs.** `-j` changes scheduling only — there is no test filtering or
   selection, and per-test timeouts, exit-code semantics, fixture isolation, and
-  `--coverdir` behave identically to a serial run.
+  `--coverdir` behave identically at every `-j` value.
 
 ### Output and determinism
 
 Output is buffered and printed in canonical order — files in the order given on the command
 line (or discovered), instances in expansion order within each file — regardless of
-completion order. A `-j` run's output is byte-identical to a serial run of the same corpus
-whenever the outcomes are equal; summary counts and the process exit code are computed
-identically. (Under `-v`, reported durations naturally vary between runs.)
+completion order. The bytes depend only on the outcomes, never on `-j` or on scheduling: a
+`-j1` run and a `-j64` run of the same corpus produce identical output whenever the outcomes
+are equal, and summary counts and the process exit code are computed identically. (Under
+`-v`, reported durations naturally vary between runs.)
 
 ### Priority
 
