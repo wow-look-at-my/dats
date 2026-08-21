@@ -231,10 +231,7 @@ dats`), the same download every consumer used to hand-roll with curl/chmod.
 On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
 24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
 way this repo's own CI does (see "CI/CD" above) — so a caller gets real
-sandboxing without needing `--no-sandbox` to work around the runner. Both of
-those Linux steps are skipped when `args` already contains `--no-sandbox`:
-that caller made dats' own sanctioned opt-out explicitly, not lost sandboxing
-to broken infra, so there is nothing left for the probe to catch.
+sandboxing without needing `--no-sandbox` to work around the runner.
 
 ## JSON Schema
 
