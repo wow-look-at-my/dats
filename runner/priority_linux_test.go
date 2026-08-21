@@ -63,7 +63,7 @@ tests:
 
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
-	results, err := r.RunFilesParallel(context.Background(), []string{path}, 2)
+	results, err := r.RunFiles(context.Background(), []string{path}, 2)
 	require.Nil(t, err)
 	require.Len(t, results, 1)
 	assert.True(t, results[0].Ok(), "output:\n%s", buf.String())

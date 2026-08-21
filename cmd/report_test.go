@@ -122,8 +122,23 @@ var (
 	// comparing bytes.
 	reXMLTime     = regexp.MustCompile(`time="[0-9.eE+-]+"`)
 	reJSONSeconds = regexp.MustCompile(`"(wall_seconds|duration_seconds)": [0-9.eE+-]+`)
-	reTempDir     = regexp.MustCompile(regexp.QuoteMeta(os.TempDir()) + `/dats-[0-9]+`)
+	// The runner resolves its temp dir's symlinks (so sandbox bind mounts and
+	// the paths inside a command agree), which on macOS turns /tmp/dats-N
+	// into /private/tmp/dats-N. Match whichever spelling this platform
+	// produces, so one golden serves both.
+	reTempDir = regexp.MustCompile(`(` + regexp.QuoteMeta(resolvedTempDir()) +
+		`|` + regexp.QuoteMeta(os.TempDir()) + `)/dats-[0-9]+`)
 )
+
+// resolvedTempDir is os.TempDir() with symlinks resolved, matching what the
+// runner uses. Falls back to the unresolved path when it cannot be resolved.
+func resolvedTempDir() string {
+	resolved, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return os.TempDir()
+	}
+	return resolved
+}
 
 func normalizeReport(raw []byte) string {
 	s := string(raw)

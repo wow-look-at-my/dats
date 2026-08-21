@@ -263,7 +263,7 @@ tests:
 	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
 }
 
-func TestRunFilesParallelSandboxed(t *testing.T) {
+func TestRunFilesSandboxed(t *testing.T) {
 	// Jobs mode gives each file its own Runner; the sandbox config (and its
 	// memoized backend) has to reach every one of them.
 	requireBwrap(t)
@@ -290,7 +290,7 @@ tests:
 	r := NewRunner(&buf, false, false, "")
 	r.Sandbox = NewSandboxConfig(SandboxBwrap, "")
 
-	results, err := r.RunFilesParallel(context.Background(), []string{first, second}, 2)
+	results, err := r.RunFiles(context.Background(), []string{first, second}, 2)
 	require.Nil(t, err)
 	require.Len(t, results, 2)
 	for _, result := range results {

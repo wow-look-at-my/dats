@@ -46,7 +46,8 @@ func TestJobsFlagResolution(t *testing.T) {
 		wantPos  []string
 		wantErr  string
 	}{
-		{name: "absent means serial", args: []string{"pos"}, wantJobs: 0, wantPos: []string{"pos"}},
+		{name: "absent means one worker per CPU", args: []string{"pos"}, wantJobs: runtime.NumCPU(), wantPos: []string{"pos"}},
+		{name: "-j1 runs one command at a time", args: []string{"-j1"}, wantJobs: 1, wantPos: []string{}},
 		{name: "bare -j means one worker per CPU", args: []string{"-j"}, wantJobs: runtime.NumCPU(), wantPos: []string{}},
 		{name: "bare --jobs means one worker per CPU", args: []string{"--jobs"}, wantJobs: runtime.NumCPU(), wantPos: []string{}},
 		{name: "attached -j4 binds 4", args: []string{"-j4", "a"}, wantJobs: 4, wantPos: []string{"a"}},

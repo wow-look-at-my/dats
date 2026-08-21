@@ -103,7 +103,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Flag | Scope | Description |
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
-| `-j, --jobs[=N]` | Global | Run test commands in parallel with N workers (bare `-j` = one per CPU; attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make). Spawned commands run at low OS priority (unix nice 19, best-effort). Default (flag absent) is fully serial — unchanged. Output stays byte-identical to a serial run when outcomes are equal; see [docs/cli.md](docs/cli.md) |
+| `-j, --jobs[=N]` | Global | Run up to N test commands concurrently. **Default (flag absent) is one per logical CPU**; use `-j1` for one command at a time. Attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make. Spawned commands run at low OS priority (unix nice 19, best-effort). Output never depends on this: results are buffered per file and printed in canonical order, so any `-j` produces identical bytes for identical outcomes; see [docs/cli.md](docs/cli.md) |
 | `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
 | `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
 | `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
