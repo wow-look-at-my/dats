@@ -1,6 +1,6 @@
 module github.com/wow-look-at-my/dats
 
-go 1.24.7
+go 1.26
 
 require (
 	github.com/fsnotify/fsnotify v1.10.1
@@ -10,7 +10,7 @@ require (
 	github.com/wow-look-at-my/yaml-fixed v0.0.0-20260806231905-d99b869b77a1 // go-toolchain:auto-branch
 )
 
-require github.com/wow-look-at-my/go-containers v0.0.0-20260815235059-bc089f373e68 // go-toolchain:auto-branch
+require github.com/wow-look-at-my/go-containers v0.0.0-20260820210621-2e1261867045 // go-toolchain:auto-branch
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
