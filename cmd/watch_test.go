@@ -74,8 +74,25 @@ func TestRelevantChange(t *testing.T) {
 	}
 }
 
+// tempDir is t.TempDir() with symlinks resolved. computeWatchDirs runs the
+// paths through discovery, which resolves a directory root (WalkDir will not
+// follow a symlinked one), so on macOS -- where the temp root reached via
+// /tmp is a symlink to /private/tmp -- the watch set legitimately holds
+// /private/tmp/... while an unresolved t.TempDir() still says /tmp/....
+// Resolving up front makes the expectation match, and is a no-op where the
+// temp dir is already a real path.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return dir
+	}
+	return resolved
+}
+
 func TestComputeWatchDirs(t *testing.T) {
-	tmp := t.TempDir()
+	tmp := tempDir(t)
 	// A resolved file with an existing snapshot dir, a second resolved file
 	// without one, and a directory-argument tree with nested and hidden
 	// subdirectories.

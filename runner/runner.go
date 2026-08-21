@@ -106,6 +106,16 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
 	}
+	// Resolve it to the path the kernel actually uses, ONCE and here, so the
+	// sandbox's bind mounts and the {inputs.X}/{outputs.X} paths inside the
+	// command can never disagree. On macOS MkdirTemp hands back /tmp/dats-*
+	// while /tmp is a symlink to /private/tmp; docker shares the real path,
+	// so binding the unresolved one mounts an empty directory -- fixtures
+	// never arrive and outputs never land back on the host. A no-op wherever
+	// the temp path is already real.
+	if resolved, rerr := filepath.EvalSymlinks(tempDir); rerr == nil {
+		tempDir = resolved
+	}
 	if !r.KeepTemp {
 		defer Cleanup(tempDir)
 	} else {
