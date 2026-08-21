@@ -35,12 +35,9 @@ runs:
     # macOS, docker otherwise) -- real isolation, not a formality, so a caller
     # should never have to reach for --no-sandbox just to work around
     # infrastructure. Skips on non-Linux (macOS's seatbelt sandbox needs
-    # neither of these steps), and on a caller whose args ALREADY spell
-    # --no-sandbox: that caller made an explicit, informed opt-out (dats' own
-    # sanctioned one -- see CLAUDE.md's "This is the ONLY opt-out"), not a
-    # silent fallback, so there's nothing here for the next step to catch.
+    # neither of these steps).
     - name: Install bubblewrap (Linux)
-      if: runner.os == 'Linux' && !contains(inputs.args, '--no-sandbox')
+      if: runner.os == 'Linux'
       shell: bash
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
@@ -60,7 +57,7 @@ runs:
     # would trade real isolation for green CI, and this is the one place that
     # catches it before dats ever runs.
     - name: Make sure a real sandbox backend is usable (Linux)
-      if: runner.os == 'Linux' && !contains(inputs.args, '--no-sandbox')
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
