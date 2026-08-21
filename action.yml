@@ -48,9 +48,16 @@ runs:
     # GitHub-hosted CI runner. The org's self-hosted wow-linux fleet has
     # neither that sysctl nor the older kernel.unprivileged_userns_clone
     # (confirmed via a live run: both report "no such file"), yet bwrap still
-    # refuses -- there the runner's own container was never started with the
-    # capability bwrap needs, and no workflow step can grant a capability the
-    # container doesn't have. So: try the sysctl fix where a sysctl exists,
+    # refuses -- there the job runs in an unprivileged container whose seccomp
+    # profile denies unshare(CLONE_NEWUSER), and no workflow step can lift a
+    # seccomp filter the container was started with. (NOT a capability: the
+    # job container's CapEff is Docker's normal set with nothing dropped, and
+    # unprivileged userns deliberately needs no CAP_SYS_ADMIN. Isolated on the
+    # host by A/B run -- same image, same command, seccomp the only variable:
+    # default profile EPERMs, seccomp=unconfined succeeds. Fixing it would mean
+    # unfiltering every syscall for a container running arbitrary CI payloads,
+    # a worse trade than falling through to docker.) So: try the sysctl fix
+    # where a sysctl exists,
     # then fall through to dats' own docker backend (bwrap -> seatbelt ->
     # docker is dats' own auto order) when docker is usable. Only fail when
     # NEITHER works -- a caller whose job silently fell back to --no-sandbox
