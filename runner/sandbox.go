@@ -435,6 +435,7 @@ func bwrapIsolationArgs() []string {
 		"--dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
+		"--unshare-user",
 		"--unshare-pid",
 		"--die-with-parent",
 	)
