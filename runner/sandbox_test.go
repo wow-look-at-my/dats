@@ -7,6 +7,7 @@ package runner
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -296,6 +297,30 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 	// dats' own additions come last, so a test's inputs.env wins over an
 	// inherited variable of the same name.
 	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
+}
+
+// The sandbox must ask for a USER namespace, and ask for it before the
+// namespaces nested inside it.
+//
+// Creating a mount or PID namespace directly requires CAP_SYS_ADMIN; creating
+// one inside a user namespace does not. An unprivileged container holds no
+// such capability, so without --unshare-user bwrap is refused at the PID
+// namespace and reports "Creating new namespace failed: Operation not
+// permitted" -- an error naming no namespace, which is why this went
+// undiagnosed while every argv test here passed.
+func TestBwrapArgvUnsharesTheUserNamespaceFirst(t *testing.T) {
+	argv := bwrapIsolationArgs()
+
+	user := slices.Index(argv, "--unshare-user")
+	require.NotEqual(t, -1, user,
+		"bwrap must unshare the user namespace: without it the pid and mount "+
+			"namespaces need CAP_SYS_ADMIN, which an unprivileged container lacks")
+
+	pid := slices.Index(argv, "--unshare-pid")
+	require.NotEqual(t, -1, pid)
+	assert.Less(t, user, pid,
+		"--unshare-user must come before --unshare-pid: the pid namespace is created "+
+			"inside the user namespace, which is what removes the capability requirement")
 }
 
 func TestBwrapArgvUnshareNetWhenNetworkOff(t *testing.T) {
