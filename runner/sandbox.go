@@ -414,8 +414,20 @@ var toolTreePaths = []string{
 //	--dev /dev                 a minimal device tree (null, zero, random, tty)
 //	--proc /proc               a fresh procfs for the new PID namespace
 //	--tmpfs /tmp               a private /tmp, so temp files never touch the host's
+//	--unshare-user             the namespace the others are nested inside
 //	--unshare-pid              commands cannot see or signal host processes
 //	--die-with-parent          the sandbox dies with dats, never outliving the run
+//
+// --unshare-user is load-bearing on an unprivileged container. Creating a
+// mount or PID namespace DIRECTLY requires CAP_SYS_ADMIN; creating one nested
+// inside a user namespace does not, because the process holds full
+// capabilities within that namespace. Without it bwrap asks the kernel for the
+// PID namespace directly and is refused wherever that capability is absent,
+// reporting "Creating new namespace failed: Operation not permitted" -- which
+// names no namespace, so the argv looks correct while the sandbox cannot be
+// built. Measured inside a slim CI runner: `unshare --user` exits 0 while
+// `unshare --pid` and `unshare --mount` each fail EPERM, and a tmpfs mount
+// performed inside a user namespace succeeds.
 //
 // Order matters and is load-bearing: the read-only tree comes first and the
 // overlays after it, and per-file binds are appended after these so a writable
@@ -435,6 +447,7 @@ func bwrapIsolationArgs() []string {
 		"--dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
+		"--unshare-user",
 		"--unshare-pid",
 		"--die-with-parent",
 	)
