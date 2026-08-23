@@ -96,39 +96,19 @@ jobs:
   # create new namespace` -- correctly, since the runner genuinely cannot do it
   # yet.
   #
-  # So the job GATES on (2) rather than pretending to pass without it: one
-  # step asks the kernel whether this container may create a user namespace at
-  # all, and the suite runs only if it may. A fleet that has not caught up
-  # reports "skipped -- the runner cannot create a user namespace", which is
-  # the truth; a fleet that HAS caught up runs the real suite and a regression
-  # in --unshare-user turns it red.
+  # This job FAILS until the fleet provides (2), and that is the point. It is
+  # not continue-on-error and it is not gated behind a capability probe: both
+  # are ways of not being red, and a job that cannot go red is a job that
+  # proves nothing. Red here means "the unprivileged fleet cannot sandbox",
+  # which is true and worth blocking on.
   #
-  # Deliberately NOT continue-on-error: that still reports the job as failed to
-  # the aggregate check, so it blocks exactly as hard while looking like it
-  # does not -- and a green-looking red is the thing this repo's own comments
-  # keep warning about. Deliberately not deleted either: running the same suite
-  # on both pools is what keeps the fix honest, since if --unshare-user is ever
-  # dropped this fails while the dind job stays green -- the exact asymmetry
-  # that hid the bug.
+  # Running the same suite on both pools is what keeps the fix honest: if
+  # --unshare-user is ever dropped, this fails while the dind job above stays
+  # green -- the exact asymmetry that hid the bug in the first place.
   self-hosted-sandbox-unprivileged:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
-
-      # Can this container make a user namespace? Nothing dats does can help
-      # if not -- that permission belongs to the runner image, not to dats.
-      - id: userns
-        shell: bash
-        run: |
-          if unshare --user true 2>/dev/null; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "the runner allows unprivileged user namespaces; running the real suite"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping: this runner cannot create a user namespace, so bwrap cannot sandbox here whatever dats passes. Needs the fleet's seccomp.userns opt-in (webhooks#242) and a redeploy."
-          fi
-
-      - if: steps.userns.outputs.available == 'true'
-        uses: ./
+      - uses: ./
         with:
           args: test examples/sandbox.dats
