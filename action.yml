@@ -69,7 +69,7 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true; then
+        if bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true; then
           echo "bwrap works, no further action needed"
           exit 0
         fi
@@ -85,7 +85,7 @@ runs:
           fi
         done
 
-        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true; then
+        if bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true; then
           echo "bwrap works after clearing the restriction"
           exit 0
         fi
