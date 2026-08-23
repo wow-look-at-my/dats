@@ -77,18 +77,35 @@ jobs:
   #
   # The slim wow-linux pool runs an unprivileged container: no CAP_SYS_ADMIN.
   # Creating a PID or mount namespace DIRECTLY needs that capability, so for a
-  # long time the belief here was that "bwrap cannot work at all" on this pool
-  # and the comment above said so. That was wrong in a specific way: a
-  # namespace created INSIDE a user namespace needs no capability, and dats
-  # simply was not passing --unshare-user. Measured in this very container:
-  # `unshare --user` exits 0, `unshare --pid` and `unshare --mount` each fail
-  # EPERM, and a tmpfs mount inside a user namespace succeeds.
+  # long time the belief here was that "bwrap cannot work at all" on this pool.
+  # That was wrong in a specific way: a namespace created INSIDE a user
+  # namespace needs no capability, and dats simply was not passing
+  # --unshare-user. Measured inside a wow-linux job container that HAD the
+  # seccomp relaxation described below: `unshare --user` exits 0, `unshare
+  # --pid` and `--mount` each fail EPERM, and a tmpfs mount inside a user
+  # namespace succeeds.
   #
-  # Running the same suite on both pools is what keeps that fix honest. If
-  # --unshare-user is ever dropped, this job fails and the dind one above does
-  # not -- which is exactly the asymmetry that hid the bug.
+  # TWO things are needed and only one is in this repo:
+  #   1. dats passes --unshare-user (this branch), and
+  #   2. the runner container is ALLOWED to create a user namespace at all.
+  #
+  # (2) is the fleet's business: the slim image's hook opts in via
+  # webhooks#242's `seccomp: { userns: true }`, which passes docker's default
+  # profile plus an ungated allow for unshare/clone/clone3/setns. Until that
+  # merges AND the fleet redeploys, this job fails at `bwrap: No permissions to
+  # create new namespace` -- correctly, since the runner genuinely cannot do it
+  # yet.
+  #
+  # So it is continue-on-error FOR NOW: the job still runs and still reports,
+  # but a fleet that has not caught up does not block an unrelated merge.
+  # Remove the flag once the redeploy lands -- at that point a failure here
+  # means dats regressed, which is the whole reason the job exists. Running the
+  # same suite on both pools is what keeps the fix honest: if --unshare-user is
+  # ever dropped, this fails while the dind job above stays green, the exact
+  # asymmetry that hid the bug for months.
   self-hosted-sandbox-unprivileged:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: ./
