@@ -72,3 +72,24 @@ jobs:
       - uses: ./
         with:
           args: test examples/sandbox.dats
+
+  # The SAME suite on the UNPRIVILEGED pool -- the job that would have caught
+  # every sandbox bug this repo has shipped.
+  #
+  # The job above runs on the dind pool, whose container is --privileged and so
+  # holds CAP_SYS_ADMIN. bwrap works there no matter what: it can create the
+  # PID and mount namespaces directly, and it can mount procfs from the host.
+  # That kept it green through TWO broken states -- one with no --unshare-user
+  # at all, one applying --proc before --unshare-pid -- because neither mistake
+  # costs anything when you already hold the capability. Both were immediately
+  # fatal on wow-linux, which is where consumers' CI actually runs.
+  #
+  # A sandbox exercised only under privilege is not exercised. This job is the
+  # difference between "dats' CI is green" and "dats sandboxes".
+  self-hosted-sandbox-unprivileged:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          args: test examples/sandbox.dats
