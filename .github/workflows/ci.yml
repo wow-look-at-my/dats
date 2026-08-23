@@ -38,11 +38,11 @@ jobs:
           # restriction was actually in force -- the reason the next line
           # exists at all. A kernel without the knob prints nothing.
           echo "apparmor_restrict_unprivileged_userns before: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo '<absent>')"
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true \
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true \
             && echo "bwrap works without clearing the restriction" \
             || echo "bwrap blocked with the restriction in force (see error above)"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true
@@ -61,13 +61,10 @@ jobs:
 
   # Consumers reference this repo's own action.yml (wow-look-at-my/dats@master)
   # to get real sandboxing on the org's self-hosted fleet -- a class of runner
-  # this repo's other jobs never touch (they're all ubuntu-latest). bwrap
-  # cannot work at all on the plain wow-linux pool (the job container's seccomp
-  # profile denies unshare(CLONE_NEWUSER) -- confirmed live; not a capability
-  # and not a fixable kernel sysctl, see action.yml), so
-  # this uses the dind pool the way a real consumer should, and dats' own
-  # bwrap -> seatbelt -> docker order lands on docker. Catches a regression in
-  # either the action or dats' docker backend before a consumer's CI does.
+  # this repo's other jobs never touch (they're all ubuntu-latest). This uses
+  # the dind pool the way a real consumer does; the container is privileged, so
+  # dats' bwrap -> seatbelt -> docker order lands on bwrap. Catches a
+  # regression in either the action or a backend before a consumer's CI does.
   self-hosted-sandbox:
     runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
     steps:
