@@ -38,11 +38,11 @@ jobs:
           # restriction was actually in force -- the reason the next line
           # exists at all. A kernel without the knob prints nothing.
           echo "apparmor_restrict_unprivileged_userns before: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo '<absent>')"
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true \
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true \
             && echo "bwrap works without clearing the restriction" \
             || echo "bwrap blocked with the restriction in force (see error above)"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true
+          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true
@@ -67,46 +67,6 @@ jobs:
   # regression in either the action or a backend before a consumer's CI does.
   self-hosted-sandbox:
     runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./
-        with:
-          args: test examples/sandbox.dats
-
-  # The UNPRIVILEGED half, and the one that would have caught #41.
-  #
-  # The slim wow-linux pool runs an unprivileged container: no CAP_SYS_ADMIN.
-  # Creating a PID or mount namespace DIRECTLY needs that capability, so for a
-  # long time the belief here was that "bwrap cannot work at all" on this pool.
-  # That was wrong in a specific way: a namespace created INSIDE a user
-  # namespace needs no capability, and dats simply was not passing
-  # --unshare-user. Measured inside a wow-linux job container that HAD the
-  # seccomp relaxation described below: `unshare --user` exits 0, `unshare
-  # --pid` and `--mount` each fail EPERM, and a tmpfs mount inside a user
-  # namespace succeeds.
-  #
-  # TWO things are needed and only one is in this repo:
-  #   1. dats passes --unshare-user (this branch), and
-  #   2. the runner container is ALLOWED to create a user namespace at all.
-  #
-  # (2) is the fleet's business: the slim image's hook opts in via
-  # webhooks#242's `seccomp: { userns: true }`, which passes docker's default
-  # profile plus an ungated allow for unshare/clone/clone3/setns. Until that
-  # merges AND the fleet redeploys, this job fails at `bwrap: No permissions to
-  # create new namespace` -- correctly, since the runner genuinely cannot do it
-  # yet.
-  #
-  # This job FAILS until the fleet provides (2), and that is the point. It is
-  # not continue-on-error and it is not gated behind a capability probe: both
-  # are ways of not being red, and a job that cannot go red is a job that
-  # proves nothing. Red here means "the unprivileged fleet cannot sandbox",
-  # which is true and worth blocking on.
-  #
-  # Running the same suite on both pools is what keeps the fix honest: if
-  # --unshare-user is ever dropped, this fails while the dind job above stays
-  # green -- the exact asymmetry that hid the bug in the first place.
-  self-hosted-sandbox-unprivileged:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./
