@@ -321,6 +321,22 @@ func TestBwrapArgvUnsharesTheUserNamespaceFirst(t *testing.T) {
 	assert.Less(t, user, pid,
 		"--unshare-user must come before --unshare-pid: the pid namespace is created "+
 			"inside the user namespace, which is what removes the capability requirement")
+
+	// And BOTH must precede the filesystem setup. bwrap applies arguments in
+	// order, so a --proc read before --unshare-pid mounts the HOST's procfs --
+	// which an unprivileged container is refused, with an error that names the
+	// mount rather than the ordering: "Can't mount proc on /newroot/proc:
+	// Operation not permitted". The flags were all present when that happened;
+	// only their order was wrong, which is why this asserts position and not
+	// membership.
+	for _, later := range []string{"--proc", "--dev", "--tmpfs"} {
+		i := slices.Index(argv, later)
+		require.NotEqual(t, -1, i, "%s must be in the isolation args", later)
+		assert.Less(t, pid, i,
+			"%s must come AFTER --unshare-pid: bwrap applies arguments in order, so a "+
+				"filesystem set up before the namespaces exist is set up in the HOST's, "+
+				"which an unprivileged container cannot do", later)
+	}
 }
 
 func TestBwrapArgvUnshareNetWhenNetworkOff(t *testing.T) {

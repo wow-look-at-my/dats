@@ -411,11 +411,11 @@ var toolTreePaths = []string{
 //	--ro-bind-try <tool tree>  the OS's executables, libraries and config,
 //	                           readable but not writable -- and NOTHING else
 //	                           of the host (see toolTreePaths)
+//	--unshare-user             the namespace the others are nested inside
+//	--unshare-pid              commands cannot see or signal host processes
 //	--dev /dev                 a minimal device tree (null, zero, random, tty)
 //	--proc /proc               a fresh procfs for the new PID namespace
 //	--tmpfs /tmp               a private /tmp, so temp files never touch the host's
-//	--unshare-user             the namespace the others are nested inside
-//	--unshare-pid              commands cannot see or signal host processes
 //	--die-with-parent          the sandbox dies with dats, never outliving the run
 //
 // --unshare-user is load-bearing on an unprivileged container. Creating a
@@ -444,11 +444,17 @@ func bwrapIsolationArgs() []string {
 		args = append(args, "--ro-bind-try", target, target)
 	}
 	return append(args,
+		// The namespaces come FIRST. bwrap applies its arguments in order, so
+		// `--proc /proc` mounts a procfs at the point it is read: before the
+		// PID namespace exists, that is a mount of the HOST's procfs, which an
+		// unprivileged container is refused ("Can't mount proc on
+		// /newroot/proc: Operation not permitted"). After --unshare-pid it is
+		// the new namespace's own procfs, which needs no privilege.
+		"--unshare-user",
+		"--unshare-pid",
 		"--dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
-		"--unshare-user",
-		"--unshare-pid",
 		"--die-with-parent",
 	)
 }
