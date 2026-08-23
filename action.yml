@@ -41,33 +41,35 @@ runs:
       shell: bash
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
-    # bwrap's unprivileged user namespace can be blocked two different ways,
-    # and only one of them is fixable from here. Ubuntu 24.04's AppArmor
-    # restriction (kernel.apparmor_restrict_unprivileged_userns) is a real
-    # kernel sysctl a workflow step can clear -- confirmed on this repo's own
-    # GitHub-hosted CI runner. The org's self-hosted wow-linux fleet has
-    # neither that sysctl nor the older kernel.unprivileged_userns_clone
-    # (confirmed via a live run: both report "no such file"), yet bwrap still
-    # refuses -- there the job runs in an unprivileged container whose seccomp
-    # profile denies unshare(CLONE_NEWUSER), and no workflow step can lift a
-    # seccomp filter the container was started with. (NOT a capability: the
-    # job container's CapEff is Docker's normal set with nothing dropped, and
-    # unprivileged userns deliberately needs no CAP_SYS_ADMIN. Isolated on the
-    # host by A/B run -- same image, same command, seccomp the only variable:
-    # default profile EPERMs, seccomp=unconfined succeeds. Fixing it would mean
-    # unfiltering every syscall for a container running arbitrary CI payloads,
-    # a worse trade than falling through to docker.) So: try the sysctl fix
-    # where a sysctl exists,
-    # then fall through to dats' own docker backend (bwrap -> seatbelt ->
-    # docker is dats' own auto order) when docker is usable. Only fail when
-    # NEITHER works -- a caller whose job silently fell back to --no-sandbox
-    # would trade real isolation for green CI, and this is the one place that
-    # catches it before dats ever runs.
+    # bwrap's user namespace can be blocked two different ways. Ubuntu 24.04's
+    # AppArmor restriction (kernel.apparmor_restrict_unprivileged_userns) is a
+    # real kernel sysctl a workflow step can clear -- confirmed on this repo's
+    # own GitHub-hosted CI runner. The org's self-hosted wow-linux fleet has
+    # neither that sysctl nor the older kernel.unprivileged_userns_clone (both
+    # report "no such file").
+    #
+    # This probe must build the SAME sandbox dats builds, which means passing
+    # --unshare-user. It did not, and that mattered: creating a PID namespace
+    # directly needs CAP_SYS_ADMIN, while creating one inside a user namespace
+    # does not, so a probe without --unshare-user fails on every unprivileged
+    # container and reports the runner unusable before dats is ever run. The
+    # conclusion previously recorded here -- that the wow-linux fleet was
+    # blocked by its seccomp profile and that this was "NOT a capability" --
+    # was drawn from that broken probe. Measured inside a wow-linux job
+    # container: `unshare --user` exits 0, `unshare --pid` and `unshare
+    # --mount` each fail EPERM, and a tmpfs mount inside a user namespace
+    # succeeds. It was a capability, and nesting removes the need for it.
+    #
+    # So: try the sysctl fix where a sysctl exists, then fall through to dats'
+    # own docker backend (bwrap -> seatbelt -> docker is dats' auto order) when
+    # docker is usable. Only fail when NEITHER works -- a caller whose job
+    # silently ran unsandboxed would trade real isolation for green CI, and
+    # this is the one place that catches it before dats ever runs.
     - name: Make sure a real sandbox backend is usable (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
+        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true; then
           echo "bwrap works, no further action needed"
           exit 0
         fi
@@ -83,7 +85,7 @@ runs:
           fi
         done
 
-        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-pid --die-with-parent true; then
+        if bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true; then
           echo "bwrap works after clearing the restriction"
           exit 0
         fi
