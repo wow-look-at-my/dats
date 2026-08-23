@@ -38,11 +38,11 @@ jobs:
           # restriction was actually in force -- the reason the next line
           # exists at all. A kernel without the knob prints nothing.
           echo "apparmor_restrict_unprivileged_userns before: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo '<absent>')"
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true \
+          bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true \
             && echo "bwrap works without clearing the restriction" \
             || echo "bwrap blocked with the restriction in force (see error above)"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-user --unshare-pid --die-with-parent true
+          bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true
       - uses: wow-look-at-my/go-toolchain@v1
         with:
           autorelease: true
