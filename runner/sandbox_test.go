@@ -6,6 +6,7 @@ package runner
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -28,21 +29,21 @@ import (
 // into a green build.
 func requireBwrap(t *testing.T) {
 	t.Helper()
-	if err := probeBwrap(); err != nil {
+	if _, err := probeBwrap(); err != nil {
 		t.Skipf("bubblewrap not usable here: %v", err)
 	}
 }
 
 // sandboxConfigWithProbe builds a config whose backend probes are answered by
 // probe instead of the host.
-func sandboxConfigWithProbe(mode SandboxMode, probe func(SandboxMode) error) *SandboxConfig {
+func sandboxConfigWithProbe(mode SandboxMode, probe func(SandboxMode) (procMode, error)) *SandboxConfig {
 	cfg := NewSandboxConfig(mode, "")
 	cfg.probe = probe
 	return cfg
 }
 
-func probeAlways(err error) func(SandboxMode) error {
-	return func(SandboxMode) error { return err }
+func probeAlways(err error) func(SandboxMode) (procMode, error) {
+	return func(SandboxMode) (procMode, error) { return procFresh, err }
 }
 
 func TestParseSandboxMode(t *testing.T) {
@@ -67,11 +68,11 @@ func TestSandboxBackendAutoPrefersSeatbeltOverDocker(t *testing.T) {
 	// On a mac bwrap is simply absent, and the native backend must win over
 	// the container fallback -- seatbelt keeps the host's own tools, docker
 	// does not.
-	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) error {
+	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) (procMode, error) {
 		if mode == SandboxBwrap {
-			return assertError("bwrap: not found in $PATH")
+			return procFresh, assertError("bwrap: not found in $PATH")
 		}
-		return nil
+		return procFresh, nil
 	})
 	backend, err := cfg.Backend()
 	require.Nil(t, err)
@@ -79,11 +80,11 @@ func TestSandboxBackendAutoPrefersSeatbeltOverDocker(t *testing.T) {
 }
 
 func TestSandboxBackendAutoFallsBackToDocker(t *testing.T) {
-	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) error {
+	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) (procMode, error) {
 		if mode == SandboxDocker {
-			return nil
+			return procFresh, nil
 		}
-		return assertError(string(mode) + ": not found in $PATH")
+		return procFresh, assertError(string(mode) + ": not found in $PATH")
 	})
 	backend, err := cfg.Backend()
 	require.Nil(t, err)
@@ -94,8 +95,8 @@ func TestSandboxBackendAutoWithNoBackendErrorsAndNamesTheOptOut(t *testing.T) {
 	// The whole point of defaulting to a sandbox is that "no backend" is
 	// never resolved by quietly running on the host: it is an error, and the
 	// error has to say how to opt out.
-	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) error {
-		return assertError(string(mode) + ": unavailable")
+	cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) (procMode, error) {
+		return procFresh, assertError(string(mode) + ": unavailable")
 	})
 	_, err := cfg.Backend()
 	require.NotNil(t, err)
@@ -108,11 +109,11 @@ func TestSandboxBackendAutoWithNoBackendErrorsAndNamesTheOptOut(t *testing.T) {
 func TestSandboxBackendExplicitDoesNotFallBack(t *testing.T) {
 	// An operator who asked for bwrap gets bwrap or an error -- never docker,
 	// whose isolation and available tooling are entirely different.
-	cfg := sandboxConfigWithProbe(SandboxBwrap, func(mode SandboxMode) error {
+	cfg := sandboxConfigWithProbe(SandboxBwrap, func(mode SandboxMode) (procMode, error) {
 		if mode == SandboxBwrap {
-			return assertError("no user namespaces")
+			return procFresh, assertError("no user namespaces")
 		}
-		return nil
+		return procFresh, nil
 	})
 	_, err := cfg.Backend()
 	require.NotNil(t, err)
@@ -122,9 +123,9 @@ func TestSandboxBackendExplicitDoesNotFallBack(t *testing.T) {
 
 func TestSandboxBackendProbesAtMostOnce(t *testing.T) {
 	calls := 0
-	cfg := sandboxConfigWithProbe(SandboxAuto, func(SandboxMode) error {
+	cfg := sandboxConfigWithProbe(SandboxAuto, func(SandboxMode) (procMode, error) {
 		calls++
-		return nil
+		return procFresh, nil
 	})
 	for range 5 {
 		backend, err := cfg.Backend()
@@ -299,6 +300,90 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
 }
 
+// The fallback /proc shape swaps ONE argument and keeps everything that
+// contains the command. A masked container refuses a private procfs
+// (mount_too_revealing), and the wrong response would be to drop the PID
+// namespace with it: that is the argument doing the containing, and the kernel
+// never objected to it.
+func TestBwrapSharedProcKeepsTheContainment(t *testing.T) {
+	fresh := bwrapIsolationArgs(procFresh)
+	shared := bwrapIsolationArgs(procShared)
+
+	assert.Contains(t, fresh, "--proc", "the private procfs is what dats asks for first")
+	assert.NotContains(t, shared, "--proc",
+		"the fallback exists because the kernel refuses --proc here; asking again just fails again")
+
+	i := slices.Index(shared, "--ro-bind")
+	require.NotEqual(t, -1, i, "the fallback must bind the existing /proc")
+	assert.Equal(t, []string{"--ro-bind", "/proc", "/proc"}, shared[i:i+3],
+		"the bind is READ-ONLY: it is what keeps /proc/sysrq-trigger and /proc/sys "+
+			"unwritable inside the sandbox")
+
+	for _, keep := range []string{"--unshare-user", "--unshare-pid", "--die-with-parent", "--tmpfs"} {
+		assert.Contains(t, shared, keep,
+			"%s must survive the fallback: the refusal is about mounting a procfs, "+
+				"never about the isolation, so nothing else may be traded away", keep)
+	}
+
+	// Everything except the /proc argument pair is identical, so the fallback
+	// cannot quietly widen anything else.
+	assert.Equal(t, drop(fresh, "--proc", "/proc"), drop(shared, "--ro-bind", "/proc", "/proc"),
+		"the two shapes must differ ONLY in how /proc is provided")
+}
+
+// drop returns argv without the first run of the given consecutive arguments.
+func drop(argv []string, run ...string) []string {
+	for i := range argv {
+		if i+len(run) <= len(argv) && slices.Equal(argv[i:i+len(run)], run) {
+			return slices.Concat(argv[:i:i], argv[i+len(run):])
+		}
+	}
+	return argv
+}
+
+// The probe asks for the strong sandbox first and only settles for the weak
+// one when the kernel refuses -- never the other way round, or a host that
+// could isolate properly would silently stop doing so.
+func TestProbeBwrapPrefersThePrivateProcfs(t *testing.T) {
+	requireBwrap(t)
+	path, err := exec.LookPath("bwrap")
+	require.Nil(t, err)
+
+	// Whatever this host can do, the fresh shape's own result decides: the
+	// probe must never report procShared where procFresh works.
+	proc, err := probeBwrap()
+	require.Nil(t, err)
+	if runBwrapProbe(path, procFresh) == nil {
+		assert.Equal(t, procFresh, proc,
+			"a host that can mount a private procfs must get one")
+	} else {
+		assert.Equal(t, procShared, proc,
+			"a host that cannot must still get a sandbox, not an error")
+	}
+}
+
+// A reduced sandbox is announced on every file it applies to, and explained
+// once. Silence here would be the whole point missed: the run would look
+// exactly like one that got the isolation it asked for.
+func TestSharedProcIsAnnouncedAndExplainedOnce(t *testing.T) {
+	assert.Equal(t, "bwrap", (&sandboxPlan{backend: SandboxBwrap, network: true}).describe(),
+		"the strong sandbox says nothing extra")
+	assert.Equal(t, "bwrap (shared /proc)",
+		(&sandboxPlan{backend: SandboxBwrap, proc: procShared, network: true}).describe())
+
+	cfg := NewSandboxConfig(SandboxBwrap, "")
+	cfg.backend, cfg.proc = SandboxBwrap, procShared
+	first := cfg.TakeProcNotice()
+	assert.Contains(t, first, "CAN see this container's process list",
+		"the explanation must state what was lost, not just that something was")
+	assert.Equal(t, "", cfg.TakeProcNotice(), "explained once per run, not once per file")
+
+	strong := NewSandboxConfig(SandboxBwrap, "")
+	strong.backend = SandboxBwrap
+	assert.Equal(t, "", strong.TakeProcNotice(), "nothing to explain when nothing was lost")
+	assert.Equal(t, "", (*SandboxConfig)(nil).TakeProcNotice())
+}
+
 // The sandbox must ask for a USER namespace, and ask for it before the
 // namespaces nested inside it.
 //
@@ -309,7 +394,7 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 // permitted" -- an error naming no namespace, which is why this went
 // undiagnosed while every argv test here passed.
 func TestBwrapArgvUnsharesTheUserNamespaceFirst(t *testing.T) {
-	argv := bwrapIsolationArgs()
+	argv := bwrapIsolationArgs(procFresh)
 
 	user := slices.Index(argv, "--unshare-user")
 	require.NotEqual(t, -1, user,
@@ -411,9 +496,9 @@ func TestNewSandboxPlanOptOutNeedsNoBackend(t *testing.T) {
 	// An opted-out run must work on a machine with no backend installed:
 	// resolution is lazy precisely so --no-sandbox costs nothing.
 	probed := false
-	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxNone, func(SandboxMode) error {
+	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxNone, func(SandboxMode) (procMode, error) {
 		probed = true
-		return assertError("unavailable")
+		return procFresh, assertError("unavailable")
 	})}
 	plan, err := r.newSandboxPlan(nil, "/tmp/w")
 	require.Nil(t, err)

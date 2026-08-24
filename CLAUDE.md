@@ -100,7 +100,7 @@ go test -cover ./...
 - `report/` - Machine-readable report rendering (public, importable by external modules)
   - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
   - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
-- `docs/` - Additional prose documentation (`library.md` = the Go API and its contracts; `reports.md` = report formats + stability contract); `schema.json` - JSON Schema for IDE validation
+- `docs/` - Additional prose documentation (`library.md` = the Go API and its contracts; `reports.md` = report formats + stability contract; `sandbox-masked-proc.md` = why a container refuses the sandbox a private procfs, and the read-only-bind fallback that keeps every containment property); `schema.json` - JSON Schema for IDE validation
 - `schema/dats.xsd` - Canonical XSD schema for the in-progress XML format (source of truth for `internal/schema` generated types)
 - `internal/schema/` - In-progress XML migration: Go types generated from XSD via `xgen` (not yet wired into the CLI; `just generate` regenerates)
   - `generated.go` - Go types generated from XSD via `xgen` (DO NOT EDIT)
@@ -274,9 +274,11 @@ The in-progress XML migration (`internal/schema`/`internal/runner`, not yet wire
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with two jobs:
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with four jobs. Why each is shaped the way it is -- and the traps behind them -- lives in [.github/workflows/README.md](.github/workflows/README.md), which the one-line YAML comments point at by heading.
 - `test` - installs bubblewrap, clears ubuntu-24.04's `kernel.apparmor_restrict_unprivileged_userns` (which otherwise denies bwrap the user namespace it needs, silently turning every bwrap test into a skip) and runs the bwrap probe as its own step so an unusable backend fails with its own error; then builds the Go binary (multi-platform), runs tests via `wow-look-at-my/go-toolchain`, and creates releases on master pushes. The sandbox integration tests skip themselves when no backend is usable, so that probe step -- not any env knob -- is what stops a skip from passing for isolation coverage in CI; the docker tests use the runner's own daemon and skip if the image cannot be fetched (a registry outage says nothing about the code). `artifact-metadata: write` is required by the publish step (job-level permissions REPLACE workflow-level ones)
 - `schema` - validates `testdata/schema/*.json` fixtures against `schema.json` using the `wow-look-at-my/json-validator` action, guarding against schema drift
+- `self-hosted-sandbox` - the CONSUMER path: this repo's own `action.yml` on the org's dind pool, running the PUBLISHED binary a caller would get. Privileged, so it says nothing about the unprivileged case
+- `sandbox-unprivileged-masked` - the sandbox itself, in a container this job BUILDS: unprivileged, `/proc` masked by docker, running the binary THIS commit built (the `test` job's `go-build` hand-off). It deliberately does not borrow the org's slim fleet -- a merge gate that depends on another repo's deployed state can be frozen by that repo, and was. dats proves the mechanism; webhooks' gha-runner smoke test proves the image
 
 ## Consuming dats from another repo's CI
 
