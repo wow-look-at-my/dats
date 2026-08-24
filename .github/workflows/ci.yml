@@ -61,6 +61,10 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+      # Installs bwrap and clears the sysctls, then hands back the binary it downloaded.
       - uses: ./
+        id: dats
         with:
-          args: test examples/sandbox.dats
+          args: --version
+      # Asserts what dats owes in whichever state the fleet is in -- the script's own header.
+      - run: .github/scripts/fleet-sandbox.sh "${{ steps.dats.outputs.path }}" examples/sandbox.dats
