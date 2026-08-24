@@ -148,7 +148,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		instances = append(instances, schema.ExpandMatrix(&testFile.Tests[i])...)
 	}
 
-	r.Formatter.PrintSandbox(r.plan.describe())
+	r.Formatter.PrintSandbox(r.plan.describe(), r.Sandbox.TakeProcNotice())
 	r.Formatter.PrintHeader(path, len(instances))
 
 	result := &FileResult{

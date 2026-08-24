@@ -97,7 +97,7 @@ go test -cover ./...
 - `report/` - Machine-readable report rendering (public, importable by external modules)
   - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
   - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
-- `docs/` - Additional prose documentation (`library.md` = the Go API and its contracts; `reports.md` = report formats + stability contract); `schema.json` - JSON Schema for IDE validation
+- `docs/` - Additional prose documentation (`library.md` = the Go API and its contracts; `reports.md` = report formats + stability contract; `sandbox-masked-proc.md` = why a container refuses the sandbox a private procfs, and the read-only-bind fallback that keeps every containment property); `schema.json` - JSON Schema for IDE validation
 
 ### Key Types
 - **ExitCode** - Can be int 0-255 (bare or quoted, e.g. `"3"`) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`

@@ -84,11 +84,18 @@ func (f *Formatter) PrintHeader(path string, testCount int) {
 // commands run under -- desc comes from the resolved plan and is empty when
 // the commands run directly on the host, so an unsandboxed run's output stays
 // byte-for-byte what it has always been.
-func (f *Formatter) PrintSandbox(desc string) {
+//
+// note explains a sandbox that came out weaker than the one dats asked for.
+// It arrives already spent after the first file (SandboxConfig.TakeProcNotice),
+// because the same paragraph on every file is a paragraph nobody reads.
+func (f *Formatter) PrintSandbox(desc, note string) {
 	if desc == "" {
 		return
 	}
 	fmt.Fprintf(f.Writer, "# sandbox: %s\n", desc)
+	if note != "" {
+		fmt.Fprintf(f.Writer, "# sandbox: %s\n", note)
+	}
 }
 
 // PrintResult prints a single test result

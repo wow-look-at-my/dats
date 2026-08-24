@@ -104,13 +104,20 @@ type SandboxConfig struct {
 	// overruling an image the operator typed out.
 	Image string
 
-	once    sync.Once
-	backend SandboxMode
-	err     error
+	once sync.Once
+	// noticeOnce spends the reduced-sandbox explanation on the first file that
+	// asks for it, so the run says it once rather than once per file.
+	noticeOnce sync.Once
+	backend    SandboxMode
+	// proc is the /proc shape the bwrap probe settled on, meaningful only for
+	// that backend. Resolved with the backend so one probe answers both.
+	proc procMode
+	err  error
 
-	// probe reports whether a concrete backend is usable here. Swapped out by
-	// tests, which must not depend on the host having bwrap or docker.
-	probe func(SandboxMode) error
+	// probe reports whether a concrete backend is usable here, and for bwrap
+	// which /proc shape it took. Swapped out by tests, which must not depend
+	// on the host having bwrap or docker.
+	probe func(SandboxMode) (procMode, error)
 }
 
 // NewSandboxConfig builds a config for mode. An empty image means the operator
@@ -137,11 +144,12 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 		case SandboxNone, "":
 			c.backend = SandboxNone
 		case SandboxBwrap, SandboxSeatbelt, SandboxDocker:
-			if err := probe(c.Mode); err != nil {
+			proc, err := probe(c.Mode)
+			if err != nil {
 				c.err = fmt.Errorf("--sandbox=%s is not usable here: %w\n%s", c.Mode, err, sandboxOptOutHint)
 				return
 			}
-			c.backend = c.Mode
+			c.backend, c.proc = c.Mode, proc
 		default: // SandboxAuto
 			// Native backends first, in the order they can possibly succeed:
 			// bwrap and seatbelt are platform-exclusive, so at most one of
@@ -150,9 +158,9 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 			// heaviest and the least equivalent.
 			var failures []string
 			for _, backend := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
-				err := probe(backend)
+				proc, err := probe(backend)
 				if err == nil {
-					c.backend = backend
+					c.backend, c.proc = backend, proc
 					return
 				}
 				failures = append(failures, err.Error())
@@ -161,6 +169,19 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 		}
 	})
 	return c.backend, c.err
+}
+
+// TakeProcNotice returns the explanation for a sandbox that resolved weaker
+// than the one dats asked for, and empties itself: the run announces the
+// reduction on every file it applies to (describe), and explains it once.
+// Nil-safe and empty whenever the sandbox is the one that was asked for.
+func (c *SandboxConfig) TakeProcNotice() string {
+	if c == nil || c.backend != SandboxBwrap || c.proc != procShared {
+		return ""
+	}
+	var note string
+	c.noticeOnce.Do(func() { note = procSharedReason })
+	return note
 }
 
 // sandboxOptOutHint is appended to every backend-resolution failure: the
@@ -173,31 +194,52 @@ const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt o
 // ships on every mac but is refused inside some hardened contexts, and the
 // docker CLI is routinely installed with no daemon to talk to -- so every
 // probe actually exercises the thing it will later depend on.
-func probeBackend(backend SandboxMode) error {
+func probeBackend(backend SandboxMode) (procMode, error) {
 	switch backend {
 	case SandboxBwrap:
 		return probeBwrap()
 	case SandboxSeatbelt:
-		return probeSeatbelt()
+		return procFresh, probeSeatbelt()
 	case SandboxDocker:
-		return probeDocker()
+		return procFresh, probeDocker()
 	}
-	return fmt.Errorf("%s: not a concrete sandbox backend", backend)
+	return procFresh, fmt.Errorf("%s: not a concrete sandbox backend", backend)
 }
 
-func probeBwrap() error {
+// probeBwrap reports whether bwrap can build a sandbox here, and which /proc
+// shape it took to do it. It asks for the private procfs first and only tries
+// the read-only bind when the kernel refuses -- so a host that can give the
+// stronger sandbox always gets it, and the weaker one is reached only where
+// the alternative is no sandbox at all (see procSharedReason).
+//
+// A failure of BOTH shapes reports the first error, not the second: where
+// bwrap is refused outright the two are the same refusal, and the private
+// procfs is the one whose message describes what dats actually wanted.
+func probeBwrap() (procMode, error) {
 	path, err := exec.LookPath("bwrap")
 	if err != nil {
-		return fmt.Errorf("bwrap: not found in $PATH")
+		return procFresh, fmt.Errorf("bwrap: not found in $PATH")
 	}
+	freshErr := runBwrapProbe(path, procFresh)
+	if freshErr == nil {
+		return procFresh, nil
+	}
+	if err := runBwrapProbe(path, procShared); err == nil {
+		return procShared, nil
+	}
+	return procFresh, freshErr
+}
+
+// runBwrapProbe exercises one /proc shape. It uses the same isolation
+// primitives a real run does (the namespace setup is what fails on a
+// locked-down kernel), minus the per-file binds. It chdirs to `/` because
+// dats' own working directory is one of those per-file binds: without it bwrap
+// would refuse to enter an inherited cwd that the confined mount set does not
+// contain.
+func runBwrapProbe(path string, proc procMode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	// The probe uses the same isolation primitives a real run does (the
-	// namespace setup is what fails on a locked-down kernel), minus the
-	// per-file binds. It chdirs to `/` because dats' own working directory is
-	// one of those per-file binds: without it bwrap would refuse to enter an
-	// inherited cwd that the confined mount set does not contain.
-	args := append(bwrapIsolationArgs(), "--chdir", "/", "true")
+	args := append(bwrapIsolationArgs(proc), "--chdir", "/", "true")
 	if out, err := exec.CommandContext(ctx, path, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("bwrap: %s", probeFailure(out, err))
 	}
@@ -236,7 +278,11 @@ func probeFailure(out []byte, err error) string {
 // the file's commands run directly on the host.
 type sandboxPlan struct {
 	backend SandboxMode
-	image   string // docker only
+	// proc is the /proc shape the bwrap probe settled on (bwrap only). The
+	// zero value is the private procfs, so a plan built without one asks for
+	// the stronger sandbox.
+	proc  procMode
+	image string // docker only
 	// refusedImage is the file's own `image:` when the operator pinned a
 	// different one on the command line. Kept so describe can say the file
 	// asked and did not get it: a suite silently running in an image it did
@@ -268,6 +314,12 @@ func (p *sandboxPlan) describe() string {
 		return ""
 	}
 	desc := string(p.backend)
+	// A weaker sandbox than the one dats asks for is never silent: the run
+	// says so on every file it applies to, in the same place it names the
+	// backend. procSharedReason has the detail.
+	if p.backend == SandboxBwrap && p.proc == procShared {
+		desc += " (shared /proc)"
+	}
 	if p.backend == SandboxDocker {
 		desc += " " + p.image
 		if p.refusedImage != "" {
@@ -304,6 +356,7 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 
 	plan := &sandboxPlan{
 		backend: backend,
+		proc:    r.Sandbox.proc,
 		image:   r.Sandbox.Image,
 		network: spec.NetworkEnabled(),
 		work:    workDir,
@@ -405,6 +458,49 @@ var toolTreePaths = []string{
 	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix", "/opt",
 }
 
+// procMode is how a bwrap sandbox gets its /proc. The zero value is the one
+// dats asks for first; procShared is the fallback the probe falls back TO, and
+// it is only ever reached because the kernel refused the other one.
+type procMode int
+
+const (
+	// procFresh mounts a private procfs for the sandbox's own PID namespace.
+	procFresh procMode = iota
+	// procShared binds the procfs this process already has, read-only,
+	// because a fresh one cannot be mounted here. See procSharedReason.
+	procShared
+)
+
+// procSharedReason is what the fallback costs, stated where it is chosen.
+//
+// A container runtime masks parts of /proc: docker binds /dev/null over
+// /proc/kcore and friends, mounts a size-0 tmpfs over /proc/acpi and friends,
+// and read-only binds /proc/sys and /proc/sysrq-trigger. Those mounts become
+// MNT_LOCKED the instant bwrap unshares a user namespace, and the kernel
+// refuses a fresh procfs while any locked mount obscures the procfs already
+// visible there -- mount_too_revealing in fs/namespace.c, reported by bwrap as
+// "Can't mount proc on /newroot/proc: Operation not permitted". Nothing inside
+// the container can clear those mounts: unmounting them needs CAP_SYS_ADMIN in
+// the init user namespace, which is exactly what a container does not have.
+//
+// So the choice in a masked container is this fallback or no sandbox at all.
+// Measured, both shapes, against docker's own mask set:
+//
+//	property                          fresh   shared
+//	its own PID namespace             yes     yes
+//	can signal processes outside      no      no
+//	host filesystem writable          no      no
+//	/proc/self/exe, /proc/self/fd     yes     yes
+//	hides the other processes         yes     NO
+//
+// The sandbox keeps every containment property and loses concealment: a
+// command can SEE the process list of the container dats is running in, and
+// cannot touch it. Nothing about the container's own confinement changes --
+// this asks the kernel for strictly less, never for more.
+const procSharedReason = "a fresh procfs is refused here (the container's /proc is masked), " +
+	"so the sandbox binds the existing /proc read-only: it keeps its own PID namespace and " +
+	"cannot signal or write outside, but CAN see this container's process list"
+
 // bwrapIsolationArgs are the backend's fixed arguments, shared by the probe
 // and by every sandboxed command:
 //
@@ -414,7 +510,8 @@ var toolTreePaths = []string{
 //	--unshare-user             the namespace the others are nested inside
 //	--unshare-pid              commands cannot see or signal host processes
 //	--dev /dev                 a minimal device tree (null, zero, random, tty)
-//	--proc /proc               a fresh procfs for the new PID namespace
+//	--proc /proc               a fresh procfs for the new PID namespace, or,
+//	                           under procShared, a read-only bind of this one
 //	--tmpfs /tmp               a private /tmp, so temp files never touch the host's
 //	--die-with-parent          the sandbox dies with dats, never outliving the run
 //
@@ -432,7 +529,7 @@ var toolTreePaths = []string{
 // Order matters and is load-bearing: the read-only tree comes first and the
 // overlays after it, and per-file binds are appended after these so a writable
 // path under /tmp survives the tmpfs.
-func bwrapIsolationArgs() []string {
+func bwrapIsolationArgs(proc procMode) []string {
 	args := make([]string, 0, 3*len(toolTreePaths)+16)
 	for _, dir := range toolTreePaths {
 		args = append(args, "--ro-bind-try", dir, dir)
@@ -443,7 +540,7 @@ func bwrapIsolationArgs() []string {
 	if target, ok := resolvConfTarget(); ok {
 		args = append(args, "--ro-bind-try", target, target)
 	}
-	return append(args,
+	args = append(args,
 		// The namespaces come FIRST. bwrap applies its arguments in order, so
 		// `--proc /proc` mounts a procfs at the point it is read: before the
 		// PID namespace exists, that is a mount of the HOST's procfs, which an
@@ -453,7 +550,18 @@ func bwrapIsolationArgs() []string {
 		"--unshare-user",
 		"--unshare-pid",
 		"--dev", "/dev",
-		"--proc", "/proc",
+	)
+	// --unshare-pid stays in BOTH shapes. It is what stops a command signalling
+	// anything outside the sandbox, and it costs nothing that the kernel is
+	// refusing: the refusal is about mounting a procfs, never about the PID
+	// namespace. Dropping it here would trade away containment to buy back
+	// concealment, which is the wrong way round.
+	if proc == procShared {
+		args = append(args, "--ro-bind", "/proc", "/proc")
+	} else {
+		args = append(args, "--proc", "/proc")
+	}
+	return append(args,
 		"--tmpfs", "/tmp",
 		"--die-with-parent",
 	)
@@ -494,7 +602,7 @@ func underToolTree(path string) bool {
 // path that is (or is inside) the working directory ends up writable instead
 // of pinned read-only -- the same precedence docker's mount dedup gives it.
 func (p *sandboxPlan) bwrapArgv(cmd string) []string {
-	argv := append([]string{"bwrap"}, bwrapIsolationArgs()...)
+	argv := append([]string{"bwrap"}, bwrapIsolationArgs(p.proc)...)
 	if !p.network {
 		argv = append(argv, "--unshare-net")
 	}
