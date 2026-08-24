@@ -56,13 +56,13 @@ jobs:
         with:
           args: test examples/sandbox.dats
 
-  # A sandbox exercised only under privilege is not exercised -- README.md "self-hosted-sandbox-unprivileged".
-  self-hosted-sandbox-unprivileged:
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+  # A sandbox exercised only under privilege is not exercised -- README.md "sandbox-unprivileged-masked".
+  sandbox-unprivileged-masked:
+    runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v4
-      # THIS commit's binary, not the published one -- README.md "self-hosted-sandbox-unprivileged".
+      # THIS commit's binary, not the published one -- README.md "sandbox-unprivileged-masked".
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
@@ -72,6 +72,6 @@ jobs:
           if [ -f build/dats_linux_amd64 ]; then install -m 0755 build/dats_linux_amd64 build/dats; fi
           chmod +x build/dats
           ./build/dats --version
-      - name: Install bubblewrap
-        run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
-      - run: ./build/dats test examples/sandbox.dats
+      # An unprivileged container shaped like the fleet's -- README.md "sandbox-unprivileged-masked".
+      - name: Run the suite in an unprivileged container whose /proc is masked
+        run: .github/scripts/masked-container-sandbox.sh

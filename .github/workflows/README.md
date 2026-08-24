@@ -29,7 +29,7 @@ A kernel without the knob prints nothing.
 
 This job runs on a GitHub-hosted VM, whose `/proc` is not masked, so the plain
 `--proc /proc` probe here is the right one. That is NOT true inside a
-container — see "self-hosted-sandbox-unprivileged" below and
+container — see "sandbox-unprivileged-masked" below and
 [docs/sandbox-masked-proc.md](../../docs/sandbox-masked-proc.md).
 
 ## self-hosted-sandbox
@@ -41,43 +41,65 @@ dind pool the way a real consumer does; the container is privileged, so dats'
 bwrap → seatbelt → docker order lands on bwrap. It catches a regression in
 either the action or a backend before a consumer's CI does.
 
-## self-hosted-sandbox-unprivileged
+## sandbox-unprivileged-masked
 
-The SAME suite on the UNPRIVILEGED pool — the job that would have caught every
-sandbox bug this repo has shipped.
+The SAME suite, unprivileged, with a masked `/proc` — the job that would have
+caught every sandbox bug this repo has shipped. It builds that container itself
+(`.github/scripts/masked-container-sandbox.sh`) rather than borrowing the org's
+slim fleet, and it runs the binary THIS commit built.
 
-The job above runs on the dind pool, whose container is `--privileged` and so
-holds CAP_SYS_ADMIN. bwrap works there no matter what: it can create the PID
-and mount namespaces directly, and it can mount procfs over a masked `/proc`.
-That kept it green through TWO broken states — one with no `--unshare-user` at
-all, one applying `--proc` before `--unshare-pid` — because neither mistake
-costs anything when you already hold the capability. Both were immediately
-fatal on `wow-linux`, which is where consumers' CI actually runs.
+### Why it stopped using the fleet
 
-A sandbox exercised only under privilege is not exercised. This job is the
-difference between "dats' CI is green" and "dats sandboxes".
+It was `runs-on: ${{ vars.CI_RUNNER }}`, and that made a merge gate depend on
+another repository's DEPLOYED state. That is not hypothetical: the slim runners
+get their user namespace from the gha-runner hook's `seccomp.userns` opt-in,
+that opt-in sat undeployed behind a held reload gate, and bwrap was refused
+there before dats reached a sandbox — so no dats change could pass. dats' own
+pull requests were blocked on a webhooks deploy that was itself waiting on a
+dats release, a ring with no opening inside any repo.
+
+Ownership now sits where each half can be acted on. **dats proves the
+mechanism**, here, in a container it builds. **webhooks proves the image** — its
+gha-runner `dats-smoke.test.ts` runs this same binary on the real slim image and
+asserts the same isolation, which is the right place for it: that repo owns the
+image and can fix it.
+
+### What keeps it honest
+
+Relaxing seccomp and AppArmor is what lets an unprivileged process make a user
+namespace and mount inside it — the axis the fleet relaxes with `seccomp.userns`.
+It is NOT `systempaths=unconfined`, one word away and opposite in consequence:
+that unmasks `/proc` and gives container root a writable `/proc/sysrq-trigger`,
+i.e. a host reboot. Nothing here grants it.
+
+Two assertions stop the job drifting into an easier test:
+
+- a negative control requiring `/proc/sysrq-trigger` to be **non-writable**, so
+  the container is provably still the masked case;
+- a check that dats reported `bwrap (shared /proc)`, so a pass cannot come from
+  a private procfs the mask would have prevented — the fallback under test has
+  to have actually run.
+
+### Why unprivileged at all
+
+`self-hosted-sandbox` runs on the dind pool, whose container is `--privileged`
+and so holds CAP_SYS_ADMIN. bwrap works there no matter what: it can create the
+PID and mount namespaces directly, and it can mount procfs over a masked
+`/proc`. That kept it green through TWO broken states — one with no
+`--unshare-user` at all, one applying `--proc` before `--unshare-pid` — because
+neither mistake costs anything when you already hold the capability. Both were
+immediately fatal unprivileged, which is where consumers' CI actually runs.
+
+A sandbox exercised only under privilege is not exercised.
 
 ### It runs THIS commit's binary, not the published one
 
 `uses: ./` downloads the newest dats from buildhost — the binary on the DEFAULT
 BRANCH. On a pull request that is master's dats, so this job said nothing
-whatsoever about the change under review. It was possible to alter every line of
-the sandbox and watch this job pass or fail on a binary that did not contain the
-change; the masked-`/proc` fallback shipped that way, exercised here by nothing.
+whatsoever about the change under review. Every line of the sandbox could be
+rewritten and the job would pass or fail on a binary without the rewrite; the
+masked-`/proc` fallback shipped exactly that way.
 
-So it restores the `test` job's `go-build` hand-off and runs `build/dats`. The
-job above keeps using `uses: ./`, deliberately: that one's purpose is the
-CONSUMER path — the action, the download, the whole thing a caller references —
-and it is right for it to run what a caller would get.
-
-`./build/dats --version` runs before the suite. A missing or unusable hand-off
-must fail there, naming itself, rather than surfacing as a sandbox error.
-
-### It depends on the fleet
-
-The slim runner needs its `seccomp.userns` opt-in DEPLOYED to create a user
-namespace at all. While the hooks tree that declares it is held, bwrap is
-refused here before dats reaches a sandbox, and no change in this repo can fix
-that — read a failure with that in mind before blaming the code. The job is
-supposed to be red then: nothing is being isolated, and a green that said
-otherwise would be a lie.
+So it restores the `test` job's `go-build` hand-off and runs `build/dats`, with
+`./build/dats --version` first — a missing or unusable hand-off must fail there,
+naming itself, rather than surfacing later as a sandbox error.
