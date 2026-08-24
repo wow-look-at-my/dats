@@ -16,12 +16,12 @@ jobs:
       contents: write
       actions: read
       checks: read
-      # Publishing needs both -- README.md "test: artifact-metadata and deployments".
+      # Publishing needs both.
       artifact-metadata: write
       deployments: write
     steps:
       - uses: actions/checkout@v4
-      # Without this the bwrap tests SKIP -- README.md "test: installing bubblewrap and clearing the restriction".
+      # Without this the bwrap tests SKIP.
       - run: |
           sudo apt-get update && sudo apt-get install -y bubblewrap
           # Logged before it is cleared, so each run records whether it was in force.
@@ -47,7 +47,7 @@ jobs:
           schema: schema.json
           files: testdata/schema/*.json
 
-  # This repo's own action, on the fleet a consumer uses -- README.md "self-hosted-sandbox".
+  # This repo's own action, on the fleet a consumer uses.
   self-hosted-sandbox:
     runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
     steps:
@@ -56,13 +56,13 @@ jobs:
         with:
           args: test examples/sandbox.dats
 
-  # A sandbox exercised only under privilege is not exercised -- README.md "sandbox-unprivileged-masked".
+  # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v4
-      # THIS commit's binary, not the published one -- README.md "sandbox-unprivileged-masked".
+      # THIS commit's binary, not the published one.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build
@@ -72,6 +72,6 @@ jobs:
           if [ -f build/dats_linux_amd64 ]; then install -m 0755 build/dats_linux_amd64 build/dats; fi
           chmod +x build/dats
           ./build/dats --version
-      # An unprivileged container shaped like the fleet's -- README.md "sandbox-unprivileged-masked".
+      # An unprivileged container shaped like the fleet's.
       - name: Run the suite in an unprivileged container whose /proc is masked
         run: .github/scripts/masked-container-sandbox.sh
