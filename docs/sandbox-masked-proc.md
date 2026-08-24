@@ -69,6 +69,34 @@ processes of the container dats runs in. It cannot be seen by them, and the
 container's `/proc` never contained the host's processes to begin with — docker
 gave the container its own PID namespace long before bwrap ran.
 
+## The host's process table is never in scope, and that is CHECKED
+
+The paragraph above is a property of the container, not of dats, so dats does
+not take it on trust. A masked `/proc` says the kernel refused a private
+procfs; it says nothing about whose processes the existing one lists. Before
+the fallback is taken, `procBindWouldRevealOutsideProcesses` proves the procfs
+is scoped, and refuses the shape outright when it cannot. Two arrangements are
+refused:
+
+| arrangement | detected by | why it is refused |
+|---|---|---|
+| the machine's own PID namespace | `/proc/self/ns/pid` is the kernel's fixed `PROC_PID_INIT_INO` (`pid:[4026531836]`) | the bind hands a test command the whole host process table |
+| our own PID namespace, an ANCESTOR's procfs mounted over it | `NSpid` in `/proc/self/status` holds more than one pid | the namespace inode looks fine while `/proc` still lists the outside |
+
+`NSpid` works because procfs renders it relative to the READING mount: one pid
+when the mount belongs to our own namespace, the whole chain when it does not.
+Measured on the same process, `unshare --pid --fork` with `--mount-proc` gives
+`NSpid: 3` and without it `NSpid: 14494 3`.
+
+It fails closed. A `/proc` that cannot be read proves nothing about its scope,
+so it is refused rather than assumed safe, and the run reports no sandbox
+instead of a weaker one. Refusing costs a sandbox; guessing costs the host.
+
+`runner/sandbox_procgate_linux_test.go` drives both refusals — the second by
+re-execing under `unshare --pid --fork` with `--mount-proc` deliberately
+omitted — and `sandbox_maskedproc_linux_test.go` holds a process outside the
+namespace and requires the sandbox not to see it.
+
 What "see" covers is only `cmdline`, `comm` and `status`. Everything gated on
 ptrace access stays denied, measured: `environ`, `mem`, `maps`, `stack`, `io`
 and `cwd` all return EPERM, and `/proc/<pid>/fd` lists its numbers while every

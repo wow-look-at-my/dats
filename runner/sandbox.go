@@ -224,6 +224,9 @@ func probeBwrap() (procMode, error) {
 	if freshErr == nil {
 		return procFresh, nil
 	}
+	if why := procBindWouldRevealOutsideProcesses(); why != "" {
+		return procFresh, fmt.Errorf("%w (refusing the read-only /proc fallback: %s)", freshErr, why)
+	}
 	if err := runBwrapProbe(path, procShared); err == nil {
 		return procShared, nil
 	}
@@ -457,49 +460,6 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 var toolTreePaths = []string{
 	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/etc", "/nix", "/opt",
 }
-
-// procMode is how a bwrap sandbox gets its /proc. The zero value is the one
-// dats asks for first; procShared is the fallback the probe falls back TO, and
-// it is only ever reached because the kernel refused the other one.
-type procMode int
-
-const (
-	// procFresh mounts a private procfs for the sandbox's own PID namespace.
-	procFresh procMode = iota
-	// procShared binds the procfs this process already has, read-only,
-	// because a fresh one cannot be mounted here. See procSharedReason.
-	procShared
-)
-
-// procSharedReason is what the fallback costs, stated where it is chosen.
-//
-// A container runtime masks parts of /proc: docker binds /dev/null over
-// /proc/kcore and friends, mounts a size-0 tmpfs over /proc/acpi and friends,
-// and read-only binds /proc/sys and /proc/sysrq-trigger. Those mounts become
-// MNT_LOCKED the instant bwrap unshares a user namespace, and the kernel
-// refuses a fresh procfs while any locked mount obscures the procfs already
-// visible there -- mount_too_revealing in fs/namespace.c, reported by bwrap as
-// "Can't mount proc on /newroot/proc: Operation not permitted". Nothing inside
-// the container can clear those mounts: unmounting them needs CAP_SYS_ADMIN in
-// the init user namespace, which is exactly what a container does not have.
-//
-// So the choice in a masked container is this fallback or no sandbox at all.
-// Measured, both shapes, against docker's own mask set:
-//
-//	property                          fresh   shared
-//	its own PID namespace             yes     yes
-//	can signal processes outside      no      no
-//	host filesystem writable          no      no
-//	/proc/self/exe, /proc/self/fd     yes     yes
-//	hides the other processes         yes     NO
-//
-// The sandbox keeps every containment property and loses concealment: a
-// command can SEE the process list of the container dats is running in, and
-// cannot touch it. Nothing about the container's own confinement changes --
-// this asks the kernel for strictly less, never for more.
-const procSharedReason = "a fresh procfs is refused here (the container's /proc is masked), " +
-	"so the sandbox binds the existing /proc read-only: it keeps its own PID namespace and " +
-	"cannot signal or write outside, but CAN see this container's process list"
 
 // bwrapIsolationArgs are the backend's fixed arguments, shared by the probe
 // and by every sandboxed command:

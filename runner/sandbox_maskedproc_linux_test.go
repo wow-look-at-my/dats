@@ -41,17 +41,39 @@ func TestBwrapFallsBackWhenTheKernelRefusesAPrivateProcfs(t *testing.T) {
 	// A bare namespace first: where the kernel denies unprivileged user
 	// namespaces there is nothing to test, and a failure here would report
 	// that as a fallback bug.
-	if err := exec.Command("unshare", "--user", "--map-root-user", "--mount", "true").Run(); err != nil {
+	if err := exec.Command("unshare", append(containerNamespace, "true")...).Run(); err != nil {
 		t.Skipf("unprivileged user namespaces unavailable here: %v", err)
 	}
 
-	cmd := exec.Command("unshare", "--user", "--map-root-user", "--mount",
+	// A marker the child must NOT be able to see. It lives out here, in this
+	// process's PID namespace, which is what the container's is nested in.
+	marker := exec.Command("sleep", "600")
+	require.Nil(t, marker.Start())
+	defer func() { _ = marker.Process.Kill() }()
+
+	args := append(append([]string{}, containerNamespace...),
 		exe, "-test.run=^"+t.Name()+"$", "-test.v")
-	cmd.Env = append(os.Environ(), maskedProcHelperEnv+"=1")
+	cmd := exec.Command("unshare", args...)
+	cmd.Env = append(os.Environ(), maskedProcHelperEnv+"=1",
+		outsidePIDEnv+"="+strconv.Itoa(marker.Process.Pid))
 	out, err := cmd.CombinedOutput()
 	assert.Nil(t, err, "masked-/proc child failed:\n%s", out)
 	assert.Contains(t, string(out), "PASS", "child output:\n%s", out)
 }
+
+// containerNamespace is what a container runtime gives a hook, reproduced with
+// unshare(1): its own user, mount and PID namespaces, and -- load-bearing --
+// its own procfs for that PID namespace.
+//
+// --pid --fork --mount-proc are not decoration. A masked /proc is not on its
+// own evidence that a bind of it is safe, so probeBwrap refuses the fallback
+// unless the procfs is provably scoped. Without these the harness would model
+// a masked host rather than a container, and would be REFUSED -- correctly.
+var containerNamespace = []string{"--user", "--map-root-user", "--mount", "--pid", "--fork", "--mount-proc"}
+
+// outsidePIDEnv carries a pid living outside the namespace, which the sandbox
+// must never be able to see.
+const outsidePIDEnv = "DATS_TEST_OUTSIDE_PID"
 
 // maskedProcChild runs inside the user+mount namespace.
 func maskedProcChild(t *testing.T) {
@@ -105,6 +127,31 @@ func maskedProcChild(t *testing.T) {
 	self, err := run("readlink /proc/self/exe")
 	assert.Nil(t, err, "/proc must be usable inside the sandbox: %s", self)
 	assert.NotEqual(t, "", self, "/proc/self must resolve, or bash and Go break in ways that look unrelated")
+
+	// THE point of the fallback's gate. Concealment inside the container is
+	// what it trades away; the process table OUTSIDE the container is not its
+	// to trade, and a bind of a properly scoped procfs cannot reach it.
+	outside := os.Getenv(outsidePIDEnv)
+	require.NotEqual(t, "", outside, "the parent must name a pid living outside this namespace")
+	seen, err := run("test -e /proc/" + outside + " && echo VISIBLE || echo hidden")
+	assert.Nil(t, err)
+	assert.Equal(t, "hidden", seen,
+		"a process outside the container is visible from inside the sandbox (pid %s): the "+
+			"read-only /proc bind must never reach past the container's own PID namespace", outside)
+
+	// Every pid it CAN see has to be one of the container's own. Asserted as a
+	// ceiling on the pid VALUES rather than on their count: the sandbox command
+	// spawns container processes of its own (bwrap, bash, ls), so counting on
+	// each side of the boundary races with the thing being counted. A pid
+	// numbered above the container's own highest is one this namespace never
+	// issued.
+	highest, err := run("ls -d /proc/[0-9]* | sed 's@/proc/@@' | sort -n | tail -1")
+	assert.Nil(t, err)
+	got, err := strconv.Atoi(strings.TrimSpace(highest))
+	require.Nil(t, err, "expected a pid, got %q", highest)
+	assert.Less(t, got, 1000,
+		"the sandbox can see pid %d: a container's PID namespace numbers from 1, so a pid "+
+			"this high came from outside it and the bind is reaching past the container", got)
 
 	denied, err := run("touch /usr/dats-pwned 2>&1 || true")
 	assert.Nil(t, err)
