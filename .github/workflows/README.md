@@ -57,24 +57,7 @@ fatal on `wow-linux`, which is where consumers' CI actually runs.
 A sandbox exercised only under privilege is not exercised. This job is the
 difference between "dats' CI is green" and "dats sandboxes".
 
-### Why it runs a script instead of the action directly
-
-Bubblewrap needs an unprivileged user namespace, and the slim runner grants one
-through its hook's `seccomp.userns` opt-in. dats cannot set a container's
-seccomp profile, so on a fleet where that opt-in is not deployed, this job could
-not pass whatever dats did — it was an assertion about the FLEET wearing a dats
-job's name, and it sat red on master for exactly that reason.
-
-`.github/scripts/fleet-sandbox.sh` asserts what dats owes in either state:
-
-- **namespace available** — run the suite. Unchanged, full strength.
-- **namespace refused** — dats must fail CLOSED: non-zero, naming the refusal
-  and naming `--no-sandbox`. A dats that ran the suite unsandboxed here, or died
-  without saying why, fails the job. All three of those rejections are exercised
-  against stub binaries before the script ships.
-
-That is not the masked-`/proc` fallback going ungated. The fallback is pinned
-against a real kernel refusal by `runner/sandbox_maskedproc_linux_test.go` and
-`runner/sandbox_procgate_linux_test.go` in the `test` job, on every push. What
-this job adds is end-to-end coverage on the fleet a consumer actually uses, and
-it starts adding it again the moment the opt-in deploys — no change needed here.
+It depends on the fleet, so read a failure carefully before blaming the code:
+the slim runner needs its `seccomp.userns` opt-in DEPLOYED to create a user
+namespace at all, and while the hooks tree that declares it is held, bwrap is
+refused here for a reason no change in this repo can fix.
