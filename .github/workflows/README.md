@@ -80,6 +80,18 @@ Two assertions stop the job drifting into an easier test:
   a private procfs the mask would have prevented — the fallback under test has
   to have actually run.
 
+### The two user-namespace sysctls point opposite ways
+
+Whether an unprivileged process may make a user namespace is a HOST setting, and
+a container inherits the host's answer — so this job has to clear it outside the
+container before it starts one. Two knobs govern it and they read alike while
+meaning the reverse of each other: `apparmor_restrict_unprivileged_userns` is a
+restriction (1 = blocked, clear to 0), `unprivileged_userns_clone` is a
+permission (1 = allowed). Writing 0 to both denies the namespace, which is
+exactly what this job did on its first run.
+`.github/scripts/allow-unprivileged-userns.sh` owns both, and `action.yml` calls
+the same file, so the polarity is written down once.
+
 ### Why unprivileged at all
 
 `self-hosted-sandbox` runs on the dind pool, whose container is `--privileged`

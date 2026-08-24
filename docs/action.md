@@ -29,6 +29,18 @@ sysctl nor the older `kernel.unprivileged_userns_clone` (both report "no such
 file"); there the user namespace comes from the hook's `seccomp.userns` opt-in,
 which is deployment state, not something a step can set.
 
+The two sysctls have **opposite polarity**, and the step got this wrong for as
+long as it existed. `apparmor_restrict_unprivileged_userns` is a restriction: 1
+means blocked, so it is cleared to 0. `unprivileged_userns_clone` is a
+permission: 1 means allowed. A loop that wrote 0 to both switched the second one
+OFF, denying the namespace the step was called to allow. On an ubuntu-24.04
+runner, where both knobs exist and both start at 1, that turned a working host
+into one where bwrap reported "No permissions to create new namespace" —
+_caused_ by the step meant to prevent it, on the one platform where the step has
+anything to do. `.github/scripts/allow-unprivileged-userns.sh` now owns both
+knobs, in the polarity each actually uses, and both the action and this repo's
+own CI call that one file.
+
 So the step clears what is clearable and stops there. **It deliberately does
 not decide whether a sandbox is possible.** It used to, by running a bwrap
 command of its own and failing the job when that command failed — and that

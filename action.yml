@@ -37,19 +37,10 @@ runs:
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
     # Clears what a step can clear, and deliberately does NOT judge the result -- docs/action.md.
-    - name: Clear the kernel's user-namespace restriction where one exists (Linux)
+    - name: Allow an unprivileged user namespace where the kernel gates one (Linux)
       if: runner.os == 'Linux'
       shell: bash
-      run: |
-        for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone; do
-          path="/proc/sys/${knob//./\/}"
-          if [ -f "$path" ]; then
-            echo "$knob = $(cat "$path"), clearing"
-            sudo sysctl -w "$knob=0" || true
-          else
-            echo "$knob: not present on this kernel"
-          fi
-        done
+      run: "${{ github.action_path }}/.github/scripts/allow-unprivileged-userns.sh"
 
     - name: Run dats
       shell: bash

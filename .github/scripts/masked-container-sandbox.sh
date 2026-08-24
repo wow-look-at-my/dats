@@ -25,20 +25,12 @@ set -euo pipefail
 SUITE="${1:-examples/sandbox.dats}"
 IMAGE="${DATS_SANDBOX_TEST_IMAGE:-debian:stable-slim}"
 
-echo "== host: clear the AppArmor restriction on unprivileged user namespaces"
-# ubuntu-24.04 sets this to 1, and it is HOST-WIDE: a container inherits the
-# refusal, so bwrap would fail inside one for a reason that has nothing to do
-# with the container's own configuration. The runner's own CI clears the same
-# knob (README.md "test: installing bubblewrap and clearing the restriction").
-for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone; do
-	path="/proc/sys/${knob//./\/}"
-	if [ -f "$path" ]; then
-		echo "   $knob = $(cat "$path"), clearing"
-		sudo sysctl -w "$knob=0" >/dev/null || true
-	else
-		echo "   $knob: not present on this kernel"
-	fi
-done
+echo "== host: let an unprivileged process create a user namespace"
+# The setting is HOST-WIDE and a container inherits it, so bwrap fails inside
+# one for a reason the container itself cannot show. Two knobs govern it and
+# they read alike while meaning the reverse of each other, which is why one
+# shared script owns both -- see its header.
+"$(dirname "$0")/allow-unprivileged-userns.sh"
 
 echo "== the container the suite will run in"
 # No --privileged and no added capability. What is relaxed is the two MAC
