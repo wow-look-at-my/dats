@@ -18,25 +18,31 @@
 # which is the basis of a rootless sandbox rather than a hole in one.
 set -euo pipefail
 
-# name=value, in the polarity each knob actually uses.
-for pair in \
-	"kernel.apparmor_restrict_unprivileged_userns=0" \
-	"kernel.unprivileged_userns_clone=1"; do
-	knob="${pair%%=*}"
-	want="${pair#*=}"
-	path="/proc/sys/${knob//./\/}"
-	if [ ! -f "$path" ]; then
+if ! command -v sysctl >/dev/null 2>&1; then
+	echo "   sysctl is not installed, so neither knob can be read or set here"
+	exit 0
+fi
+
+# $1 is the sysctl. $2 is the value that means "allowed" FOR THAT KNOB.
+allow() {
+	knob=$1
+	want=$2
+
+	if ! before=$(sysctl -n "$knob" 2>/dev/null); then
 		echo "   $knob: not present on this kernel"
-		continue
+		return
 	fi
-	before="$(cat "$path")"
 	if [ "$before" = "$want" ]; then
 		echo "   $knob = $before already"
-		continue
+		return
 	fi
+
 	# Best-effort: an unprivileged runner cannot write these, and that is not
 	# on its own a reason to fail -- the caller's own probe decides whether a
 	# sandbox can actually be built.
 	sudo -n sysctl -w "$knob=$want" >/dev/null 2>&1 || true
-	echo "   $knob: $before -> $(cat "$path") (wanted $want)"
-done
+	echo "   $knob: $before -> $(sysctl -n "$knob") (wanted $want)"
+}
+
+allow kernel.apparmor_restrict_unprivileged_userns 0
+allow kernel.unprivileged_userns_clone 1
