@@ -22,8 +22,7 @@ outputs:
 runs:
   using: composite
   steps:
-    # os/arch default to the runner's own platform (buildhost-download reads
-    # RUNNER_OS/RUNNER_ARCH when neither is given).
+    # os/arch default to the runner's own platform -- docs/action.md.
     - name: Download dats
       id: download
       uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
@@ -31,73 +30,26 @@ runs:
         project: dats
         version: ${{ inputs.version }}
 
-    # dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on
-    # macOS, docker otherwise) -- real isolation, not a formality, so a caller
-    # should never have to reach for --no-sandbox just to work around
-    # infrastructure. Skips on non-Linux (macOS's seatbelt sandbox needs
-    # neither of these steps).
+    # A caller must never need --no-sandbox to work around us -- docs/action.md.
     - name: Install bubblewrap (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
 
-    # bwrap's user namespace can be blocked two different ways. Ubuntu 24.04's
-    # AppArmor restriction (kernel.apparmor_restrict_unprivileged_userns) is a
-    # real kernel sysctl a workflow step can clear -- confirmed on this repo's
-    # own GitHub-hosted CI runner. The org's self-hosted wow-linux fleet has
-    # neither that sysctl nor the older kernel.unprivileged_userns_clone (both
-    # report "no such file").
-    #
-    # This probe must build the SAME sandbox dats builds, which means passing
-    # --unshare-user. It did not, and that mattered: creating a PID namespace
-    # directly needs CAP_SYS_ADMIN, while creating one inside a user namespace
-    # does not, so a probe without --unshare-user fails on every unprivileged
-    # container and reports the runner unusable before dats is ever run. The
-    # conclusion previously recorded here -- that the wow-linux fleet was
-    # blocked by its seccomp profile and that this was "NOT a capability" --
-    # was drawn from that broken probe. Measured inside a wow-linux job
-    # container: `unshare --user` exits 0, `unshare --pid` and `unshare
-    # --mount` each fail EPERM, and a tmpfs mount inside a user namespace
-    # succeeds. It was a capability, and nesting removes the need for it.
-    #
-    # So: try the sysctl fix where a sysctl exists, then fall through to dats'
-    # own docker backend (bwrap -> seatbelt -> docker is dats' auto order) when
-    # docker is usable. Only fail when NEITHER works -- a caller whose job
-    # silently ran unsandboxed would trade real isolation for green CI, and
-    # this is the one place that catches it before dats ever runs.
-    - name: Make sure a real sandbox backend is usable (Linux)
+    # Clears what a step can clear, and deliberately does NOT judge the result -- docs/action.md.
+    - name: Clear the kernel's user-namespace restriction where one exists (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        if bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true; then
-          echo "bwrap works, no further action needed"
-          exit 0
-        fi
-
-        echo "bwrap blocked; trying known kernel-level fixes"
         for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone; do
           path="/proc/sys/${knob//./\/}"
           if [ -f "$path" ]; then
-            echo "$knob = $(cat "$path")"
+            echo "$knob = $(cat "$path"), clearing"
             sudo sysctl -w "$knob=0" || true
           else
             echo "$knob: not present on this kernel"
           fi
         done
-
-        if bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true; then
-          echo "bwrap works after clearing the restriction"
-          exit 0
-        fi
-
-        echo "bwrap still blocked -- likely the runner's own container lacks the capability, not a kernel sysctl"
-        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-          echo "docker is available; dats will fall back to it automatically"
-          exit 0
-        fi
-
-        echo "::error::No usable sandbox backend on this runner: bwrap is blocked and docker is unavailable. Use a runner with a docker daemon (e.g. CI_RUNNER_DIND) instead."
-        exit 1
 
     - name: Run dats
       shell: bash

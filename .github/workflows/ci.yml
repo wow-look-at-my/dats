@@ -16,27 +16,15 @@ jobs:
       contents: write
       actions: read
       checks: read
-      # Publishing records what buildhost stored on the org's linked
-      # artifacts page and registers a GitHub Deployment for the release;
-      # without these the publish step fails (HTTP 404 / "Resource not
-      # accessible by integration"). Job-level permissions REPLACE
-      # workflow-level ones, so they belong here alongside the rest.
+      # Publishing needs both -- README.md "test: artifact-metadata and deployments".
       artifact-metadata: write
       deployments: write
     steps:
       - uses: actions/checkout@v4
-      # The sandbox integration tests skip themselves when no backend is
-      # usable, so this step is what makes them mean something here: the
-      # docker backend uses the runner's own daemon, while bubblewrap has to
-      # be installed AND allowed a user namespace -- ubuntu-24.04 denies that
-      # by default, which silently turned every bwrap test into a skip. The
-      # probe below is the gate: an unusable bwrap fails the build with its
-      # own error, before a single test runs.
+      # Without this the bwrap tests SKIP -- README.md "test: installing bubblewrap and clearing the restriction".
       - run: |
           sudo apt-get update && sudo apt-get install -y bubblewrap
-          # Logged before it is cleared: this records, per run, whether the
-          # restriction was actually in force -- the reason the next line
-          # exists at all. A kernel without the knob prints nothing.
+          # Logged before it is cleared, so each run records whether it was in force.
           echo "apparmor_restrict_unprivileged_userns before: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo '<absent>')"
           bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true \
             && echo "bwrap works without clearing the restriction" \
@@ -59,12 +47,7 @@ jobs:
           schema: schema.json
           files: testdata/schema/*.json
 
-  # Consumers reference this repo's own action.yml (wow-look-at-my/dats@master)
-  # to get real sandboxing on the org's self-hosted fleet -- a class of runner
-  # this repo's other jobs never touch (they're all ubuntu-latest). This uses
-  # the dind pool the way a real consumer does; the container is privileged, so
-  # dats' bwrap -> seatbelt -> docker order lands on bwrap. Catches a
-  # regression in either the action or a backend before a consumer's CI does.
+  # This repo's own action, on the fleet a consumer uses -- README.md "self-hosted-sandbox".
   self-hosted-sandbox:
     runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
     steps:
@@ -73,19 +56,7 @@ jobs:
         with:
           args: test examples/sandbox.dats
 
-  # The SAME suite on the UNPRIVILEGED pool -- the job that would have caught
-  # every sandbox bug this repo has shipped.
-  #
-  # The job above runs on the dind pool, whose container is --privileged and so
-  # holds CAP_SYS_ADMIN. bwrap works there no matter what: it can create the
-  # PID and mount namespaces directly, and it can mount procfs from the host.
-  # That kept it green through TWO broken states -- one with no --unshare-user
-  # at all, one applying --proc before --unshare-pid -- because neither mistake
-  # costs anything when you already hold the capability. Both were immediately
-  # fatal on wow-linux, which is where consumers' CI actually runs.
-  #
-  # A sandbox exercised only under privilege is not exercised. This job is the
-  # difference between "dats' CI is green" and "dats sandboxes".
+  # A sandbox exercised only under privilege is not exercised -- README.md "self-hosted-sandbox-unprivileged".
   self-hosted-sandbox-unprivileged:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
