@@ -62,11 +62,26 @@ concealment. Only the `/proc` argument changes: `--proc /proc` becomes
 | `/proc/sysrq-trigger`, `/proc/sys` writable | no | no |
 | `/proc/self/exe`, `/proc/self/fd`, bash `<(…)` | yes | yes |
 | hides the other processes | yes | **no** |
+| reads another process's `environ`, `mem`, `maps`, `cwd`, fd targets | no | no |
 
-The one loss is concealment, and it is bounded by the container: what a command
-can see is the process list of the container dats is running in, which it
-cannot signal or write to. The fallback asks the kernel for strictly less than
-the private procfs did — it adds no reach of any kind.
+The one loss is concealment, in ONE direction: a command can see the other
+processes of the container dats runs in. It cannot be seen by them, and the
+container's `/proc` never contained the host's processes to begin with — docker
+gave the container its own PID namespace long before bwrap ran.
+
+What "see" covers is only `cmdline`, `comm` and `status`. Everything gated on
+ptrace access stays denied, measured: `environ`, `mem`, `maps`, `stack`, `io`
+and `cwd` all return EPERM, and `/proc/<pid>/fd` lists its numbers while every
+link reads back empty. `--unshare-user` is what does it — the command holds
+capabilities only in its own user namespace, and the check wants them in the
+TARGET's. So a sibling's secrets are not reachable, which is the question this
+table exists to answer.
+
+Signalling is refused by the PID namespace, separately: the pids it reads are
+the container's, and they name nothing in the namespace it can signal into.
+
+The fallback asks the kernel for strictly less than the private procfs did — it
+adds no reach of any kind.
 
 ## How it is chosen, and how it is announced
 
