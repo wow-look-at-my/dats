@@ -59,8 +59,19 @@ jobs:
   # A sandbox exercised only under privilege is not exercised -- README.md "self-hosted-sandbox-unprivileged".
   self-hosted-sandbox-unprivileged:
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    needs: test
     steps:
       - uses: actions/checkout@v4
-      - uses: ./
+      # THIS commit's binary, not the published one -- README.md "self-hosted-sandbox-unprivileged".
+      - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          args: test examples/sandbox.dats
+          name: go-build
+          path: build
+      - name: Stage the binary this commit built
+        run: |
+          if [ -f build/dats_linux_amd64 ]; then install -m 0755 build/dats_linux_amd64 build/dats; fi
+          chmod +x build/dats
+          ./build/dats --version
+      - name: Install bubblewrap
+        run: command -v bwrap >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y bubblewrap)
+      - run: ./build/dats test examples/sandbox.dats

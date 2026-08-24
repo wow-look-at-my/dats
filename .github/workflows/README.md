@@ -57,7 +57,27 @@ fatal on `wow-linux`, which is where consumers' CI actually runs.
 A sandbox exercised only under privilege is not exercised. This job is the
 difference between "dats' CI is green" and "dats sandboxes".
 
-It depends on the fleet, so read a failure carefully before blaming the code:
-the slim runner needs its `seccomp.userns` opt-in DEPLOYED to create a user
-namespace at all, and while the hooks tree that declares it is held, bwrap is
-refused here for a reason no change in this repo can fix.
+### It runs THIS commit's binary, not the published one
+
+`uses: ./` downloads the newest dats from buildhost — the binary on the DEFAULT
+BRANCH. On a pull request that is master's dats, so this job said nothing
+whatsoever about the change under review. It was possible to alter every line of
+the sandbox and watch this job pass or fail on a binary that did not contain the
+change; the masked-`/proc` fallback shipped that way, exercised here by nothing.
+
+So it restores the `test` job's `go-build` hand-off and runs `build/dats`. The
+job above keeps using `uses: ./`, deliberately: that one's purpose is the
+CONSUMER path — the action, the download, the whole thing a caller references —
+and it is right for it to run what a caller would get.
+
+`./build/dats --version` runs before the suite. A missing or unusable hand-off
+must fail there, naming itself, rather than surfacing as a sandbox error.
+
+### It depends on the fleet
+
+The slim runner needs its `seccomp.userns` opt-in DEPLOYED to create a user
+namespace at all. While the hooks tree that declares it is held, bwrap is
+refused here before dats reaches a sandbox, and no change in this repo can fix
+that — read a failure with that in mind before blaming the code. The job is
+supposed to be red then: nothing is being isolated, and a green that said
+otherwise would be a lie.
