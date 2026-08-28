@@ -45,6 +45,12 @@ func ValidateSSHTarget(target string) error {
 	return nil
 }
 
+// remoteJoin builds a path on the target. Remote paths are always POSIX,
+// and callers holding a variable named "path" cannot reach the package.
+func remoteJoin(base string, elem ...string) string {
+	return path.Join(append([]string{base}, elem...)...)
+}
+
 // sshControlPathMax bounds the socket path: macOS stops at 104 bytes.
 const sshControlPathMax = 100
 

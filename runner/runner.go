@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -206,7 +205,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	// a real directory whether or not the file declares one.
 	hookSharedDir := sharedDir
 	if r.SSH != nil && result.SetupFailure == nil {
-		hookSharedDir = path.Join(r.remoteBase, sharedDirName)
+		hookSharedDir = remoteJoin(r.remoteBase, sharedDirName)
 		if err := r.SSH.Push(ctx, sharedDir, hookSharedDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: err.Error()}
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
