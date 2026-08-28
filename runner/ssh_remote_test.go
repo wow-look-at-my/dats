@@ -30,23 +30,22 @@ func requireSSH(t *testing.T) *SSHConfig {
 	return c
 }
 
-// writeDatsFile writes body to a .dats file and returns its path.
-func writeDatsFile(t *testing.T, body string) string {
+// writeSuite writes body to a .dats file in dir and returns its path.
+func writeSuite(t *testing.T, dir, body string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "suite.dats")
-	require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-	return path
+	suite := filepath.Join(dir, "suite.dats")
+	require.NoError(t, os.WriteFile(suite, []byte(body), 0o644))
+	return suite
 }
 
-// runRemote runs one suite against the target and returns the result plus
-// the formatted output.
-func runRemote(t *testing.T, ssh *SSHConfig, body string) (*FileResult, string) {
+// runRemoteSuite runs body on the target and returns the result plus output.
+func runRemoteSuite(t *testing.T, ssh *SSHConfig, body string) (*FileResult, string) {
 	t.Helper()
 	var out bytes.Buffer
 	r := NewRunner(&out, false, false, "")
 	r.SSH = ssh
-	res, err := r.RunFile(context.Background(), writeDatsFile(t, body))
-	require.NoError(t, err)
+	res, err := r.RunFile(context.Background(), writeSuite(t, t.TempDir(), body))
+	require.NoError(t, err, "output:\n%s", out.String())
 	return res, out.String()
 }
 
@@ -54,40 +53,40 @@ func runRemote(t *testing.T, ssh *SSHConfig, body string) (*FileResult, string) 
 // over ssh, its fixtures arrive, and its output files come home.
 func TestSSHRunsCommandsOnTheTarget(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "tests:\n"+
+	res, out := runRemoteSuite(t, ssh, "tests:\n"+
 		"\t- desc: fixtures arrive and outputs come home\n"+
 		"\t  cmd: cat {inputs.in.txt} > {outputs.out.txt}; echo done\n"+
 		"\t  inputs:\n"+
-		"\t    files:\n"+
-		"\t      in.txt: hello remote\n"+
+		"\t\tfiles:\n"+
+		"\t\t\tin.txt: hello remote\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - done\n"+
-		"\t    files:\n"+
-		"\t      out.txt:\n"+
-		"\t        match:\n"+
-		"\t          - hello remote\n")
+		"\t\tstdout:\n"+
+		"\t\t\t- done\n"+
+		"\t\tfiles:\n"+
+		"\t\t\tout.txt:\n"+
+		"\t\t\t\tmatch:\n"+
+		"\t\t\t\t\t- hello remote\n")
 
 	require.True(t, res.Ok(), "output:\n%s", out)
 	assert.Contains(t, out, "ssh", "the header must announce where commands ran")
 }
 
-// TestSSHReportsTheRemoteHostname proves the command really executed on the
-// other side rather than falling back to this machine.
-func TestSSHReportsTheRemoteHostname(t *testing.T) {
+// TestSSHRunsOnTheOtherMachine proves the command really went through the
+// transport rather than falling back to running here.
+func TestSSHRunsOnTheOtherMachine(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "tests:\n"+
-		"\t- desc: the command runs on the target\n"+
-		"\t  cmd: 'echo ran-on:$(uname -s)'\n"+
+	res, out := runRemoteSuite(t, ssh, "tests:\n"+
+		"\t- desc: the command runs through ssh\n"+
+		"\t  cmd: echo ran-on-$(uname -s)\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - 'ran-on:'\n")
+		"\t\tstdout:\n"+
+		"\t\t\t- ran-on-\n")
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
 func TestSSHCarriesSharedFixturesAndHooks(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "shared:\n"+
+	res, out := runRemoteSuite(t, ssh, "shared:\n"+
 		"\tfiles:\n"+
 		"\t\tcfg.txt: shared-value\n"+
 		"setup: test -f {shared.cfg.txt}\n"+
@@ -96,71 +95,70 @@ func TestSSHCarriesSharedFixturesAndHooks(t *testing.T) {
 		"\t- desc: a test reads the shared fixture\n"+
 		"\t  cmd: cat {shared.cfg.txt}\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - shared-value\n")
+		"\t\tstdout:\n"+
+		"\t\t\t- shared-value\n")
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
 func TestSSHCarriesEnvAndStdin(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "tests:\n"+
+	res, out := runRemoteSuite(t, ssh, "tests:\n"+
 		"\t- desc: env and stdin reach the remote command\n"+
-		"\t  cmd: 'cat; echo env=$MY_VAR'\n"+
+		"\t  cmd: cat; echo env=$MY_VAR\n"+
 		"\t  inputs:\n"+
-		"\t    stdin: piped-text\n"+
-		"\t    env:\n"+
-		"\t      MY_VAR: my-value\n"+
+		"\t\tstdin: piped-text\n"+
+		"\t\tenv:\n"+
+		"\t\t\tMY_VAR: my-value\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - piped-text\n"+
-		"\t      - env=my-value\n")
+		"\t\tstdout:\n"+
+		"\t\t\t- piped-text\n"+
+		"\t\t\t- env=my-value\n")
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
-// TestSSHKeepsStderrSeparateFromStdout is what the -T flag buys: a pty would
-// merge the two streams and rewrite newlines, breaking every stderr
-// assertion and every byte-exact golden.
+// TestSSHKeepsStderrSeparateFromStdout is what -T buys: a pty would merge
+// the two streams and rewrite newlines, breaking every stderr assertion and
+// every byte-exact golden.
 func TestSSHKeepsStderrSeparateFromStdout(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "tests:\n"+
+	res, out := runRemoteSuite(t, ssh, "tests:\n"+
 		"\t- desc: streams stay separate\n"+
-		"\t  cmd: 'echo to-stdout; echo to-stderr >&2'\n"+
+		"\t  cmd: echo to-stdout; echo to-stderr >&2\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - to-stdout\n"+
-		"\t    '!stdout':\n"+
-		"\t      - to-stderr\n"+
-		"\t    stderr:\n"+
-		"\t      - to-stderr\n")
+		"\t\tstdout:\n"+
+		"\t\t\t- to-stdout\n"+
+		"\t\t!stdout:\n"+
+		"\t\t\t- to-stderr\n"+
+		"\t\tstderr:\n"+
+		"\t\t\t- to-stderr\n")
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
 func TestSSHSurfacesARemoteExitCode(t *testing.T) {
 	ssh := requireSSH(t)
-	res, out := runRemote(t, ssh, "tests:\n"+
+	res, out := runRemoteSuite(t, ssh, "tests:\n"+
 		"\t- desc: a remote exit code comes back\n"+
 		"\t  cmd: exit 3\n"+
 		"\t  exit: 3\n")
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
-// TestSSHCopyFixtureKeepsItsExecutableBit pins the one property a plain file
-// copy would lose, end to end rather than only in the tar unit test.
+// TestSSHCopyFixtureKeepsItsExecutableBit pins end to end the one property a
+// plain file copy would lose.
 func TestSSHCopyFixtureKeepsItsExecutableBit(t *testing.T) {
 	ssh := requireSSH(t)
 	dir := t.TempDir()
-	script := filepath.Join(dir, "hello.sh")
-	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\necho from-script\n"), 0o755))
-	suite := filepath.Join(dir, "suite.dats")
-	require.NoError(t, os.WriteFile(suite, []byte("tests:\n"+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.sh"),
+		[]byte("#!/bin/sh\necho from-script\n"), 0o755))
+	suite := writeSuite(t, dir, "tests:\n"+
 		"\t- desc: a copied script stays executable\n"+
-		"\t  cmd: '{inputs.hello.sh}'\n"+
+		"\t  cmd: \"{inputs.hello.sh}\"\n"+
 		"\t  inputs:\n"+
-		"\t    copy:\n"+
-		"\t      hello.sh: hello.sh\n"+
+		"\t\tcopy:\n"+
+		"\t\t\thello.sh: hello.sh\n"+
 		"\t  outputs:\n"+
-		"\t    stdout:\n"+
-		"\t      - from-script\n"), 0o644))
+		"\t\tstdout:\n"+
+		"\t\t\t- from-script\n")
 
 	var out bytes.Buffer
 	r := NewRunner(&out, false, false, "")
@@ -170,18 +168,17 @@ func TestSSHCopyFixtureKeepsItsExecutableBit(t *testing.T) {
 	require.True(t, res.Ok(), "output:\n%s", out.String())
 }
 
-// TestSSHNormalizesRemotePathsInSnapshots is the property that keeps golden
-// files portable: a remote command prints remote paths, and the goldens must
-// come out byte-identical to a local run's.
+// TestSSHNormalizesRemotePathsInSnapshots keeps golden files portable: a
+// remote command prints remote paths, and the goldens must come out
+// byte-identical to a local run's.
 func TestSSHNormalizesRemotePathsInSnapshots(t *testing.T) {
 	ssh := requireSSH(t)
-	body := "tests:\n" +
-		"\t- desc: paths normalize\n" +
-		"\t  cmd: 'echo out={outputs.o.txt}'\n" +
-		"\t  outputs:\n" +
-		"\t    snapshot: true\n"
+	suite := writeSuite(t, t.TempDir(), "tests:\n"+
+		"\t- desc: paths normalize\n"+
+		"\t  cmd: echo out={outputs.o.txt}\n"+
+		"\t  outputs:\n"+
+		"\t\tsnapshot: true\n")
 
-	suite := writeDatsFile(t, body)
 	var out bytes.Buffer
 	r := NewRunner(&out, false, false, "")
 	r.SSH = ssh
