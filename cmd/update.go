@@ -16,5 +16,8 @@ var updateGoldens bool
 // default: ordinary runs compare against goldens and fail on mismatch.
 func registerUpdateFlag(flags *pflag.FlagSet) {
 	flags.BoolVar(&updateGoldens, "update", false,
-		"rewrite snapshot golden files from actual output instead of failing (see `dats docs format`)")
+		// No backticks in a usage string: pflag reads the first backticked
+		// word as the flag's value placeholder, so a bool flag would render
+		// as if it took an argument.
+		"rewrite snapshot golden files from actual output instead of failing (see: dats docs format)")
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,6 +60,13 @@ func TestHelpRejectsUnknownTopic(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown help topic "nonsense"`)
 	assert.Contains(t, err.Error(), "dats docs")
+}
+
+func TestFlagUsageStringsHaveNoBackticks(t *testing.T) {
+	rootCmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		assert.NotContains(t, f.Usage, "`",
+			"--%s: pflag reads a backticked word as the flag's value placeholder", f.Name)
+	})
 }
 
 func TestRootHelpFlagMentionsTheDocs(t *testing.T) {
