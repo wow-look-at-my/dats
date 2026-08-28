@@ -212,8 +212,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
 	}
-	// hookSharedDir is where a hook SEES shared/. The push is unconditional:
-	// {shared.X} must resolve whether or not the file declares the block.
+	// hookSharedDir is where a hook SEES shared/; the push is unconditional.
 	hookSharedDir := sharedDir
 	if r.ssh != nil && result.SetupFailure == nil {
 		hookSharedDir = remoteJoin(r.remoteBase, sharedDirName)

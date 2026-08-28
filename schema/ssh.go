@@ -29,8 +29,7 @@ var errSSHLocal = fmt.Errorf("ssh: a file cannot move a command onto the machine
 // errSSHBare is its counterpart: a file stating a target it did not name.
 var errSSHBare = fmt.Errorf("ssh: name the target ([user@]host); whether a run goes remote at all is --ssh")
 
-// sshTargetPattern allows braces so a PER-TEST target can hold {matrix.X};
-// the runner re-checks the substituted text against the stricter set.
+// sshTargetPattern allows braces so a PER-TEST target can hold {matrix.X}.
 var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]{}-]+$`)
 
 // UnmarshalYAML decodes the ssh block: a bare target string. There is

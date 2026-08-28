@@ -1,16 +1,7 @@
 package runner
 
-// Per-test ssh targets. A file's own target is HOME: shared/, setup and
-// teardown only ever run there. A test that overrides gets its own temp
-// directory on its own host, plus a push-only mirror of shared/ so
-// {shared.X} still resolves.
-//
-// The wrinkle is worth stating plainly: SETUP PREPARES ONLY THE HOME HOST. A
-// file whose setup starts a service has prepared one machine, and an
-// overriding test runs against an unprepared one. The alternative -- setup
-// once per distinct target -- silently redefines "runs once per file",
-// breaks every non-idempotent setup, and makes teardown's failure semantics
-// ambiguous across N hosts. A documented gap beats a redefined promise.
+// Per-test ssh targets; the file's own stays HOME. SETUP PREPARES ONLY THAT
+// HOST -- docs/file-format.md#per-test-override says why.
 
 import (
 	"context"
@@ -28,9 +19,8 @@ type remoteScope struct {
 // scopeFor returns the connection and remote base one instance runs against.
 // A nil connection means the instance runs here.
 func (r *Runner) scopeFor(ctx context.Context, spec *schema.SSHSpec, sharedDir string) (*SSHConfig, string, error) {
-	// No remote run at all: a per-test target cannot start one, because
-	// ParseFile refuses it without a file-level target, and that target is
-	// what would have set r.ssh.
+	// A per-test target cannot start a remote run: ParseFile refuses one
+	// without the file-level target that sets r.ssh.
 	if r.ssh == nil {
 		return nil, "", nil
 	}
@@ -57,8 +47,7 @@ func (r *Runner) altScope(ctx context.Context, spec *schema.SSHSpec, sharedDir s
 		return scope, nil
 	}
 
-	// The override goes through the same approval as the file's own target:
-	// it is still a file naming a host.
+	// An override needs its own approval: it is still a file naming a host.
 	cfg, _, err := r.SSH.Resolve(r.datsPath, spec)
 	if err != nil {
 		return nil, err
@@ -70,9 +59,7 @@ func (r *Runner) altScope(ctx context.Context, spec *schema.SSHSpec, sharedDir s
 	if err != nil {
 		return nil, err
 	}
-	// shared/ is read-only to tests, so mirroring it is free. Writes an
-	// overriding test makes to it are lost, which the format already calls
-	// undefined under parallelism.
+	// shared/ is read-only to tests, so mirroring it is free; writes are lost.
 	if err := cfg.Push(ctx, sharedDir, remoteJoin(base, sharedDirName)); err != nil {
 		cfg.RemoveBase(base)
 		return nil, err
