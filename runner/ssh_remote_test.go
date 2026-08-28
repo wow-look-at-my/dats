@@ -15,19 +15,21 @@ import (
 // machine is not a reasonable prerequisite for every dev box. CI provisions
 // loopback sshd and runs this same probe as its own step, so a skip can
 // never be how CI reports that remote execution works.
-func requireSSH(t *testing.T) *SSHConfig {
+func requireSSH(t *testing.T) *SSHManager {
 	t.Helper()
 	target := os.Getenv("DATS_TEST_SSH_TARGET")
 	if target == "" {
 		t.Skip("DATS_TEST_SSH_TARGET not set")
 	}
-	c := NewSSHConfig(target)
+	m := &SSHManager{Target: target}
+	c, _, err := m.Resolve("probe.dats", nil)
+	require.NoError(t, err)
 	if err := c.Connect(context.Background()); err != nil {
-		c.Close()
+		m.Close()
 		t.Skipf("ssh target %s not usable here: %v", target, err)
 	}
-	t.Cleanup(c.Close)
-	return c
+	t.Cleanup(m.Close)
+	return m
 }
 
 // writeSuite writes body to a .dats file in dir and returns its path.
@@ -39,7 +41,7 @@ func writeSuite(t *testing.T, dir, body string) string {
 }
 
 // runRemoteSuite runs body on the target and returns the result plus output.
-func runRemoteSuite(t *testing.T, ssh *SSHConfig, body string) (*FileResult, string) {
+func runRemoteSuite(t *testing.T, ssh *SSHManager, body string) (*FileResult, string) {
 	t.Helper()
 	var out bytes.Buffer
 	r := NewRunner(&out, false, false, "")

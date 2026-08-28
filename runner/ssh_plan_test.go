@@ -52,7 +52,7 @@ func TestSSHPlanDescribesItselfAsUnsandboxed(t *testing.T) {
 func TestSSHRefusesATypedSandboxBackend(t *testing.T) {
 	for _, mode := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
 		t.Run(string(mode), func(t *testing.T) {
-			r := &Runner{SSH: NewSSHConfig("build@box"), Sandbox: NewSandboxConfig(mode, "")}
+			r := &Runner{ssh: NewSSHConfig("build@box"), Sandbox: NewSandboxConfig(mode, "")}
 			_, err := r.newSandboxPlan(nil, t.TempDir())
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), string(mode))
@@ -62,7 +62,7 @@ func TestSSHRefusesATypedSandboxBackend(t *testing.T) {
 }
 
 func TestSSHUnderAutoSandboxWins(t *testing.T) {
-	r := &Runner{SSH: NewSSHConfig("build@box"), Sandbox: NewSandboxConfig(SandboxAuto, "")}
+	r := &Runner{ssh: NewSSHConfig("build@box"), Sandbox: NewSandboxConfig(SandboxAuto, "")}
 	plan, err := r.newSandboxPlan(nil, t.TempDir())
 	require.NoError(t, err)
 	require.NotNil(t, plan)
