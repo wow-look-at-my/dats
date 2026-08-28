@@ -63,6 +63,7 @@ even when every test passed, exactly as the CLI's exit code does.
 | `CoverDir` | none | `GOCOVERDIR` for every executed command |
 | `Env` | none | extra `KEY=VALUE` entries for every executed command |
 | `Sandbox` | auto | the isolation backend |
+| `SSH` | local | the machine every command runs on |
 
 The zero `Options` value is a valid, sandboxed run of every suite under the
 working directory.
@@ -83,6 +84,31 @@ weaker thing. Individual files can still narrow this (`network: false`, or an
 allowed, and a file asking to run unsandboxed is a parse error, not a
 permission. A non-empty `Image` is the caller's pin and a file cannot displace
 it; an empty one leaves the image to the file, then to the default.
+
+### SSH: a location, not an isolation setting
+
+```go
+SSH{}                          // here — the default
+SSH{Target: "build@box"}       // every command runs there
+```
+
+A target REPLACES the sandbox rather than nesting inside one: dats installs
+nothing on the far side, so the remote shell is the boundary, and every file's
+header line says so. Naming a target together with a typed `Sandbox.Mode` is an
+error rather than a quiet downgrade; under the zero (auto) value the target
+wins. `CoverDir` alongside a target is also an error — the data would be
+written there and never come home.
+
+Fixtures are still built locally and copied over, so `inputs.copy` keeps
+resolving against the `.dats` file's own directory and keeps its permission
+bits; outputs are copied back before any assertion reads them. Remote paths
+normalize to the same snapshot tokens, so a suite's goldens are byte-identical
+either way. What does NOT travel is the working directory: a command using a
+relative path outside its fixtures passes locally and fails remotely.
+
+Connection policy (port, identity, options) is deliberately absent from the
+API — it belongs in the caller's `~/.ssh/config`, where it is visible to
+whoever's credentials are being spent.
 
 ### Env: additions, and deletions
 
