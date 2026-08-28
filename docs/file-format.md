@@ -254,6 +254,54 @@ A remote run has **no sandbox** — the remote shell is the boundary — and the
 does not travel, so a command using a relative path outside its fixtures fails there. See
 [cli.md](cli.md#remote-execution---ssh) for both, and for what does travel.
 
+### Per-test override
+
+A single test can name its own host instead:
+
+```yaml
+ssh: build@box
+tests:
+	- desc: runs on build@box
+	  cmd: uname -a
+	- desc: runs on arm@box
+	  cmd: uname -m
+	  ssh: arm@box
+```
+
+The file's target is the **home** target, and the rules follow from that:
+
+- **A per-test `ssh` needs a file-level `ssh` too**, and it is a parse error without one. A
+  per-test target may only move a command between remote hosts. Allowing one on a local file
+  would let a file leave the rest of its tests on the reader's own machine by omission —
+  exactly what the file-level key may not do outright.
+- **Each overriding target is approved separately.** A file naming two hosts needs two
+  approvals, since the approval is a (file, host) pair.
+- **`setup`, `teardown` and `shared/` always run on the home target.** An overriding test gets
+  its own temp directory on its own host, plus a push-only mirror of `shared/`, so
+  `{shared.X}` still resolves. Writes it makes there are lost, which `shared/` already calls
+  undefined.
+- **The wrinkle worth stating plainly: setup prepares only the home host.** A file whose setup
+  starts a service or installs a package has prepared host X; a test overriding to host Y runs
+  against an unprepared machine, and dats cannot detect that. Running setup once per distinct
+  target would be worse — it silently redefines "once per file" and breaks every non-idempotent
+  setup.
+
+`{matrix.X}` substitutes into a per-test target, so one test fans across a fleet — connections
+are established per target on demand, so the hosts nothing uses are never dialed:
+
+```yaml
+ssh: build@box
+tests:
+	- desc: the suite on {matrix.host}
+	  cmd: uname -m
+	  ssh: "{matrix.host}"
+	  matrix:
+		host: [alpha, beta, gamma]
+```
+
+It is rejected in the FILE-level target for the opposite reason: that one resolves once, before
+any instance exists.
+
 ## Copy Fixtures: `inputs.copy` and `shared.copy`
 
 `inputs.files`/`shared.files` author a fixture's content inline as YAML text. `copy` is the
@@ -344,6 +392,7 @@ Each test has these fields:
 | `exit` | int or string | No | `0` | Expected exit code |
 | `timeout` | int or string | No | none | Per-test timeout (seconds or duration string) |
 | `matrix` | object | No | - | Parameter variables expanding the test into one instance per combination — see [Matrix (Parameterized) Tests](#matrix-parameterized-tests) |
+| `ssh` | string | No | the file's target | Host this one test runs on instead — needs a file-level `ssh`, and its own approval; see [Per-test override](#per-test-override) |
 | `inputs` | object | No | - | Stdin, input files, and environment variables |
 | `outputs` | object | No | - | Output validations |
 

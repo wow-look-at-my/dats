@@ -38,8 +38,7 @@ type TestFile struct {
 	// file's commands; nil when the file has no sandbox block, leaving every
 	// decision to the CLI.
 	Sandbox *SandboxSpec `yaml:"sandbox,omitempty"`
-	// SSH proposes the machine this file's commands run on; nil leaves that
-	// to the run. A file may only propose: the operator approves the pair.
+	// SSH proposes the machine this file's commands run on; a run approves it.
 	SSH   *SSHSpec `yaml:"ssh,omitempty"`
 	Tests []Test   `yaml:"tests"`
 }
@@ -289,9 +288,7 @@ type Test struct {
 	// test expands into one instance per combination of values (see
 	// ExpandMatrix). Nil for ordinary tests.
 	Matrix Matrix `yaml:"matrix,omitempty"`
-	// SSH overrides the file's target for this one test. Legal only in a
-	// file that declares its own ssh:, so a file can never leave some tests
-	// on the reader's machine by omission.
+	// SSH overrides the file's target for this test; needs a file-level ssh:.
 	SSH     *SSHSpec    `yaml:"ssh,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`

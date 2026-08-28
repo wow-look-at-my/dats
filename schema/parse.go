@@ -107,10 +107,8 @@ func ParseFile(path string) (*TestFile, error) {
 		if test.Cmd == "" {
 			return nil, fmt.Errorf("test %d: missing required field 'cmd'", i+1)
 		}
-		// A per-test target only ever moves a command between remote hosts.
-		// Allowing one without a file-level target would let a file leave the
-		// rest of its tests on the reader's own machine by omission, which is
-		// the thing the file-level key is not permitted to do outright.
+		// A per-test target only moves a command between remote hosts. Without
+		// a file-level one, a file could leave the rest on the reader's machine.
 		if test.SSH != nil && testFile.SSH == nil {
 			return nil, fmt.Errorf("test %d: ssh: a per-test target needs a file-level ssh: target too (setup, teardown and shared/ always run on the file's target)", i+1)
 		}

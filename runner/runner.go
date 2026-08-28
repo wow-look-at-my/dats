@@ -52,13 +52,10 @@ type Runner struct {
 	// regardless of dats' own working directory.
 	sourceDir string
 
-	// SSH decides, per file, which machine that file's commands run on; nil
-	// runs them here. The remote shell is then the boundary: dats installs
-	// no sandbox there.
+	// SSH picks which machine each file's commands run on; nil runs them here.
 	SSH *SSHManager
 
-	// ssh is the connection the current file resolved to, set by runFile
-	// alongside plan; nil when this file's commands run here.
+	// ssh is the current file's connection, resolved by runFile beside plan.
 	ssh *SSHConfig
 
 	// refusedSSH is the file's own target when a typed one outranked it.
@@ -70,9 +67,7 @@ type Runner struct {
 	// datsPath is the file currently being run, for a per-test approval.
 	datsPath string
 
-	// altScopes holds the extra hosts this file's tests overrode to, keyed
-	// by target and built on demand. The file's own target stays home:
-	// setup, teardown and shared/ only ever run there.
+	// altScopes holds the hosts tests overrode to; the file's target stays home.
 	altMu     sync.Mutex
 	altScopes map[string]*remoteScope
 
@@ -153,9 +148,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		}
 	}
 
-	// Claim the file's directory on the ssh target before anything runs, for
-	// the same reason the sandbox resolves here: a file that cannot reach
-	// where its commands must run fails outright.
+	// Claim the file's directory on the ssh target before anything runs.
 	r.datsPath = path
 	if r.ssh, r.refusedSSH, err = r.SSH.Resolve(path, testFile.SSH); err != nil {
 		return nil, err
@@ -219,10 +212,8 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
 	}
-	// hookSharedDir is the shared directory a hook command SEES. Shared
-	// fixtures are built locally and copied over, so setup finds them there.
-	// The push happens even with no shared block: {shared.X} must resolve to
-	// a real directory whether or not the file declares one.
+	// hookSharedDir is where a hook SEES shared/. The push is unconditional:
+	// {shared.X} must resolve whether or not the file declares the block.
 	hookSharedDir := sharedDir
 	if r.ssh != nil && result.SetupFailure == nil {
 		hookSharedDir = remoteJoin(r.remoteBase, sharedDirName)
@@ -479,8 +470,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		return result
 	}
 
-	// Resolve where this instance runs: the file's target, or the host this
-	// one test overrode to.
+	// Resolve where this instance runs: the file's target, or its override.
 	sshCfg, remoteBase, err := r.scopeFor(ctx, test.SSH, filepath.Join(baseDir, sharedDirName))
 	if err != nil {
 		result.Failures = append(result.Failures, err.Error())

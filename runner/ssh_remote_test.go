@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/wow-look-at-my/go-containers/set"
 )
 
 // requireSSH skips unless a target is configured AND usable: a second
@@ -108,9 +109,9 @@ func TestPerTestSSHOverrideRunsOnItsOwnHost(t *testing.T) {
 		t.Skip("DATS_TEST_SSH_TARGET2 not set to a second target name")
 	}
 
-	seen := map[string]bool{}
+	seen := set.New[string]()
 	m := &SSHManager{Allow: func(_, target string) error {
-		seen[target] = true
+		seen.Add(target)
 		return nil
 	}}
 	t.Cleanup(m.Close)
@@ -136,8 +137,8 @@ func TestPerTestSSHOverrideRunsOnItsOwnHost(t *testing.T) {
 		"\t\t\t- shared-value\n"))
 	require.NoError(t, err)
 	require.True(t, res.Ok(), "output:\n%s", out.String())
-	assert.True(t, seen[home], "the file's own target must be approved")
-	assert.True(t, seen[other], "an overriding target must be approved too")
+	assert.True(t, seen.Contains(home), "the file's own target must be approved")
+	assert.True(t, seen.Contains(other), "an overriding target must be approved too")
 }
 
 // TestSSHRunsCommandsOnTheTarget is the end-to-end proof: the command runs

@@ -44,9 +44,7 @@ type TestContext struct {
 	OutputPaths map[string]string // output name -> absolute path
 	SharedDir   string            // File-wide directory {shared.X} placeholders resolve into
 
-	// RemoteBase mirrors BaseDir on an ssh target; empty runs commands here.
-	// ONLY placeholder expansion rewrites onto it -- assertions keep reading
-	// the local copy, which the runner pulls back first.
+	// RemoteBase mirrors BaseDir on the ssh target; only expansion rewrites onto it.
 	RemoteBase string
 }
 

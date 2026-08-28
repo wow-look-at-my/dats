@@ -145,6 +145,12 @@
       "minLength": 1,
       "pattern": "^[A-Za-z0-9._@:%\\[\\]-]+$"
     },
+    "testSSH": {
+      "description": "The machine this ONE test's command runs on, overriding the file's target. Legal only in a file that declares its own ssh:, because a per-test target may only move a command between remote hosts -- never back onto the reader's machine, which is the more privileged side. The test gets its own temp directory on that host plus a push-only mirror of shared/, so {shared.X} still resolves. setup, teardown and shared/ always run on the FILE's target, so a file whose setup prepares a service prepares only that host. {matrix.X} is substituted here, so a matrix fans one test across a fleet.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._@:%\\[\\]{}-]+$"
+    },
     "test": {
       "type": "object",
       "required": ["cmd"],
@@ -153,6 +159,9 @@
         "desc": {
           "type": "string",
           "description": "Optional description of the test case"
+        },
+        "ssh": {
+          "$ref": "#/definitions/testSSH"
         },
         "cmd": {
           "type": "string",

@@ -307,8 +307,7 @@ type sandboxPlan struct {
 	// relative paths keep resolving as they do on the host (read-only under
 	// docker; already covered by the read-only root under bwrap).
 	workdir string
-	// ssh runs this file's commands on another machine, with no sandbox
-	// there -- describe says so on the file's header line.
+	// ssh runs this file's commands on another machine, with no sandbox there.
 	ssh *SSHConfig
 	// refusedSSH is the file's own target when a typed one outranked it.
 	refusedSSH string
@@ -439,9 +438,7 @@ type sandboxCommand struct {
 	Kill func()
 }
 
-// commandSeq numbers the workloads this process starts that outlive the
-// process we spawn -- docker containers and remote ssh commands -- so each
-// gets a name we can kill by even when many run concurrently.
+// commandSeq names workloads that outlive the process we spawn, so Kill finds them.
 var commandSeq atomic.Uint64
 
 // command rewrites `bash -c <cmd>` into the sandboxed argv that runs it.

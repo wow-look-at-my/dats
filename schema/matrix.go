@@ -239,9 +239,8 @@ func substituteMatrix(s string, assignments []MatrixAssignment) string {
 func applyToMatrixScope(test *Test, f func(string) string) {
 	test.Desc = f(test.Desc)
 	test.Cmd = f(test.Cmd)
-	// A per-test ssh target IS in scope, unlike the file-level one: it is
-	// resolved per instance, so `ssh: "{matrix.host}"` fans one test across
-	// a fleet.
+	// A per-test ssh target IS in scope: it resolves per instance, so one
+	// test fans across a fleet.
 	if test.SSH != nil {
 		test.SSH.Target = f(test.SSH.Target)
 	}
@@ -374,8 +373,7 @@ func findMatrixPlaceholder(s string) (string, bool) {
 func copyTest(t *Test) Test {
 	c := *t
 	c.Matrix = nil
-	// SSH is a POINTER: a shallow copy would make every instance share one
-	// struct, so substituting {matrix.X} into one would corrupt its siblings.
+	// SSH is a POINTER: a shallow copy would let one instance corrupt its siblings.
 	if t.SSH != nil {
 		spec := *t.SSH
 		c.SSH = &spec
