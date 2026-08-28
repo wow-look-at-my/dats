@@ -17,7 +17,7 @@ func sshQuote(s string) string {
 
 // sshRemoteScript joins argv into the one string the remote login shell
 // parses. ssh passes no argv to the far side, so quoting is the whole
-// interface. The remote shell must be POSIX: '\'' is invalid in csh.
+// interface. The remote shell must be POSIX; csh cannot parse the escape.
 func sshRemoteScript(argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, arg := range argv {
