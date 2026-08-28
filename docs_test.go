@@ -34,6 +34,9 @@ func TestDocPagesAreWellFormed(t *testing.T) {
 		assert.Equal(t, strings.ToLower(page.Name), page.Name, "topic names are lowercase")
 
 		for _, spelling := range page.spellings() {
+			// LookupDoc lowercases what it is given, so an uppercase spelling
+			// in the table would be unreachable.
+			assert.Equal(t, strings.ToLower(spelling), spelling)
 			assert.NotContains(t, seen, spelling, "spelling %q already resolves to another page", spelling)
 			seen[spelling] = page.Name
 		}
