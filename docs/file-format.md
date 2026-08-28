@@ -3,13 +3,14 @@
 ## Root Structure
 
 A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`,
-`setup`, `teardown`, and `sandbox` keys:
+`setup`, `teardown`, `sandbox`, and `ssh` keys:
 
 ```yaml
 shared:      # optional file-level fixture files
 setup:       # optional command(s) run once before the tests
 teardown:    # optional command(s) always run once after the tests
-sandbox:     # optional: narrow or opt out of the sandbox for this file
+sandbox:     # optional: narrow the sandbox for this file
+ssh:         # optional: ask to run this file's commands on another machine
 tests:
 	- # test 1
 	- # test 2
@@ -206,6 +207,52 @@ before any matrix instance exists.
   of paths in the file that quietly adds up to the same thing.
 - Under the docker backend the command runs inside the image, so the tools available are the
   image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
+
+## SSH
+
+The optional file-level `ssh` key names the machine this file's commands run on — tests and
+`setup`/`teardown` alike:
+
+```yaml
+ssh: build@box
+tests:
+	- desc: runs on build@box
+	  cmd: uname -a
+```
+
+**It is a request, not a decision.** A `.dats` file arrives from somewhere, and a file able to
+dial out on its own would spend the reader's ssh credentials before they knew it had asked. So
+the pair — this file, this host — has to be approved once:
+
+```sh
+dats trust add suite.dats build@box   # or answer the prompt on a terminal
+dats trust list
+dats trust remove suite.dats build@box
+```
+
+Without an approval the file fails, naming the command that grants one. With nobody at a
+terminal (CI) it fails rather than waiting at a prompt no pipeline can answer. A target the
+operator types themselves (`dats --ssh build@box`) needs no approval — typing it *is* the
+approval — and it outranks the file's, which the run announces on the file's header line
+rather than swapping silently.
+
+The approval is keyed on the file's PATH, not its contents. A suite under development changes
+every few seconds, and re-approving on each edit would make the key unusable. So an approval
+says "this file may reach this host", never "these commands may".
+
+`ssh: false` is a parse error, and the direction surprises people: running remotely is not a
+protection the file is waiving. The operator's own machine is the MORE privileged place, so a
+file saying "run this one here" is reaching for something it was never given — the same harm
+`sandbox: false` prevents, arriving through a different door. For `sandbox` a file may only
+**narrow**; for `ssh` a file may only **propose**.
+
+There is deliberately no `port`, `identity`, or `options` key. Connection policy is spent from
+the reader's own credentials, so it belongs in their `~/.ssh/config`, where they can see it; a
+non-default port is a `Host` alias away.
+
+A remote run has **no sandbox** — the remote shell is the boundary — and the working directory
+does not travel, so a command using a relative path outside its fixtures fails there. See
+[cli.md](cli.md#remote-execution---ssh) for both, and for what does travel.
 
 ## Copy Fixtures: `inputs.copy` and `shared.copy`
 

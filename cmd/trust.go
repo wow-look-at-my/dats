@@ -116,9 +116,9 @@ func approveSSHTarget(datsPath, target string) error {
 		return fmt.Errorf("ssh: %s asks to run its commands on %s, which is not approved -- approve it with `dats trust add %s %s`", datsPath, target, datsPath, target)
 	}
 
-	fmt.Fprintf(os.Stderr, "\n%s asks to run its commands on %s.\n", datsPath, target)
-	fmt.Fprintf(os.Stderr, "That spends your ssh credentials on commands you may not have written.\n")
-	fmt.Fprintf(os.Stderr, "Approve this file on this host? [y/N] ")
+	fmt.Fprintf(os.Stderr, "\n%s asks to run its commands on %s.\n"+
+		"That spends your ssh credentials on commands you may not have written.\n"+
+		"Approve this file on this host? [y/N] ", datsPath, target)
 
 	answer, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {

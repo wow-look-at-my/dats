@@ -1,11 +1,7 @@
 package schema
 
 // The file-level `ssh` key: a REQUEST for the machine this file's commands
-// run on. A file that could dial out on its own would spend the reader's
-// credentials before they knew it had asked, so a typed target outranks this
-// one and an unapproved (file, target) pair is refused. For `sandbox` a file
-// may only NARROW; for `ssh` it may only PROPOSE -- both say that a file
-// never changes what runs on the operator's own machine.
+// run on. For `sandbox` a file may only NARROW; for `ssh` only PROPOSE.
 
 import (
 	"fmt"
@@ -28,9 +24,7 @@ func (s *SSHSpec) TargetName() string {
 	return s.Target
 }
 
-// errSSHLocal is the parse error for the dangerous direction: the operator's
-// machine is the MORE privileged place, so a file cannot pull a command onto
-// it. That is the file reaching for what it was never given.
+// errSSHLocal guards the dangerous direction: local is the privileged side.
 var errSSHLocal = fmt.Errorf("ssh: a file cannot move a command onto the machine running dats -- remove the key")
 
 // errSSHBare is its counterpart: a file stating a target it did not name.

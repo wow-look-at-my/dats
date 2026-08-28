@@ -278,7 +278,8 @@ tests:
 | `shared.copy` | No | Map of filename → host source path, copied once per file into `shared/`, writable. A name may not also appear under `files`; the block needs at least one entry across the two. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
 | `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`) run once, in order, before the file's tests. `cmd`/`env` expand `{shared.X}` only; bounded by `timeout` (default 30s, must be > 0 when set). On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
 | `teardown` | No | Same hook command or list form as `setup`, always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
-| `sandbox` | No | `false` opts this file's commands out of the sandbox, or a mapping (`enabled`, `network`, `image`) narrows it. Covers the tests AND the setup/teardown hooks. See [docs/file-format.md](docs/file-format.md#sandbox) |
+| `sandbox` | No | A mapping (`network`, `image`) narrowing the sandbox for this file's commands — the tests AND the setup/teardown hooks. A file can never turn its own sandbox off: `sandbox: false` and `enabled` are parse errors naming `--no-sandbox`. See [docs/file-format.md](docs/file-format.md#sandbox) |
+| `ssh` | No | `[user@]host` this file's commands run on. A request, not a decision: the (file, host) pair must be approved (`dats trust add`), and a typed `--ssh` outranks it. See [docs/file-format.md](docs/file-format.md#ssh) |
 
 Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
 concurrently within and across files, but no test in a file starts before

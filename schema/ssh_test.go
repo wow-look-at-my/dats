@@ -39,9 +39,8 @@ func TestParseSSHExplicitNullIsAbsent(t *testing.T) {
 	assert.Nil(t, tf.SSH)
 }
 
-// TestParseSSHFalseIsRejected pins the direction that surprises people:
-// remote is not a protection the file is waiving -- local is the privileged
-// side, so "run this one here" is the file reaching for more.
+// TestParseSSHFalseIsRejected: local is the privileged side, so a file
+// asking to run here is reaching for more, not waiving a protection.
 func TestParseSSHFalseIsRejected(t *testing.T) {
 	_, err := parseSSH(t, "ssh: false\n")
 	require.Error(t, err)
