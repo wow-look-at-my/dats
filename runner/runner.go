@@ -67,6 +67,15 @@ type Runner struct {
 	// remoteBase mirrors the current file's temp directory on the target.
 	remoteBase string
 
+	// datsPath is the file currently being run, for a per-test approval.
+	datsPath string
+
+	// altScopes holds the extra hosts this file's tests overrode to, keyed
+	// by target and built on demand. The file's own target stays home:
+	// setup, teardown and shared/ only ever run there.
+	altMu     sync.Mutex
+	altScopes map[string]*remoteScope
+
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
 	// 19, best-effort; no-op on windows). Only the multi-file orchestration
@@ -147,9 +156,11 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	// Claim the file's directory on the ssh target before anything runs, for
 	// the same reason the sandbox resolves here: a file that cannot reach
 	// where its commands must run fails outright.
+	r.datsPath = path
 	if r.ssh, r.refusedSSH, err = r.SSH.Resolve(path, testFile.SSH); err != nil {
 		return nil, err
 	}
+	defer r.closeAltScopes()
 	if r.ssh != nil {
 		if err := r.ssh.Connect(ctx); err != nil {
 			return nil, err
@@ -468,13 +479,26 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		return result
 	}
 
+	// Resolve where this instance runs: the file's target, or the host this
+	// one test overrode to.
+	sshCfg, remoteBase, err := r.scopeFor(ctx, test.SSH, filepath.Join(baseDir, sharedDirName))
+	if err != nil {
+		result.Failures = append(result.Failures, err.Error())
+		result.Duration = time.Since(start)
+		return result
+	}
+	plan := r.plan
+	if sshCfg != nil && sshCfg != r.ssh {
+		plan = plan.withSSH(sshCfg, remoteBase)
+	}
+
 	// Fixtures are built here and copied over, so the command finds them on
 	// the machine it runs on. Setting RemoteBase first is what makes every
 	// {inputs.X}/{outputs.X}/{shared.X} below expand to a remote path.
-	if r.ssh != nil {
-		fixtures.RemoteBase = r.remoteBase
+	if sshCfg != nil {
+		fixtures.RemoteBase = remoteBase
 		local := testDirPath(baseDir, index)
-		if err := r.ssh.Push(ctx, local, fixtures.commandPath(local)); err != nil {
+		if err := sshCfg.Push(ctx, local, fixtures.commandPath(local)); err != nil {
 			result.Failures = append(result.Failures, err.Error())
 			result.Duration = time.Since(start)
 			return result
@@ -502,7 +526,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		EnvExtra:    added,
 		Timeout:     test.Timeout.Value,
 		LowPriority: r.lowPriority,
-		Sandbox:     r.plan,
+		Sandbox:     plan,
 	})
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
@@ -516,9 +540,9 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	// Bring the outputs home before ANY assertion reads them. Unconditional:
 	// a !files assertion ("must not exist") means nothing if the directory
 	// was never collected.
-	if r.ssh != nil {
+	if sshCfg != nil {
 		local := testDirPath(baseDir, index)
-		if err := r.ssh.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
+		if err := sshCfg.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
 			result.Failures = append(result.Failures, err.Error())
 		}
 	}

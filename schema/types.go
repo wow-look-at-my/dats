@@ -288,7 +288,11 @@ type Test struct {
 	// Matrix declares the test's parameter variables; when non-empty, the
 	// test expands into one instance per combination of values (see
 	// ExpandMatrix). Nil for ordinary tests.
-	Matrix  Matrix      `yaml:"matrix,omitempty"`
+	Matrix Matrix `yaml:"matrix,omitempty"`
+	// SSH overrides the file's target for this one test. Legal only in a
+	// file that declares its own ssh:, so a file can never leave some tests
+	// on the reader's machine by omission.
+	SSH     *SSHSpec    `yaml:"ssh,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
 }

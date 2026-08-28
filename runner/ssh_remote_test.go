@@ -97,6 +97,49 @@ func TestFileDeclaredSSHTargetIsRefusedWithoutApproval(t *testing.T) {
 	assert.Contains(t, err.Error(), "not approved")
 }
 
+// TestPerTestSSHOverrideRunsOnItsOwnHost proves a single test can move to a
+// different machine, with its own temp directory and its own mirror of
+// shared/. DATS_TEST_SSH_TARGET2 must name the same or another reachable
+// host under a DIFFERENT target string, so the alt-scope path is exercised.
+func TestPerTestSSHOverrideRunsOnItsOwnHost(t *testing.T) {
+	home := requireSSH(t).Target
+	other := os.Getenv("DATS_TEST_SSH_TARGET2")
+	if other == "" || other == home {
+		t.Skip("DATS_TEST_SSH_TARGET2 not set to a second target name")
+	}
+
+	seen := map[string]bool{}
+	m := &SSHManager{Allow: func(_, target string) error {
+		seen[target] = true
+		return nil
+	}}
+	t.Cleanup(m.Close)
+
+	var out bytes.Buffer
+	r := NewRunner(&out, false, false, "")
+	r.SSH = m
+	res, err := r.RunFile(context.Background(), writeSuite(t, t.TempDir(), "ssh: "+home+"\n"+
+		"shared:\n"+
+		"\tfiles:\n"+
+		"\t\tcfg.txt: shared-value\n"+
+		"tests:\n"+
+		"\t- desc: runs on the file's host\n"+
+		"\t  cmd: cat {shared.cfg.txt}\n"+
+		"\t  outputs:\n"+
+		"\t\tstdout:\n"+
+		"\t\t\t- shared-value\n"+
+		"\t- desc: runs on its own host with shared mirrored\n"+
+		"\t  cmd: cat {shared.cfg.txt}\n"+
+		"\t  ssh: "+other+"\n"+
+		"\t  outputs:\n"+
+		"\t\tstdout:\n"+
+		"\t\t\t- shared-value\n"))
+	require.NoError(t, err)
+	require.True(t, res.Ok(), "output:\n%s", out.String())
+	assert.True(t, seen[home], "the file's own target must be approved")
+	assert.True(t, seen[other], "an overriding target must be approved too")
+}
+
 // TestSSHRunsCommandsOnTheTarget is the end-to-end proof: the command runs
 // over ssh, its fixtures arrive, and its output files come home.
 func TestSSHRunsCommandsOnTheTarget(t *testing.T) {

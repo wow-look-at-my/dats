@@ -420,6 +420,17 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	return plan, nil
 }
 
+// withSSH copies the plan onto another host, for a test that overrode the
+// file's target. The sandbox decision is the file's; only the place changes.
+func (p *sandboxPlan) withSSH(cfg *SSHConfig, remoteBase string) *sandboxPlan {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	c.ssh, c.remoteBase = cfg, remoteBase
+	return &c
+}
+
 // sandboxCommand is a command rewritten to run under a sandbox: the argv to
 // spawn, plus an optional kill hook for backends whose workload outlives the
 // process we spawned (docker's client is not the container).

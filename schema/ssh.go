@@ -29,8 +29,10 @@ var errSSHLocal = fmt.Errorf("ssh: a file cannot move a command onto the machine
 // errSSHBare is its counterpart: a file stating a target it did not name.
 var errSSHBare = fmt.Errorf("ssh: name the target ([user@]host); whether a run goes remote at all is --ssh")
 
-// sshTargetPattern is the character set a target may use.
-var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]-]+$`)
+// sshTargetPattern is the character set a target may use. Braces are allowed
+// so a PER-TEST target can hold {matrix.X}; the runner re-checks the
+// substituted target against the stricter set before building an argv.
+var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]{}-]+$`)
 
 // UnmarshalYAML decodes the ssh block: a bare target string. There is
 // deliberately no port, identity or options key -- connection policy is spent
@@ -57,11 +59,6 @@ func (s *SSHSpec) UnmarshalYAML(value any) error {
 // option. The runner checks again before building an argv, the way fixture
 // names are re-checked at setup for a caller that bypassed ParseFile.
 func validateSSHTarget(target string) error {
-	// Named before the character check, so the most plausible wrong guess
-	// gets the reason instead of "must look like [user@]host".
-	if name, found := findMatrixPlaceholder(target); found {
-		return fmt.Errorf("ssh target: {matrix.%s} is not available outside tests", name)
-	}
 	switch {
 	case target == "":
 		return fmt.Errorf("ssh: target must be a non-empty string")
