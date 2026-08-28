@@ -25,7 +25,7 @@ func registerSandboxFlags(flags *pflag.FlagSet) {
 	flags.Bool("no-sandbox", false,
 		"run test commands directly on the host (same as --sandbox=none)")
 	flags.String("sandbox-image", runner.DefaultSandboxImage,
-		"container image the docker sandbox backend runs commands in")
+		"container image the docker sandbox backend runs commands in (typing it outranks a file's image:)")
 }
 
 // resolveSandbox turns the parsed flags into the run's sandbox configuration,
