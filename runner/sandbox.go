@@ -310,6 +310,8 @@ type sandboxPlan struct {
 	// ssh runs this file's commands on another machine, with no sandbox
 	// there -- describe says so on the file's header line.
 	ssh *SSHConfig
+	// refusedSSH is the file's own target when a typed one outranked it.
+	refusedSSH string
 	// remoteBase is the file's temp directory ON the target, mirroring work.
 	remoteBase string
 }
@@ -323,7 +325,11 @@ func (p *sandboxPlan) describe() string {
 		return ""
 	}
 	if p.ssh != nil {
-		return "none -- ssh " + p.ssh.Target + " (commands run on the remote host)"
+		desc := "none -- ssh " + p.ssh.Target + " (commands run on the remote host)"
+		if p.refusedSSH != "" {
+			desc += fmt.Sprintf(" (--ssh; file asked for %s)", p.refusedSSH)
+		}
+		return desc
 	}
 	desc := string(p.backend)
 	// A weaker sandbox than the one dats asks for is never silent: the run
@@ -360,11 +366,11 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	// downgrade quietly. Under the default auto, the target wins and the
 	// file's sandbox block goes inert -- exactly as it does under
 	// --no-sandbox -- which describe puts on the file's header line.
-	if r.SSH != nil {
+	if r.ssh != nil {
 		if r.Sandbox != nil && r.Sandbox.Mode != SandboxAuto && r.Sandbox.Mode != SandboxNone && r.Sandbox.Mode != "" {
-			return nil, fmt.Errorf("--sandbox=%s cannot be combined with --ssh: commands run on %s, and dats does not install a sandbox there", r.Sandbox.Mode, r.SSH.Target)
+			return nil, fmt.Errorf("--sandbox=%s cannot be combined with --ssh: commands run on %s, and dats does not install a sandbox there", r.Sandbox.Mode, r.ssh.Target)
 		}
-		return &sandboxPlan{ssh: r.SSH, remoteBase: r.remoteBase, work: workDir}, nil
+		return &sandboxPlan{ssh: r.ssh, refusedSSH: r.refusedSSH, remoteBase: r.remoteBase, work: workDir}, nil
 	}
 	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
 		return nil, nil

@@ -52,9 +52,17 @@ type Runner struct {
 	// regardless of dats' own working directory.
 	sourceDir string
 
-	// SSH runs every command on another machine; nil runs them here. The
-	// remote shell is then the boundary: dats installs no sandbox there.
-	SSH *SSHConfig
+	// SSH decides, per file, which machine that file's commands run on; nil
+	// runs them here. The remote shell is then the boundary: dats installs
+	// no sandbox there.
+	SSH *SSHManager
+
+	// ssh is the connection the current file resolved to, set by runFile
+	// alongside plan; nil when this file's commands run here.
+	ssh *SSHConfig
+
+	// refusedSSH is the file's own target when a typed one outranked it.
+	refusedSSH string
 
 	// remoteBase mirrors the current file's temp directory on the target.
 	remoteBase string
@@ -139,17 +147,20 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	// Claim the file's directory on the ssh target before anything runs, for
 	// the same reason the sandbox resolves here: a file that cannot reach
 	// where its commands must run fails outright.
-	if r.SSH != nil {
-		if err := r.SSH.Connect(ctx); err != nil {
+	if r.ssh, r.refusedSSH, err = r.SSH.Resolve(path, testFile.SSH); err != nil {
+		return nil, err
+	}
+	if r.ssh != nil {
+		if err := r.ssh.Connect(ctx); err != nil {
 			return nil, err
 		}
-		if r.remoteBase, err = r.SSH.AllocBase(ctx); err != nil {
+		if r.remoteBase, err = r.ssh.AllocBase(ctx); err != nil {
 			return nil, err
 		}
 		if !r.KeepTemp {
-			defer r.SSH.RemoveBase(r.remoteBase)
+			defer r.ssh.RemoveBase(r.remoteBase)
 		} else {
-			fmt.Fprintf(r.Formatter.Writer, "# Remote temp directory: %s:%s\n", r.SSH.Target, r.remoteBase)
+			fmt.Fprintf(r.Formatter.Writer, "# Remote temp directory: %s:%s\n", r.ssh.Target, r.remoteBase)
 		}
 	}
 
@@ -202,9 +213,9 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	// The push happens even with no shared block: {shared.X} must resolve to
 	// a real directory whether or not the file declares one.
 	hookSharedDir := sharedDir
-	if r.SSH != nil && result.SetupFailure == nil {
+	if r.ssh != nil && result.SetupFailure == nil {
 		hookSharedDir = remoteJoin(r.remoteBase, sharedDirName)
-		if err := r.SSH.Push(ctx, sharedDir, hookSharedDir); err != nil {
+		if err := r.ssh.Push(ctx, sharedDir, hookSharedDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: err.Error()}
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
@@ -460,10 +471,10 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	// Fixtures are built here and copied over, so the command finds them on
 	// the machine it runs on. Setting RemoteBase first is what makes every
 	// {inputs.X}/{outputs.X}/{shared.X} below expand to a remote path.
-	if r.SSH != nil {
+	if r.ssh != nil {
 		fixtures.RemoteBase = r.remoteBase
 		local := testDirPath(baseDir, index)
-		if err := r.SSH.Push(ctx, local, fixtures.commandPath(local)); err != nil {
+		if err := r.ssh.Push(ctx, local, fixtures.commandPath(local)); err != nil {
 			result.Failures = append(result.Failures, err.Error())
 			result.Duration = time.Since(start)
 			return result
@@ -505,9 +516,9 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	// Bring the outputs home before ANY assertion reads them. Unconditional:
 	// a !files assertion ("must not exist") means nothing if the directory
 	// was never collected.
-	if r.SSH != nil {
+	if r.ssh != nil {
 		local := testDirPath(baseDir, index)
-		if err := r.SSH.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
+		if err := r.ssh.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
 			result.Failures = append(result.Failures, err.Error())
 		}
 	}

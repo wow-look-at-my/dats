@@ -64,7 +64,7 @@ func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandb
 		Paths:    args,
 		Output:   out,
 		Jobs:     jobs,
-		SSH:      dats.SSH{Target: sshTarget},
+		SSH:      dats.SSH{Target: sshTarget, Allow: approveSSHTarget},
 		Verbose:  verbose,
 		Update:   updateGoldens,
 		KeepTemp: keepTemp,

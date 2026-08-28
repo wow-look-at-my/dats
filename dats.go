@@ -109,26 +109,33 @@ type SSH struct {
 	// Connection policy (port, identity, options) belongs in the caller's
 	// ssh config, where it is visible to whoever's credentials are spent.
 	Target string
+
+	// Allow is consulted for a target a FILE named in its own ssh: block,
+	// never for Target. Returning an error refuses the file, and that text
+	// is what the operator sees. Nil refuses every file-declared target: a
+	// caller that says nothing must not dial out on a file's say-so.
+	Allow func(datsPath, target string) error
 }
 
-// config resolves the target into the runner's transport, or nil when the
-// run stays local. Nothing connects here; the first file that needs the
-// target opens the connection.
-func (s SSH) config(coverDir string) (*runner.SSHConfig, error) {
-	if s.Target == "" {
+// config resolves the run's ssh policy, or nil when nothing can go remote.
+// Nothing connects here; the first file that needs a target opens it.
+func (s SSH) config(coverDir string) (*runner.SSHManager, error) {
+	if s.Target == "" && s.Allow == nil {
 		return nil, nil
 	}
-	if err := runner.ValidateSSHTarget(s.Target); err != nil {
-		return nil, err
+	if s.Target != "" {
+		if err := runner.ValidateSSHTarget(s.Target); err != nil {
+			return nil, err
+		}
 	}
 	// Coverage data is written by the command itself into a host directory
 	// that must outlive the run. Remotely that path does not exist and the
 	// data never comes home, so collecting nothing quietly is the one
 	// outcome this must not have.
-	if coverDir != "" {
+	if coverDir != "" && s.Target != "" {
 		return nil, fmt.Errorf("--coverdir cannot be combined with --ssh: coverage is written on %s and never reaches this machine", s.Target)
 	}
-	return runner.NewSSHConfig(s.Target), nil
+	return &runner.SSHManager{Target: s.Target, Allow: s.Allow}, nil
 }
 
 // Sandbox selects the sandbox backend for a run. The zero value means auto:
@@ -252,18 +259,18 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	ssh, err := opts.SSH.config(opts.CoverDir)
+	sshManager, err := opts.SSH.config(opts.CoverDir)
 	if err != nil {
 		return nil, err
 	}
-	if ssh != nil {
-		defer ssh.Close()
+	if sshManager != nil {
+		defer sshManager.Close()
 	}
 
 	r := runner.NewRunner(out, opts.Verbose, opts.KeepTemp, opts.CoverDir)
 	r.Update = opts.Update
 	r.Sandbox = sandbox
-	r.SSH = ssh
+	r.SSH = sshManager
 	r.Env = opts.Env
 
 	// Wall time of the execution phase, consumed only by the reports; the

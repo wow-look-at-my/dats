@@ -95,6 +95,13 @@ func ParseFile(path string) (*TestFile, error) {
 			return nil, fmt.Errorf("sandbox image: {matrix.%s} is not available outside tests", name)
 		}
 	}
+	// The ssh target is file-level for the same reason: it is resolved once,
+	// before any instance exists.
+	if testFile.SSH != nil {
+		if name, found := findMatrixPlaceholder(testFile.SSH.Target); found {
+			return nil, fmt.Errorf("ssh target: {matrix.%s} is not available outside tests", name)
+		}
+	}
 
 	for i, test := range testFile.Tests {
 		if test.Cmd == "" {

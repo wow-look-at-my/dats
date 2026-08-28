@@ -38,7 +38,10 @@ type TestFile struct {
 	// file's commands; nil when the file has no sandbox block, leaving every
 	// decision to the CLI.
 	Sandbox *SandboxSpec `yaml:"sandbox,omitempty"`
-	Tests   []Test       `yaml:"tests"`
+	// SSH proposes the machine this file's commands run on; nil leaves that
+	// to the run. A file may only propose: the operator approves the pair.
+	SSH   *SSHSpec `yaml:"ssh,omitempty"`
+	Tests []Test   `yaml:"tests"`
 }
 
 // DefaultHookTimeout bounds a setup/teardown command when its entry does not
