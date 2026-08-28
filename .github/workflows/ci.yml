@@ -31,17 +31,14 @@ jobs:
             || echo "bwrap blocked with the restriction in force (see error above)"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true
-      # Without this the ssh tests SKIP, and a skip must never be how CI
-      # reports that remote execution works. The probe is its own step so an
-      # unusable loopback sshd fails here, before a single test runs.
+      # Its own step, so an unusable loopback sshd fails here rather than skipping every ssh test.
       - run: |
           sudo apt-get install -y openssh-server
           sudo systemctl start ssh || sudo service ssh start
           ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
           cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
           chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
-          # BatchMode refuses an unknown host key rather than prompting, so
-          # without this every ssh test skips instead of running.
+          # BatchMode refuses an unknown host key rather than prompting.
           ssh-keyscan -H localhost >> ~/.ssh/known_hosts
           ssh -o BatchMode=yes -o ConnectTimeout=5 localhost 'echo ssh ok; command -v tar bash'
       - uses: wow-look-at-my/go-toolchain@v1
