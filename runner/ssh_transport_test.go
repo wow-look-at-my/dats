@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"archive/tar"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -40,8 +41,7 @@ func TestTarRoundTripPreservesTreeAndModes(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotZero(t, info.Mode()&0o100, "a copied script must keep its executable bit")
 
-	// An empty outputs directory must travel: a command writes into it, and
-	// a missing one turns every {outputs.X} into a write to nowhere.
+	// An empty outputs directory must travel, or {outputs.X} writes nowhere.
 	outInfo, err := os.Stat(filepath.Join(dest, outputsDirName))
 	require.NoError(t, err)
 	assert.True(t, outInfo.IsDir())
@@ -60,16 +60,26 @@ func TestTarRoundTripOnEmptyDirectory(t *testing.T) {
 // TestExtractTarRefusesAnEscapingMember pins that the archive is not trusted
 // to stay inside the destination: it arrives from another machine.
 func TestExtractTarRefusesAnEscapingMember(t *testing.T) {
-	src := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(src, "ok.txt"), []byte("x"), 0o644))
-	var buf bytes.Buffer
-	require.NoError(t, writeTarDir(src, &buf))
+	for _, name := range []string{"../ev.txt", "/etc/ev.txt", "a/../../ev.txt"} {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			tw := tar.NewWriter(&buf)
+			body := []byte("pwned")
+			require.NoError(t, tw.WriteHeader(&tar.Header{
+				Typeflag: tar.TypeReg,
+				Name:     name,
+				Mode:     0o644,
+				Size:     int64(len(body)),
+			}))
+			_, err := tw.Write(body)
+			require.NoError(t, err)
+			require.NoError(t, tw.Close())
 
-	// Rewrite the member name to escape, the way a hostile remote would.
-	evil := bytes.Replace(buf.Bytes(), []byte("ok.txt"), []byte("../ev.txt"), 1)
-	err := extractTar(bytes.NewReader(evil), t.TempDir())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "escapes the destination")
+			err = extractTar(&buf, t.TempDir())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "escapes the destination")
+		})
+	}
 }
 
 func TestSSHConfigCloseIsSafeWithoutConnecting(t *testing.T) {
@@ -78,8 +88,7 @@ func TestSSHConfigCloseIsSafeWithoutConnecting(t *testing.T) {
 
 func TestKillRemoteIgnoresAnEmptyIdentity(t *testing.T) {
 	c := NewSSHConfig("build@box")
-	// No base and no id means there is nothing recorded to kill, so this
-	// must not spawn ssh at all.
+	// Nothing recorded to kill, so this must not spawn ssh at all.
 	assert.NotPanics(t, func() { c.KillRemote("", "") })
 	assert.NotPanics(t, func() { c.RemoveBase("") })
 }
