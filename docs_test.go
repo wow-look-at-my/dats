@@ -34,9 +34,7 @@ func TestDocPagesAreWellFormed(t *testing.T) {
 		assert.Equal(t, strings.ToLower(page.Name), page.Name, "topic names are lowercase")
 
 		for _, spelling := range page.spellings() {
-			if other, dup := seen[spelling]; dup {
-				t.Errorf("spelling %q resolves to both %s and %s", spelling, other, page.Name)
-			}
+			assert.NotContains(t, seen, spelling, "spelling %q already resolves to another page", spelling)
 			seen[spelling] = page.Name
 		}
 
