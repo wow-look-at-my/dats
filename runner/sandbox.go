@@ -307,9 +307,8 @@ type sandboxPlan struct {
 	// relative paths keep resolving as they do on the host (read-only under
 	// docker; already covered by the read-only root under bwrap).
 	workdir string
-	// ssh, when set, runs this file's commands on another machine. The
-	// remote shell is then the whole boundary: dats installs no sandbox
-	// there, and describe says so on the file's header line.
+	// ssh runs this file's commands on another machine, with no sandbox
+	// there -- describe says so on the file's header line.
 	ssh *SSHConfig
 	// remoteBase is the file's temp directory ON the target, mirroring work.
 	remoteBase string

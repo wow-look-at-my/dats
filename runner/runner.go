@@ -52,13 +52,11 @@ type Runner struct {
 	// regardless of dats' own working directory.
 	sourceDir string
 
-	// SSH runs every command of the run on another machine. Nil (the
-	// default) runs them here. The remote shell is then the whole boundary:
-	// dats installs no sandbox there.
+	// SSH runs every command on another machine; nil runs them here. The
+	// remote shell is then the boundary: dats installs no sandbox there.
 	SSH *SSHConfig
 
-	// remoteBase mirrors the current file's temp directory on the target,
-	// set by runFile alongside plan. Empty when the run is local.
+	// remoteBase mirrors the current file's temp directory on the target.
 	remoteBase string
 
 	// lowPriority runs every spawned workload command -- test instances and
