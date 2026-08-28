@@ -73,6 +73,11 @@ func (s *SSHSpec) UnmarshalYAML(value any) error {
 // option. The runner checks again before building an argv, the way fixture
 // names are re-checked at setup for a caller that bypassed ParseFile.
 func validateSSHTarget(target string) error {
+	// Named before the character check, so the most plausible wrong guess
+	// gets the reason instead of "must look like [user@]host".
+	if name, found := findMatrixPlaceholder(target); found {
+		return fmt.Errorf("ssh target: {matrix.%s} is not available outside tests", name)
+	}
 	switch {
 	case target == "":
 		return fmt.Errorf("ssh: target must be a non-empty string")
