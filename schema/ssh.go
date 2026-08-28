@@ -1,7 +1,6 @@
 package schema
 
-// The file-level `ssh` key: a REQUEST for the machine this file's commands
-// run on. For `sandbox` a file may only NARROW; for `ssh` only PROPOSE.
+// The file-level `ssh` key: a REQUEST, not a decision.
 
 import (
 	"fmt"
