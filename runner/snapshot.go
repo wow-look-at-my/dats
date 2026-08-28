@@ -128,10 +128,14 @@ func (r *Runner) applySnapshot(result *TestResult, inst *schema.TestInstance, da
 	// The test and shared directories are derived from baseDir+index exactly
 	// as SetupFixtures derives them (testDirPath is shared); fixture setup is
 	// not re-run.
+	// RemoteBase travels too: a remote command printed REMOTE paths, and
+	// without it they normalize to nothing and one run's temp directory is
+	// baked into the golden.
 	ctx := &TestContext{
-		BaseDir:   baseDir,
-		TestIndex: index,
-		SharedDir: filepath.Join(baseDir, sharedDirName),
+		BaseDir:    baseDir,
+		TestIndex:  index,
+		SharedDir:  filepath.Join(baseDir, sharedDirName),
+		RemoteBase: r.remoteBase,
 	}
 
 	for _, stream := range snapshotStreams(check, result) {
