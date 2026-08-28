@@ -102,9 +102,8 @@ func printDocTopics(out io.Writer) {
 	fmt.Fprintln(out, "Each topic also answers to its aliases, e.g. `dats docs file-format` for `format`.")
 }
 
-// canonicalDocTopics is the comma-separated topic list an error message
-// offers. It names the canonical topics only -- the aliases exist to catch a
-// reader's first guess, not to be recited back at them.
+// canonicalDocTopics lists the topics an error message offers. Aliases stay
+// out of it: they catch a first guess, they are not a menu.
 func canonicalDocTopics() string {
 	names := make([]string, 0, len(dats.Docs()))
 	for _, page := range dats.Docs() {

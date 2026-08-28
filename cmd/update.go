@@ -16,5 +16,5 @@ var updateGoldens bool
 // default: ordinary runs compare against goldens and fail on mismatch.
 func registerUpdateFlag(flags *pflag.FlagSet) {
 	flags.BoolVar(&updateGoldens, "update", false,
-		"rewrite snapshot golden files from actual output instead of failing (see docs/file-format.md)")
+		"rewrite snapshot golden files from actual output instead of failing (see `dats docs format`)")
 }

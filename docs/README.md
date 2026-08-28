@@ -6,11 +6,17 @@ without requiring any external test framework.
 
 ## Documentation Index
 
-- [File Format Reference](file-format.md) - Complete `.dats` YAML schema
-- [CLI Usage](cli.md) - Command-line interface
-- [Go Library API](library.md) - Running suites in-process from Go
-- [Machine-Readable Reports](reports.md) - JUnit XML / JSON report file formats
-- [Examples](examples.md) - Annotated examples
+Every page here also ships inside the binary, so a machine with `dats` and nothing else has
+the whole reference: `dats docs` lists the topics, `dats docs format` prints the file format,
+and `dats help <topic>` prints the same pages.
+
+- [File Format Reference](file-format.md) (`dats docs format`) - Complete `.dats` YAML schema
+- [CLI Usage](cli.md) (`dats docs cli`) - Command-line interface
+- [Go Library API](library.md) (`dats docs library`) - Running suites in-process from Go
+- [Machine-Readable Reports](reports.md) (`dats docs reports`) - JUnit XML / JSON report file formats
+- [Examples](examples.md) (`dats docs examples`) - Annotated examples
+- [GitHub Action](action.md) (`dats docs action`) - Running dats from another repo's workflow
+- [Masked /proc fallback](sandbox-masked-proc.md) (`dats docs masked-proc`) - Sandboxing inside a container
 
 ## Quick Start
 
