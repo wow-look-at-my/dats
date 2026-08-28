@@ -136,6 +136,8 @@ $ dats docs
   `dats help test` is the subcommand's help, not a topic.
 - An unknown topic is an error (exit 1) that lists the topics, rather than a silently
   shorter answer.
+- A subcommand name wins over a path, so a directory of suites actually named `docs` (or
+  `help`) is run as `dats test docs`.
 
 ## Sandboxing (--sandbox)
 
