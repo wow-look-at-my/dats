@@ -1,9 +1,5 @@
 package schema
 
-// Tests for matrix (parameterized) tests: declaration-order parsing, strict
-// value validation, {matrix.X} reference validation across the substitution
-// scope, the guard keeping matrix placeholders out of file-level hooks, and
-// ExpandMatrix's cartesian instance expansion.
 
 import (
 	"testing"
@@ -44,10 +40,7 @@ tests:
 }
 
 func TestParseFile_MatrixValueStringification(t *testing.T) {
-	// Quoted strings keep their content verbatim. Unquoted ints and bools
-	// stay their YAML spelling; unquoted floats are reformatted from their
-	// resolved value (yaml-fixed resolves a scalar to a Go value rather than
-	// keeping source text -- see MatrixVariable).
+	// Quoted strings keep their content verbatim.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo "{matrix.i} {matrix.f} {matrix.b} {matrix.s}"
@@ -75,9 +68,6 @@ tests:
 }
 
 func TestParseFile_MatrixNullTreatedAsAbsent(t *testing.T) {
-	// Matrix.UnmarshalYAML explicitly no-ops on a nil value, so `matrix: null`
-	// is indistinguishable from an absent key -- the same behavior `shared:`
-	// has. This test pins that choice.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo hi
@@ -203,8 +193,6 @@ tests:
 }
 
 func TestParseFile_MatrixUnknownRefRejected(t *testing.T) {
-	// A {matrix.X} reference anywhere in the substitution scope must name a
-	// variable declared by THIS test's matrix.
 	cases := map[string]string{
 		"desc": `
 tests:
@@ -382,10 +370,7 @@ tests:
 }
 
 func TestParseFile_MatrixRefInHooksRejected(t *testing.T) {
-	// {matrix.X} exists only inside a test instance. Setup and teardown
-	// commands and shared file contents run once per file, so a matrix
-	// placeholder there is rejected -- even when some test declares the
-	// variable.
+	// {matrix.X} exists only inside a test instance.
 	cases := map[string]struct {
 		content string
 		wantErr string
@@ -443,9 +428,6 @@ tests:
 }
 
 func TestParseFile_MatrixFileNamesNotScanned(t *testing.T) {
-	// Fixture file names and env var names are outside the substitution
-	// scope: a {matrix.X} inside one is not an unknown-reference error (this
-	// file declares no matrix at all) and stays a literal name.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo hi

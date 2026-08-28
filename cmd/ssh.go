@@ -13,9 +13,7 @@ func registerSSHFlag(flags *pflag.FlagSet) {
 		"run test commands on [user@]host over ssh instead of this machine")
 }
 
-// resolveSSH turns the parsed flag into the run's target, or "" when the run
-// stays local. The target is validated here so a value that ssh would read
-// as an option is refused before anything runs.
+// resolveSSH turns the parsed flag into the run's target, or "" when the run stays local.
 func resolveSSH(flags *pflag.FlagSet) (string, error) {
 	target, err := flags.GetString("ssh")
 	if err != nil {

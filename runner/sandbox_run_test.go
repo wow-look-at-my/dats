@@ -1,10 +1,5 @@
 package runner
 
-// Sandbox tests that run whole .dats files through a real bubblewrap: what a
-// sandboxed command may and may not touch, that the file-level opt-out really
-// runs on the host, and that the plumbing dats layers on top (fixtures,
-// timeouts, hooks, jobs mode) still works with a sandbox in the middle.
-// Skipped when the host cannot provide bubblewrap.
 
 import (
 	"bytes"
@@ -19,8 +14,6 @@ import (
 )
 
 func TestRunFileWithoutUsableBackendFails(t *testing.T) {
-	// The file needs a sandbox, none can be provided: the file fails outright
-	// rather than running its commands on the host.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: never runs
@@ -70,8 +63,6 @@ tests:
 }
 
 func TestRunFileSandboxHooksAreSandboxedToo(t *testing.T) {
-	// Setup and teardown are commands from the same file and get the same
-	// sandbox: a file cannot use its hooks as an unsandboxed side door.
 	requireBwrap(t)
 	probe := filepath.Join("/etc", "dats-sandbox-hook-probe.txt")
 	t.Cleanup(func() { _ = os.Remove(probe) })
@@ -93,9 +84,6 @@ tests:
 	assert.Equal(t, 1, result.Failed)
 }
 
-// TestRunFileSandboxFileCannotOptOut is the guarantee the file format gives
-// whoever runs a .dats file they did not write: the sandbox comes down when
-// THEY say so, and a file asking for the host does not run at all.
 func TestRunFileSandboxFileCannotOptOut(t *testing.T) {
 	hostDir := t.TempDir()
 	probe := filepath.Join(hostDir, "written.txt")
@@ -116,8 +104,6 @@ tests:
 	assert.NoFileExists(t, probe, "a refused file runs nothing")
 }
 
-// TestRunFileRunLevelOptOutRunsOnHost is the other half: the operator's own
-// opt-out still hands commands straight to the host.
 func TestRunFileRunLevelOptOutRunsOnHost(t *testing.T) {
 	hostDir := t.TempDir()
 	probe := filepath.Join(hostDir, "written.txt")
@@ -140,8 +126,6 @@ tests:
 
 func TestRunFileSandboxNetworkOff(t *testing.T) {
 	requireBwrap(t)
-	// /proc is mounted inside the sandbox's namespaces, so /proc/net/dev is
-	// the network namespace's own view: loopback and nothing else.
 	path := writeRunnerDats(t, `
 sandbox:
 	network: false
@@ -162,12 +146,6 @@ tests:
 	assert.Contains(t, buf.String(), "# sandbox: bwrap (no network)")
 }
 
-// TestRunFileSandboxScratchGoesInTheTempDir is the replacement for the
-// removed writable-path declaration: a command with something to write has the
-// file's own temp directory, on every backend, and a host path it was not
-// given stays refused. There is no third option by design -- an escape hatch
-// per path is a hole in the isolation whose consequences the file's author
-// cannot see, and a command that truly needs the host needs a --no-sandbox run.
 func TestRunFileSandboxScratchGoesInTheTempDir(t *testing.T) {
 	requireBwrap(t)
 	hostDir := t.TempDir()
@@ -207,10 +185,7 @@ tests:
 }
 
 func TestRunFileSandboxTimeoutStillTimesOut(t *testing.T) {
-	// The sandbox sits between dats and the workload, so the timeout path has
-	// to kill through it. (bwrap reports a signalled child as exit 128+n, so
-	// a broken kill would show up as an ordinary exit-code failure instead of
-	// a timeout.)
+	// The sandbox sits between dats and the workload, so the timeout path has to kill through it.
 	requireBwrap(t)
 	path := writeRunnerDats(t, `
 tests:
@@ -230,8 +205,6 @@ tests:
 }
 
 func TestRunFileSandboxInputsEnvAndStdinStillWork(t *testing.T) {
-	// Fixtures live in the sandbox's writable work directory and the
-	// environment passes through: the placeholder plumbing must be unaffected.
 	requireBwrap(t)
 	path := writeRunnerDats(t, `
 shared:
@@ -264,8 +237,6 @@ tests:
 }
 
 func TestRunFilesSandboxed(t *testing.T) {
-	// Jobs mode gives each file its own Runner; the sandbox config (and its
-	// memoized backend) has to reach every one of them.
 	requireBwrap(t)
 	first := writeRunnerDats(t, `
 tests:
@@ -300,11 +271,7 @@ tests:
 	assert.NoFileExists(t, "/etc/dats-parallel-probe")
 }
 
-// requireSeatbelt skips a test that needs a real macOS sandbox. On Linux
-// sandbox-exec simply does not exist, so this skips everywhere except a mac --
-// which is the point: the assertions below are the only thing that can prove
-// the generated profile is actually accepted and enforced, and they must run
-// on the platform that has the enforcer.
+// requireSeatbelt skips a test that needs a real macOS sandbox.
 func requireSeatbelt(t *testing.T) {
 	t.Helper()
 	if err := probeSeatbelt(); err != nil {
@@ -314,8 +281,6 @@ func requireSeatbelt(t *testing.T) {
 
 func TestRunFileSeatbeltSandbox(t *testing.T) {
 	requireSeatbelt(t)
-	// /etc is present and root-owned on macOS too, and the sandbox is what
-	// must refuse the write -- exactly the bwrap assertion, one platform over.
 	probe := filepath.Join("/etc", "dats-seatbelt-probe.txt")
 	t.Cleanup(func() { _ = os.Remove(probe) })
 

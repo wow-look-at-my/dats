@@ -20,36 +20,14 @@ type Runner struct {
 	KeepTemp  bool   // Keep temp directory for debugging
 	CoverDir  string // Directory for GOCOVERDIR coverage data
 	Formatter *Formatter
-	// Update rewrites snapshot golden files from actual output instead of
-	// failing mismatches, and prunes stale goldens (the --update flag).
 	Update bool
-	// Sandbox selects the sandbox every command runs under. Nil runs
-	// commands on the host: this is the raw runner, so the safe default
-	// lives one layer up -- both the CLI and dats.Run pass a config unless
-	// the caller explicitly opted out.
-	// Backend detection inside it is memoized, so sharing one config across
-	// files and workers probes the host at most once.
+	// Sandbox selects the sandbox every command runs under.
 	Sandbox *SandboxConfig
 
-	// Env are extra KEY=VALUE entries applied to every command this runner
-	// executes -- test instances and file-level hooks alike -- on top of the
-	// inherited environment. A test's own inputs.env entries are applied
-	// after these, so a file can still override what the caller set. An
-	// entry with an empty value clears the inherited variable, which is how
-	// a caller strips plumbing its children must not inherit.
 	Env []string
 
-	// plan is the resolved sandbox for the file currently being run, set by
-	// RunFile/runFileParallel before any of that file's commands execute (nil
-	// = run on the host). Per-file rather than per-run because the sandbox is
-	// a file-level declaration; safe to hold on the Runner because a Runner
-	// only ever runs one file at a time -- jobs mode gives each file its own.
 	plan *sandboxPlan
 
-	// sourceDir is the directory holding the .dats file currently being run,
-	// set by RunFile/runFileParallel alongside plan. It resolves a relative
-	// inputs.copy/shared.copy source, so a copy fixture is portable
-	// regardless of dats' own working directory.
 	sourceDir string
 
 	// SSH picks which machine each file's commands run on; nil runs them here.
@@ -71,11 +49,6 @@ type Runner struct {
 	altMu     sync.Mutex
 	altScopes map[string]*remoteScope
 
-	// lowPriority runs every spawned workload command -- test instances and
-	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
-	// 19, best-effort; no-op on windows). Only the multi-file orchestration
-	// (RunFiles) sets it: a many-file run can saturate the machine, while a
-	// direct RunFile call is a single file the caller asked for.
 	lowPriority bool
 }
 
@@ -92,46 +65,22 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool, coverDir string) *
 	}
 }
 
-// RunFile runs all tests in a .dats file. Matrix tests are first expanded
-// into one instance per value combination -- every instance always runs;
-// there is no test filtering or selection. Shared fixture files are written
-// and setup commands run first; then every test instance; then teardown
-// commands, which always run -- after test failures and even when setup
-// failed. A setup failure fails every test instance in the file (loudly;
-// tests are never reported as skipped), and a teardown failure marks the
-// file failed even when all tests passed.
-//
-// Canceling ctx kills in-flight setup and test commands (whole process
-// groups) promptly; teardown still runs -- see the context.WithoutCancel
-// call below.
+// RunFile runs all tests in a .dats file.
 func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) {
 	testFile, err := schema.ParseFile(path)
 	if err != nil {
 		return nil, err
 	}
-	// A single-file run still goes through the pool -- it is the only
-	// execution path -- so it gets its own, sized to this machine. RunFiles
-	// shares ONE pool across every file instead, which is what bounds a
-	// multi-file run globally.
 	return r.runFile(ctx, path, testFile, newSlots(runtime.NumCPU()))
 }
 
-// runFile runs one already-parsed file against a caller-provided pool. The
-// pool is what makes the concurrency global: RunFiles hands every file the
-// same one, so N bounds the whole run rather than each file separately.
+// runFile runs one already-parsed file against a caller-provided pool.
 func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.TestFile, pool slots) (*FileResult, error) {
 	// Create temp directory for fixtures
 	tempDir, err := os.MkdirTemp("", "dats-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory: %w", err)
 	}
-	// Resolve it to the path the kernel actually uses, ONCE and here, so the
-	// sandbox's bind mounts and the {inputs.X}/{outputs.X} paths inside the
-	// command can never disagree. On macOS MkdirTemp hands back /tmp/dats-*
-	// while /tmp is a symlink to /private/tmp; docker shares the real path,
-	// so binding the unresolved one mounts an empty directory -- fixtures
-	// never arrive and outputs never land back on the host. A no-op wherever
-	// the temp path is already real.
 	if resolved, rerr := filepath.EvalSymlinks(tempDir); rerr == nil {
 		tempDir = resolved
 	}
@@ -168,9 +117,6 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		}
 	}
 
-	// Resolve the file's sandbox before anything runs: a file that must be
-	// sandboxed and cannot be fails outright, rather than quietly running its
-	// commands on the host.
 	if r.plan, err = r.newSandboxPlan(testFile.Sandbox, tempDir); err != nil {
 		return nil, err
 	}
@@ -178,10 +124,6 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		return nil, err
 	}
 
-	// Expand every test into its matrix instances up front, so instance
-	// numbering, per-instance temp directories, the header's test count, the
-	// summary counts, and setup-failure reporting all operate on the expanded
-	// list. A file with a 2x2 matrix test and one plain test runs 5 tests.
 	instances := make([]schema.TestInstance, 0, len(testFile.Tests))
 	for i := range testFile.Tests {
 		instances = append(instances, schema.ExpandMatrix(&testFile.Tests[i])...)
@@ -195,17 +137,12 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		Results: make([]TestResult, 0, len(instances)),
 	}
 
-	// The file's shared directory exists for the whole run (and is preserved
-	// by --keep-temp) so every {shared.X} placeholder resolves to a writable
-	// path, whether or not the file declares shared fixtures.
 	sharedDir := filepath.Join(tempDir, sharedDirName)
 	if err := os.MkdirAll(sharedDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating shared dir: %w", err)
 	}
 
-	// Write shared fixture files, then run setup commands in declared order,
-	// stopping at the first failure. A failure here fails every test in the
-	// file; teardown still runs.
+	// Write shared fixture files, then run setup commands in declared order, stopping at the first failure.
 	if testFile.Shared != nil {
 		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files, testFile.Shared.Copy, r.sourceDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
@@ -223,8 +160,6 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	}
 	if result.SetupFailure == nil {
 		for _, hc := range testFile.Setup {
-			// Hook commands hold a pool slot exactly like instance commands,
-			// so N bounds every spawned process, not just the test ones.
 			pool.acquire()
 			fail := r.runHookCommand(ctx, "setup", hc, hookSharedDir)
 			pool.release()
@@ -237,9 +172,6 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	}
 
 	if result.SetupFailure != nil {
-		// Every test instance is reported as a normal failure -- loudly,
-		// never as "skipped" -- so the plan, the counts, and the exit code
-		// all stay consistent.
 		fmt.Fprintln(r.Formatter.Writer)
 		for i := range instances {
 			testResult := TestResult{
@@ -255,13 +187,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		if r.Verbose && len(testFile.Setup) > 0 {
 			fmt.Fprintln(r.Formatter.Writer)
 		}
-		// Launch every instance; the pool bounds how many run at once. Each
-		// writes only its own slice element, its own test-<index> directory,
-		// its own (per-instance unique) golden files, and (by convention,
-		// read-only) the file's shared directory. Snapshot assertions apply
-		// after the instance name is set -- the golden file name derives from
-		// it. Results land at their canonical index, so instance numbering and
-		// print order follow expansion order regardless of completion order.
+		// Launch every instance; the pool bounds how many run at once.
 		instanceResults := make([]TestResult, len(instances))
 		var wg sync.WaitGroup
 		for i := range instances {
@@ -290,20 +216,12 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		}
 	}
 
-	// Under --update, stale golden files (instances or streams that no
-	// longer exist) are pruned after the instance loop -- but never after a
-	// setup failure, when nothing ran and nothing is authoritative.
 	if r.Update && result.SetupFailure == nil {
 		r.pruneStaleGoldens(result, instances, path)
 		r.Formatter.PrintPrunedGoldens(result)
 	}
 
-	// Teardown always runs: in declared order, after test failures, and even
-	// when setup failed. One failing command does not stop the rest; any
-	// failure marks the file failed. Teardown commands run under
-	// context.WithoutCancel: the file-format contract says teardown ALWAYS
-	// runs, including when a watch run is interrupted -- a canceled ctx must
-	// kill in-flight setup/test commands but never the cleanup.
+	// Teardown always runs: in declared order, after test failures, and even when setup failed.
 	teardownCtx := context.WithoutCancel(ctx)
 	if r.Verbose && len(testFile.Teardown) > 0 {
 		fmt.Fprintln(r.Formatter.Writer)
@@ -323,15 +241,6 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	return result, nil
 }
 
-// runHookCommand executes one file-level setup or teardown command through
-// the same bash path as test commands (same working directory convention,
-// inherited environment -- including GOCOVERDIR under --coverdir, exactly
-// like test commands -- plus hc's own env and stdin_file), expanding hc.Cmd
-// and hc.Env values through {shared.X} only. The command is bounded by
-// hc.EffectiveTimeout(): unlike a test's timeout, a hook command always has
-// one. It returns nil on success (exit 0) or the failure otherwise. Callers
-// pass the live ctx for setup and a context.WithoutCancel ctx for teardown,
-// which must run even after cancellation.
 func (r *Runner) runHookCommand(ctx context.Context, kind string, hc schema.HookCommand, sharedDir string) *CommandFailure {
 	cmd := ExpandSharedPlaceholders(hc.Cmd, sharedDir)
 	r.Formatter.PrintHookCommand(kind, cmd)
@@ -380,24 +289,11 @@ func (r *Runner) runHookCommand(ctx context.Context, kind string, hc schema.Hook
 	return nil
 }
 
-// commandEnv builds the child environment for an executed command -- the one
-// env-construction path shared by test commands and file-level setup/teardown
-// commands. Execute replaces the child's environment entirely when given one,
-// so a non-nil env always starts from os.Environ(); nil (no extra entries and
-// no --coverdir) means plain inheritance. The extra entries are appended
-// first and GOCOVERDIR last, so --coverdir wins even over an extra entry's
-// own GOCOVERDIR value.
-//
-// added returns just the entries dats contributed, in the same order. A
-// container sandbox starts the command from its image's environment rather
-// than from ours, so those entries -- and only those -- are forwarded into
-// it: the host's own PATH, HOME and the rest would be wrong inside.
 func (r *Runner) commandEnv(extra ...string) (env []string, added []string) {
 	if len(extra) == 0 && len(r.Env) == 0 && r.CoverDir == "" {
 		return nil, nil
 	}
 	// Copied rather than appended in place: both slices belong to callers.
-	// Runner.Env comes first so a test's own inputs.env wins over it.
 	added = append(append([]string{}, r.Env...), extra...)
 	if r.CoverDir != "" {
 		added = append(added, "GOCOVERDIR="+r.CoverDir)
@@ -405,10 +301,6 @@ func (r *Runner) commandEnv(extra ...string) (env []string, added []string) {
 	return append(os.Environ(), added...), added
 }
 
-// signalSuffix names the signal that killed the command, e.g.
-// " (killed by signal: killed)"; empty for a normal exit. A signal death
-// surfaces as exit code -1, so without the name the failure would be
-// baffling.
 func signalSuffix(execResult *ExecResult) string {
 	if execResult.Signal == "" {
 		return ""
@@ -416,11 +308,6 @@ func signalSuffix(execResult *ExecResult) string {
 	return fmt.Sprintf(" (killed by signal: %s)", execResult.Signal)
 }
 
-// sourceDirOf returns the absolute directory holding the .dats file at path,
-// which resolveSource in fixtures.go joins with a relative inputs.copy or
-// shared.copy source. Absolute, rather than left relative to the process's
-// current directory, so the resolution is stable even if that ever changes
-// mid-run.
 func sourceDirOf(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -429,8 +316,7 @@ func sourceDirOf(path string) (string, error) {
 	return filepath.Dir(abs), nil
 }
 
-// testName returns the display name for a test: its desc, falling back to
-// the command.
+// testName returns the display name for a test: its desc, falling back to the command.
 func testName(test *schema.Test) string {
 	if test.Desc != "" {
 		return test.Desc
@@ -438,10 +324,6 @@ func testName(test *schema.Test) string {
 	return test.Cmd
 }
 
-// instanceName returns the display name for an expanded test instance: the
-// instance's desc-or-cmd name (both already matrix-substituted) with the
-// matrix label appended, e.g. "greets [greeting=hello, name=alice]". The
-// label appears whether or not the test has a desc.
 func instanceName(instance *schema.TestInstance) string {
 	name := testName(&instance.Test)
 	if instance.Label != "" {
@@ -450,9 +332,7 @@ func instanceName(instance *schema.TestInstance) string {
 	return name
 }
 
-// RunTest runs a single test. Canceling ctx kills the in-flight command's
-// whole process group; the instance then fails fast with "execution: context
-// canceled" or a signal death, never as a timeout.
+// RunTest runs a single test.
 func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string, index int) TestResult {
 	start := time.Now()
 
@@ -481,9 +361,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		plan = plan.withSSH(sshCfg, remoteBase)
 	}
 
-	// Fixtures are built here and copied over, so the command finds them on
-	// the machine it runs on. Setting RemoteBase first is what makes every
-	// {inputs.X}/{outputs.X}/{shared.X} below expand to a remote path.
+	// Fixtures are built here and copied over, so the command finds them on the machine it runs on.
 	if sshCfg != nil {
 		fixtures.RemoteBase = remoteBase
 		local := testDirPath(baseDir, index)
@@ -498,9 +376,6 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	cmd := ExpandPlaceholders(test.Cmd, fixtures)
 	result.Command = cmd
 
-	// Build environment for command execution: test env entries are appended
-	// in sorted key order (deterministic), with values going through the same
-	// placeholder expansion as the command.
 	var extra []string
 	for _, key := range sortedStringKeys(test.Inputs.Env) {
 		extra = append(extra, key+"="+ExpandPlaceholders(test.Inputs.Env[key], fixtures))
@@ -526,9 +401,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	result.Stdout = execResult.Stdout
 	result.Stderr = execResult.Stderr
 
-	// Bring the outputs home before ANY assertion reads them. Unconditional:
-	// a !files assertion ("must not exist") means nothing if the directory
-	// was never collected.
+	// Bring the outputs home before ANY assertion reads them.
 	if sshCfg != nil {
 		local := testDirPath(baseDir, index)
 		if err := sshCfg.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
@@ -536,19 +409,12 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		}
 	}
 
-	// On timeout, report only the timeout and skip every other assertion:
-	// checking the partial output or missing files would bury the real cause
-	// under misleading secondary failures. (Stdout/stderr stay captured
-	// above for verbose display.)
 	if execResult.TimedOut {
 		result.Failures = append(result.Failures, fmt.Sprintf("command timed out after %s", test.Timeout.Value))
 		result.Duration = time.Since(start)
 		return result
 	}
 
-	// Every early return above skipped this line, so snapshot assertions
-	// (applied by the caller) run exactly when the command ran to
-	// completion.
 	result.ranToCompletion = true
 
 	// Check exit code
@@ -639,9 +505,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		}
 	}
 
-	// Check output files (files) and negated output files (!files). A !files
-	// entry asserts the negation of each of its checks. Names are checked in
-	// sorted order so failures report deterministically.
+	// Check output files (files) and negated output files (!files).
 	for _, name := range sortedStringKeys(test.Outputs.Files) {
 		result.Failures = append(result.Failures, checkFile("file "+name, outputPath(fixtures, baseDir, index, name), test.Outputs.Files[name], false)...)
 	}
@@ -655,10 +519,6 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	return result
 }
 
-// outputPath resolves the on-disk path for a named output file, falling back to
-// the conventional location when the name was not pre-registered in the context.
-// Non-local fallback names (traversal, absolute) are returned unchanged rather
-// than joined, so they can never address a path outside the test directory.
 func outputPath(ctx *TestContext, baseDir string, index int, name string) string {
 	if path := ctx.OutputPaths[name]; path != "" {
 		return path
@@ -669,12 +529,6 @@ func outputPath(ctx *TestContext, baseDir string, index int, name string) string
 	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), outputsDirName, name)
 }
 
-// checkFile applies a FileCheck (exists/match/notMatch) at path and returns
-// failure messages prefixed with label (e.g. "file out.txt" or "!file out.txt").
-// With negate set (the !files form), every check is inverted: exists is
-// flipped, match patterns must NOT match, and notMatch patterns must match.
-// An empty check ({} or null) is an implicit existence assertion rather than a
-// vacuous pass: under files the file must exist, under !files it must not.
 func checkFile(label, path string, check schema.FileCheck, negate bool) []string {
 	var failures []string
 	if check.IsEmpty() {

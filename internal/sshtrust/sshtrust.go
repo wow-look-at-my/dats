@@ -1,15 +1,3 @@
-// Package sshtrust records which .dats files the operator has allowed to run
-// their commands on which ssh target.
-//
-// A file naming a host is the first thing in the format that WIDENS what a
-// run reaches: opening an unfamiliar suite would otherwise dial out using the
-// reader's keys and agent. An approval is that consent, written down once and
-// revocable, rather than a flag that blanket-permits every file in a run.
-//
-// The pair is keyed on the file's path, not its contents. A suite under
-// development changes every few seconds, and re-approving on each edit would
-// make the feature unusable. So an approval says "this file may reach this
-// host", never "these commands may". That is the honest scope of it.
 package sshtrust
 
 import (
@@ -39,8 +27,7 @@ type Store struct {
 	path string
 }
 
-// Path is where the store lives: $XDG_CONFIG_HOME/dats/ssh-trust.json, else
-// ~/.config/dats/ssh-trust.json.
+// Path is where the store lives: $XDG_CONFIG_HOME/dats/ssh-trust.json, else ~/.config/dats/ssh-trust.json.
 func Path() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
@@ -53,8 +40,7 @@ func Path() (string, error) {
 	return filepath.Join(dir, "dats", "ssh-trust.json"), nil
 }
 
-// Load reads the store. A missing file is an empty store, not an error: no
-// approvals yet is the normal starting state.
+// Load reads the store.
 func Load() (*Store, error) {
 	path, err := Path()
 	if err != nil {
@@ -68,8 +54,6 @@ func Load() (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ssh trust: reading %s: %w", path, err)
 	}
-	// A corrupt store must not read as "nothing is approved": that would
-	// silently drop approvals the operator made, and the fix is to say so.
 	if err := json.Unmarshal(data, store); err != nil {
 		return nil, fmt.Errorf("ssh trust: %s is not valid JSON: %w", path, err)
 	}
@@ -150,8 +134,6 @@ func (s *Store) List() []Entry {
 	return out
 }
 
-// save writes the store through a temp file and a rename, so an interrupted
-// write cannot leave a half-written approval list behind.
 func (s *Store) save() error {
 	s.FormatVersion = formatVersion
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {

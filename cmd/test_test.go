@@ -81,8 +81,7 @@ func TestRunTestsMultipleFiles(t *testing.T) {
 	var out bytes.Buffer
 	err := runTests(context.Background(), []string{f1, f2}, &out, 0, nil, "")
 	assert.Nil(t, err)
-	// The multi-file total goes through the runner's writer, not straight to
-	// the process stdout.
+	// The multi-file total goes through the runner's writer, not straight to the process stdout.
 	assert.Contains(t, out.String(), "Total: 2/2 passed")
 }
 

@@ -11,10 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTarRoundTripPreservesTreeAndModes proves the fixture transport keeps
-// what dats promises about fixtures: nested names survive, and a copied
-// script keeps its executable bit. Needs no ssh -- the archive is the whole
-// contract, and the far side only untars it.
 func TestTarRoundTripPreservesTreeAndModes(t *testing.T) {
 	src := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(src, "inputs", "sub"), 0o755))
@@ -57,8 +53,6 @@ func TestTarRoundTripOnEmptyDirectory(t *testing.T) {
 	assert.Empty(t, entries)
 }
 
-// TestExtractTarRefusesAnEscapingMember pins that the archive is not trusted
-// to stay inside the destination: it arrives from another machine.
 func TestExtractTarRefusesAnEscapingMember(t *testing.T) {
 	for _, name := range []string{"../ev.txt", "/etc/ev.txt", "a/../../ev.txt"} {
 		t.Run(name, func(t *testing.T) {

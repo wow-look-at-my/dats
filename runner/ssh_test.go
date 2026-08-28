@@ -10,9 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// hostileArgs are strings a shell would act on if the quoting let it. Every
-// one of them is a legal dats command, so each must reach the far side
-// unchanged.
+// hostileArgs are strings a shell would act on if the quoting let it.
 var hostileArgs = []struct {
 	name string
 	arg  string
@@ -42,10 +40,6 @@ var hostileArgs = []struct {
 	{"newline and quote", "a'\nb"},
 }
 
-// TestSSHRemoteScriptSurvivesTheShell is the load-bearing test of the whole
-// ssh transport. ssh has no argv for the far side: it hands one string to a
-// login shell, so every remote command is re-parsed by a shell before it
-// runs. A local shell answers the same question, so this test needs no ssh.
 func TestSSHRemoteScriptSurvivesTheShell(t *testing.T) {
 	for _, tc := range hostileArgs {
 		t.Run(tc.name, func(t *testing.T) {
@@ -57,8 +51,6 @@ func TestSSHRemoteScriptSurvivesTheShell(t *testing.T) {
 	}
 }
 
-// TestSSHRemoteScriptKeepsArgumentsSeparate proves the join never merges two
-// arguments or splits one: a value holding a space stays a single argument.
 func TestSSHRemoteScriptKeepsArgumentsSeparate(t *testing.T) {
 	script := sshRemoteScript([]string{"printf", "[%s]", "one two", "three"})
 	out, err := exec.Command("sh", "-c", script).Output()
@@ -95,9 +87,7 @@ func TestSSHRemoteCommandRecordsThePid(t *testing.T) {
 	assert.Regexp(t, `^[0-9]+\n?$`, string(recorded), "the pid file must hold the shell pid")
 }
 
-// TestSSHRemoteCommandPidFailureIsNotTheExitStatus pins the ";" that closes
-// the recording block. With "&&" there instead, an unwritable pid directory
-// would silently become the command's result.
+// TestSSHRemoteCommandPidFailureIsNotTheExitStatus pins the ";" that closes the recording block.
 func TestSSHRemoteCommandPidFailureIsNotTheExitStatus(t *testing.T) {
 	script := sshRemoteCommand("/proc/nonexistent/dats", "id", nil, []string{"printf", "%s", "ran"})
 	out, err := exec.Command("sh", "-c", script).Output()
@@ -169,9 +159,7 @@ func TestSSHArgvWithoutControlPathOmitsMultiplexing(t *testing.T) {
 	}
 }
 
-// TestSSHControlPathStaysUnderTheSocketLimit pins the reason the socket is
-// named by a hash. A unix socket path stops at 104 bytes on macOS, and ssh
-// reports the overflow as a failure that never mentions the length.
+// TestSSHControlPathStaysUnderTheSocketLimit pins the reason the socket is named by a hash.
 func TestSSHControlPathStaysUnderTheSocketLimit(t *testing.T) {
 	long := "user@" + strings.Repeat("a", 200) + ".example.com"
 	got := sshControlPath("/tmp/dats-ssh-1234567890", long)

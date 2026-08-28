@@ -1,11 +1,5 @@
 package runner
 
-// Sandbox tests for the docker backend, run against a real daemon and
-// skipped when there isn't one (or when its image cannot be fetched). The
-// backend is a fallback for machines without bubblewrap, so what is asserted
-// here is that a .dats file's contract still holds inside a container:
-// fixtures, environment, stdin and outputs all arrive, host paths outside the
-// temp directory do not, and a timed-out command leaves no container behind.
 
 import (
 	"bytes"
@@ -22,11 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// requireDocker skips unless a daemon is reachable AND the default image can
-// actually be run: needing a running daemon and a registry pull is not a
-// reasonable prerequisite for every dev machine, and a registry that is down
-// or rate-limiting says nothing about the code under test. CI runners ship a
-// daemon, so these run there.
 func requireDocker(t *testing.T) {
 	t.Helper()
 	if err := probeDocker(); err != nil {
@@ -89,8 +78,6 @@ tests:
 }
 
 func TestRunFileDockerSandboxTimeoutLeavesNoContainer(t *testing.T) {
-	// Killing `docker run` kills the client, not the workload: without the
-	// plan's kill hook every timed-out test would leak a running container.
 	requireDocker(t)
 	path := writeRunnerDats(t, `
 tests:
@@ -107,8 +94,6 @@ tests:
 	require.Equal(t, 1, result.Failed)
 	assert.Contains(t, result.Results[0].Failures[0], "timed out")
 
-	// The kill is fired asynchronously as the command is torn down, so give
-	// the daemon a moment before demanding the container be gone.
 	assert.Eventually(t, func() bool {
 		out, err := exec.Command("docker", "ps", "--format", "{{.Names}}").Output()
 		return err == nil && !strings.Contains(string(out), "dats-"+strconv.Itoa(os.Getpid())+"-")

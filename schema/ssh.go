@@ -8,8 +8,7 @@ import (
 	"strings"
 )
 
-// SSHSpec is an `ssh` block: the target this file's commands run on. Nil
-// means the key is absent, so the commands run wherever the run says.
+// SSHSpec is an `ssh` block: the target this file's commands run on.
 type SSHSpec struct {
 	// Target is [user@]host, as ssh spells it.
 	Target string
@@ -32,10 +31,7 @@ var errSSHBare = fmt.Errorf("ssh: name the target ([user@]host); whether a run g
 // sshTargetPattern allows braces so a PER-TEST target can hold {matrix.X}.
 var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]{}-]+$`)
 
-// UnmarshalYAML decodes the ssh block: a bare target string. There is
-// deliberately no port, identity or options key -- connection policy is spent
-// from the reader's credentials, so it lives in their ~/.ssh/config, and a
-// non-default port is a Host alias away.
+// UnmarshalYAML decodes the ssh block: a bare target string.
 func (s *SSHSpec) UnmarshalYAML(value any) error {
 	switch v := value.(type) {
 	case bool:
@@ -53,9 +49,7 @@ func (s *SSHSpec) UnmarshalYAML(value any) error {
 	return fmt.Errorf("ssh: must be a target string like user@host")
 }
 
-// validateSSHTarget rejects an empty target and one ssh would read as an
-// option. The runner checks again before building an argv, the way fixture
-// names are re-checked at setup for a caller that bypassed ParseFile.
+// validateSSHTarget rejects an empty target and one ssh would read as an option.
 func validateSSHTarget(target string) error {
 	switch {
 	case target == "":

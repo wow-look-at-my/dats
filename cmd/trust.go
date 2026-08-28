@@ -1,7 +1,6 @@
 package cmd
 
-// The trust command: manage which .dats files may run their commands on
-// which ssh target.
+// The trust command: manage which .dats files may run their commands on which ssh target.
 
 import (
 	"bufio"
@@ -96,10 +95,7 @@ func init() {
 	rootCmd.AddCommand(trustCmd)
 }
 
-// approveSSHTarget is the run's answer to a file that named a target. On a
-// terminal it asks once and records the answer; with nobody watching it
-// refuses and names the command that grants the approval, rather than
-// stopping at a prompt no pipeline can answer.
+// approveSSHTarget is the run's answer to a file that named a target.
 func approveSSHTarget(datsPath, target string) error {
 	store, err := sshtrust.Load()
 	if err != nil {

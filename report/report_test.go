@@ -1,9 +1,5 @@
 package report
 
-// Unit tests for the report writers, on hand-built results: document shape,
-// the counts contract (JUnit totals include synthetic hook cases; JSON
-// summary counts instances only), canonical ordering, presence rules for
-// captured output, and the XML control-character sanitizer.
 
 import (
 	"bytes"
@@ -17,9 +13,6 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// mixedResults builds two file results exercising every report feature: a
-// file with a passing and a failing instance plus two teardown failures, and
-// a file whose setup failed (both instances reported failed, unrun).
 func mixedResults() []*runner.FileResult {
 	return []*runner.FileResult{
 		{
@@ -102,8 +95,6 @@ func TestWriteJUnitShape(t *testing.T) {
 	var root parsedSuites
 	require.Nil(t, xml.Unmarshal(buf.Bytes(), &root))
 
-	// Root totals include the synthetic hook cases: 4 instances + 1 setup +
-	// 2 teardowns; failures: 3 failed instances + the same 3 synthetics.
 	assert.Equal(t, 7, root.Tests)
 	assert.Equal(t, 6, root.Failures)
 	assert.Equal(t, "2.000", root.Time)
@@ -186,8 +177,6 @@ func TestWriteJSONShape(t *testing.T) {
 	assert.Equal(t, float64(FormatVersion), doc["format_version"])
 	assert.Equal(t, false, doc["ok"])
 
-	// Summary counts are instance-only -- the CLI summary numbers; the
-	// synthetic hook entries live in setup_failure/teardown_failures.
 	summary := doc["summary"].(map[string]any)
 	assert.Equal(t, float64(2), summary["files"])
 	assert.Equal(t, float64(4), summary["tests"])
@@ -245,8 +234,6 @@ func TestWriteJSONShape(t *testing.T) {
 }
 
 func TestWriteJSONFailedInstanceWithEmptyOutputKeepsKeys(t *testing.T) {
-	// The presence rule is by outcome, not by content: a FAILED instance that
-	// printed nothing still has stdout/stderr keys (empty strings).
 	results := []*runner.FileResult{{
 		Path:    "f.dats",
 		Results: []runner.TestResult{{Name: "quiet failure", Failures: []string{"boom"}}},
@@ -292,8 +279,6 @@ func TestSanitizeXML(t *testing.T) {
 	}
 }
 
-// TestWriteJUnitSanitizesControlChars pins that output containing bytes
-// illegal in XML 1.0 still yields a well-formed, parseable document.
 func TestWriteJUnitSanitizesControlChars(t *testing.T) {
 	results := []*runner.FileResult{{
 		Path: "ctrl.dats",
@@ -317,9 +302,6 @@ func TestWriteJUnitSanitizesControlChars(t *testing.T) {
 	assert.Equal(t, "out �[31m� raw", *c.SystemOut)
 }
 
-// TestWriteJSONPreservesControlChars pins the JSON side of the same
-// guarantee: control characters need no replacement there -- encoding/json
-// escapes them -- so the exact bytes round-trip.
 func TestWriteJSONPreservesControlChars(t *testing.T) {
 	results := []*runner.FileResult{{
 		Path: "ctrl.dats",

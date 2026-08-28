@@ -1,9 +1,5 @@
 package runner
 
-// Tests for matrix (parameterized) test execution: tests are expanded into
-// instances up front, so the header count, instance numbering, per-instance
-// fixture isolation, summary counts, and setup-failure reporting all operate
-// on the expanded list, and every reported line carries the instance label.
 
 import (
 	"bytes"
@@ -18,8 +14,6 @@ import (
 )
 
 func TestRunFileMatrixExpansionOrderAndLabels(t *testing.T) {
-	// A 2x3 matrix runs as 6 instances: declaration order, last variable
-	// fastest, every line labeled, header and summary counting instances.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: combo
@@ -60,9 +54,6 @@ ok 6 - combo [a=2, b=z]
 }
 
 func TestRunFileMatrixInstanceIsolation(t *testing.T) {
-	// Instances declare the same fixture name with matrix-driven contents;
-	// each instance's test directory is its own, so each command sees only
-	// its instance's file.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: isolated
@@ -89,9 +80,6 @@ tests:
 }
 
 func TestRunFileMatrixStdinSubstituted(t *testing.T) {
-	// inputs.stdin gets matrix substitution (at expansion time) even though
-	// it never gets runtime placeholder expansion; the substituted text must
-	// reach the process.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: stdin
@@ -168,8 +156,6 @@ tests:
 }
 
 func TestRunFileMatrixFailingInstanceLabeled(t *testing.T) {
-	// Exactly one combination fails; its "not ok" line must identify the
-	// instance by label, and the counts stay instance counts.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: check
@@ -199,9 +185,6 @@ tests:
 }
 
 func TestRunFileMatrixSetupFailureReportsEveryInstance(t *testing.T) {
-	// On file setup failure the EXPANDED list is reported: a 2x2 matrix test
-	// plus a plain test is 5 failures (never "skipped"), labels included,
-	// and teardown still runs.
 	marker := filepath.Join(t.TempDir(), "teardown-ran.txt")
 	path := writeRunnerDats(t, `
 setup:
@@ -243,9 +226,6 @@ tests:
 }
 
 func TestRunFileMatrixValueWithSharedPlaceholderExpandsAtRuntime(t *testing.T) {
-	// Matrix substitution happens first; a matrix value carrying a
-	// {shared.X} placeholder then behaves like any other text in the
-	// command, expanding at runtime.
 	path := writeRunnerDats(t, `
 shared:
 	files:
@@ -268,8 +248,6 @@ tests:
 }
 
 func TestRunFileMatrixValueWithMatrixPlaceholderStaysLiteral(t *testing.T) {
-	// Single-pass substitution: a matrix value containing a literal
-	// {matrix.b} is NOT re-expanded, even though b is declared.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: literal

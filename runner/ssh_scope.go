@@ -1,7 +1,6 @@
 package runner
 
-// Per-test ssh targets; the file's own stays HOME. SETUP PREPARES ONLY THAT
-// HOST -- docs/file-format.md#per-test-override says why.
+// Per-test ssh targets; the file's own stays HOME.
 
 import (
 	"context"
@@ -9,18 +8,14 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// remoteScope is one host this file reaches: its connection and the temp
-// directory allocated on it.
+// remoteScope is one host this file reaches: its connection and the temp directory allocated on it.
 type remoteScope struct {
 	cfg  *SSHConfig
 	base string
 }
 
 // scopeFor returns the connection and remote base one instance runs against.
-// A nil connection means the instance runs here.
 func (r *Runner) scopeFor(ctx context.Context, spec *schema.SSHSpec, sharedDir string) (*SSHConfig, string, error) {
-	// A per-test target cannot start a remote run: ParseFile refuses one
-	// without the file-level target that sets r.ssh.
 	if r.ssh == nil {
 		return nil, "", nil
 	}
@@ -36,8 +31,6 @@ func (r *Runner) scopeFor(ctx context.Context, spec *schema.SSHSpec, sharedDir s
 }
 
 // altScope builds (once) the scope for a host this file's tests overrode to.
-// Instances run concurrently, so the whole build is under the lock: two
-// instances naming one host must share a base, never race to allocate two.
 func (r *Runner) altScope(ctx context.Context, spec *schema.SSHSpec, sharedDir string) (*remoteScope, error) {
 	r.altMu.Lock()
 	defer r.altMu.Unlock()
@@ -73,9 +66,7 @@ func (r *Runner) altScope(ctx context.Context, spec *schema.SSHSpec, sharedDir s
 	return scope, nil
 }
 
-// closeAltScopes removes the temp directories this file claimed on hosts
-// other than its home target. The connections belong to the run's manager
-// and outlive the file.
+// closeAltScopes removes the temp directories this file claimed on hosts other than its home target.
 func (r *Runner) closeAltScopes() {
 	r.altMu.Lock()
 	defer r.altMu.Unlock()

@@ -86,8 +86,7 @@ func TestHookCommand_MappingForm_UnknownKey(t *testing.T) {
 }
 
 func TestHookCommand_MappingForm_DuplicateKey(t *testing.T) {
-	// A duplicate key is rejected by the parser itself before HookCommand's
-	// own decoding ever runs.
+	// A duplicate key is rejected by the parser itself before HookCommand's own decoding ever runs.
 	var s SetupCommands
 	err := yaml.Unmarshal([]byte("-\n\tcmd: echo hi\n\tcmd: echo bye\n"), &s)
 	require.NotNil(t, err)
@@ -154,8 +153,6 @@ func TestExitCode_UnmarshalYAML_InvalidString(t *testing.T) {
 		"EXIT",
 		"exit_success",
 		"123abc",
-		// Well-formed EXIT_* names the runner cannot resolve are rejected at
-		// parse time: they could never pass a run.
 		"EXIT_BOGUS",
 		"EXIT_USAGE",
 	}
@@ -355,8 +352,7 @@ func TestSnapshotCheck_UnmarshalYAML_Errors(t *testing.T) {
 	}{
 		{"non-bool scalar", "banana", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
 		{"sequence", "[true]", "snapshot: must be true, false, or a mapping of stream booleans (stdout, stderr)"},
-		// A duplicate key is rejected by the parser itself before
-		// SnapshotCheck's own decoding ever runs.
+		// A duplicate key is rejected by the parser itself before SnapshotCheck's own decoding ever runs.
 		{"duplicate key", "stdout: true\nstdout: false", `duplicate mapping key "stdout"`},
 		{"unknown key", "files: true", `snapshot: unknown key "files" (allowed: stdout, stderr)`},
 		{"non-bool value", "stdout: 1", "snapshot: stdout must be a boolean"},
@@ -381,9 +377,6 @@ func TestOutputBlock_SnapshotAbsentAndNull(t *testing.T) {
 	require.Nil(t, yaml.Unmarshal([]byte("stdout:\n\t- hi\n"), &absent))
 	assert.Equal(t, SnapshotCheck{}, absent.Snapshot)
 
-	// ...and so does an explicit null (SnapshotCheck.UnmarshalYAML treats a
-	// nil value the same as an absent key), matching how `matrix:` with
-	// explicit null is absent.
 	var null OutputBlock
 	require.Nil(t, yaml.Unmarshal([]byte("snapshot: null\n"), &null))
 	assert.Equal(t, SnapshotCheck{}, null.Snapshot)

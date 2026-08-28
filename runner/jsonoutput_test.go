@@ -142,8 +142,6 @@ func TestAssertJSONOutputBigIntegerPrecision(t *testing.T) {
 }
 
 func TestRenderJSONTruncatesAtRuneBoundary(t *testing.T) {
-	// Multi-byte content around the truncation limit must not be split
-	// mid-rune: the rendered string stays valid UTF-8.
 	s := renderJSON(strings.Repeat("é", 60))
 	assert.True(t, strings.HasSuffix(s, "..."))
 	assert.True(t, utf8.ValidString(s), "truncated JSON rendering must remain valid UTF-8: %q", s)

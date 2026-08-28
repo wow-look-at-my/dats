@@ -1,9 +1,5 @@
 package runner
 
-// Tests for jobs-mode orchestration (RunFiles): the per-file
-// barriers hold under a shared global pool, setup failures keep their serial
-// semantics, files genuinely run concurrently, and unparseable input aborts
-// before anything runs.
 
 import (
 	"bytes"
@@ -18,8 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeParallelDats writes one generated .dats file into its own temp dir
-// and returns its path.
+// writeParallelDats writes one generated .dats file into its own temp dir and returns its path.
 func writeParallelDats(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)
@@ -27,12 +22,6 @@ func writeParallelDats(t *testing.T, name, content string) string {
 	return path
 }
 
-// TestRunFilesBarriers proves the per-file barriers hold under
-// parallelism: no instance starts before its file's setup finished (the
-// grep on the gate file would fail), and teardown runs only after every
-// instance finished (the marker count would come up short). Three such
-// files run in ONE parallel call, so files are concurrently in flight while
-// each file's own ordering constraints must still hold.
 func TestRunFilesBarriers(t *testing.T) {
 	const instances = 8
 	var paths []string
@@ -76,10 +65,6 @@ tests:
 	}
 }
 
-// TestRunFilesSetupFailureFailsEveryInstance pins that a setup
-// failure under jobs keeps its serial semantics exactly: every instance is
-// reported failed with the same reason string, none of their commands ran,
-// teardown still ran, and the file failed.
 func TestRunFilesSetupFailureFailsEveryInstance(t *testing.T) {
 	dir := t.TempDir()
 	ranMarker := filepath.Join(dir, "ran.txt")
@@ -125,17 +110,10 @@ tests:
 	assert.NotContains(t, out, "skip")
 }
 
-// TestRunFilesCrossFileConcurrency proves instances of DIFFERENT
-// files run concurrently: file A writes its marker and then waits for file
-// B's, while file B waits for A's marker and then writes its own. Under any
-// serialized execution order one side exhausts its bounded wait and fails;
-// only genuinely overlapping execution passes.
 func TestRunFilesCrossFileConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	aMarker := filepath.Join(dir, "a.txt")
 	bMarker := filepath.Join(dir, "b.txt")
-	// Waits up to ~10s for marker, then reflects success in its exit status
-	// (without exiting the shell, so it can be chained with &&).
 	wait := func(marker string) string {
 		return fmt.Sprintf(
 			`ok=1; for i in $(seq 100); do if [ -f %s ]; then ok=0; break; fi; sleep 0.1; done; [ "$ok" -eq 0 ]`,
@@ -162,9 +140,6 @@ tests:
 	}
 }
 
-// TestRunFilesParseErrorFailsFast pins the documented jobs-mode
-// divergence: every file is parsed up front, so a parse error in ANY file
-// aborts before a single command runs and before anything is printed.
 func TestRunFilesParseErrorFailsFast(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran.txt")
 	good := writeParallelDats(t, "good.dats", `
@@ -197,9 +172,6 @@ func TestRunFilesRejectsNonPositiveJobs(t *testing.T) {
 }
 
 func TestRunFilesCanceledContextTeardownStillRuns(t *testing.T) {
-	// The jobs-mode path honors the same contract as serial RunFile: a
-	// canceled context kills the in-flight instances promptly, they report as
-	// failures, and teardown still runs under context.WithoutCancel.
 	marker := filepath.Join(t.TempDir(), "teardown-ran")
 	path := writeParallelDats(t, "cancel.dats", `
 teardown: touch `+marker+`

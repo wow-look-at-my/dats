@@ -1,7 +1,5 @@
 package schema
 
-// Tests for the file-level ssh block: the shape it accepts, and the parse
-// errors that stop a file smuggling an ssh option through the target.
 
 import (
 	"testing"
@@ -39,8 +37,6 @@ func TestParseSSHExplicitNullIsAbsent(t *testing.T) {
 	assert.Nil(t, tf.SSH)
 }
 
-// TestParseSSHFalseIsRejected: local is the privileged side, so a file
-// asking to run here is reaching for more, not waiving a protection.
 func TestParseSSHFalseIsRejected(t *testing.T) {
 	_, err := parseSSH(t, "ssh: false\n")
 	require.Error(t, err)
@@ -53,9 +49,6 @@ func TestParseSSHTrueIsRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "--ssh")
 }
 
-// TestParseSSHRejectsAnOptionShapedTarget is a security test: ssh accepts no
-// "--" before its target, so -oProxyCommand= would run a command on the
-// machine that merely opened the file.
 func TestParseSSHRejectsAnOptionShapedTarget(t *testing.T) {
 	for _, target := range []string{
 		"-oProxyCommand=touch /tmp/pwned",
@@ -85,8 +78,6 @@ func TestParseSSHRejectsANonString(t *testing.T) {
 	assert.Contains(t, err.Error(), "must be a target string")
 }
 
-// TestParseSSHRejectsAMatrixPlaceholder pins that the file-level target is
-// resolved once, before any instance exists.
 func TestParseSSHRejectsAMatrixPlaceholder(t *testing.T) {
 	_, err := parseSSH(t, "ssh: \"{matrix.host}\"\n")
 	require.Error(t, err)

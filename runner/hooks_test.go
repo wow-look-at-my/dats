@@ -1,8 +1,5 @@
 package runner
 
-// Tests for file-level setup, teardown, and shared fixtures: shared files are
-// written before setup, setup runs before any test, a setup failure fails
-// every test in the file (never "skips" them), and teardown always runs.
 
 import (
 	"bytes"
@@ -16,8 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeRunnerDats writes content to a temp .dats file and returns its path
-// (shared by the hooks and matrix RunFile-level tests).
 func writeRunnerDats(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "runner.dats")
@@ -26,8 +21,6 @@ func writeRunnerDats(t *testing.T, content string) string {
 }
 
 func TestRunFileSharedPlaceholderInCmdContentsAndEnv(t *testing.T) {
-	// {shared.X} expands exactly where {inputs.X}/{outputs.X} already do:
-	// the command, inputs.files contents, and inputs.env values.
 	path := writeRunnerDats(t, `
 shared:
 	files:
@@ -58,8 +51,6 @@ tests:
 }
 
 func TestRunFileStdinNotExpanded(t *testing.T) {
-	// inputs.stdin is passed to the command verbatim: no placeholder
-	// namespace, including {shared.X}, is expanded in it.
 	path := writeRunnerDats(t, `
 shared:
 	files:
@@ -183,9 +174,6 @@ tests:
 }
 
 func TestRunFileSharedWriteFailureFailsEveryTest(t *testing.T) {
-	// A shared file whose name collides with a directory created by an
-	// earlier shared file cannot be written; the failure is treated exactly
-	// like a setup failure: every test fails, teardown still runs.
 	marker := filepath.Join(t.TempDir(), "teardown-ran.txt")
 	path := writeRunnerDats(t, `
 shared:
@@ -258,8 +246,7 @@ tests:
 	require.Len(t, result.TeardownFailures, 1)
 	assert.Contains(t, result.TeardownFailures[0].Detail, "exit code 7")
 
-	// Teardown ran after the test failure, and one failing teardown command
-	// did not stop the rest.
+	// Teardown ran after the test failure, and one failing teardown command did not stop the rest.
 	_, err1 := os.Stat(first)
 	assert.Nil(t, err1, "first teardown command must run after test failures")
 	_, err2 := os.Stat(last)
@@ -292,9 +279,6 @@ tests:
 }
 
 func TestRunFileHooksReceiveCoverDir(t *testing.T) {
-	// Under --coverdir, file-level setup and teardown commands receive
-	// GOCOVERDIR exactly like test commands do (one shared env-construction
-	// path), so coverage captures every invocation of an instrumented binary.
 	dir := t.TempDir()
 	setupMarker := filepath.Join(dir, "setup-cover.txt")
 	teardownMarker := filepath.Join(dir, "teardown-cover.txt")
@@ -320,9 +304,6 @@ tests:
 }
 
 func TestRunFileHooksWithoutCoverDirInheritPlainEnv(t *testing.T) {
-	// Without --coverdir, hooks run with plain inheritance: they see the
-	// parent's own GOCOVERDIR exactly as-is and are never handed a value
-	// they didn't inherit.
 	t.Setenv("GOCOVERDIR", "from-parent")
 	marker := filepath.Join(t.TempDir(), "cover.txt")
 	path := writeRunnerDats(t, `
@@ -358,8 +339,6 @@ tests:
 }
 
 func TestRunFileHookEnvApplied(t *testing.T) {
-	// FOO is a literal value and BAR expands {shared.X}, proving both the env
-	// values themselves and their placeholder expansion reach the command.
 	path := writeRunnerDats(t, `
 shared:
 	files:
@@ -384,8 +363,7 @@ tests:
 }
 
 func TestRunFileHookEnvNotInheritedByTests(t *testing.T) {
-	// A hook's env is scoped to that hook command; it must not leak into the
-	// test commands that run afterward.
+	// A hook's env is scoped to that hook command; it must not leak into the test commands that run afterward.
 	path := writeRunnerDats(t, `
 setup:
 	- cmd: "true"
@@ -461,8 +439,6 @@ tests:
 }
 
 func TestRunFileHookDefaultTimeoutDoesNotFireEarly(t *testing.T) {
-	// A hook with no stated timeout runs under DefaultHookTimeout (30s), not
-	// some shorter implicit bound -- a quick command must not be cut off.
 	path := writeRunnerDats(t, `
 setup: echo quick
 tests:
@@ -476,9 +452,6 @@ tests:
 }
 
 func TestRunFileCanceledContextTeardownStillRuns(t *testing.T) {
-	// Canceling the context mid-run aborts the in-flight test command
-	// promptly and reports the instance as failed -- but teardown runs under
-	// context.WithoutCancel, so the cleanup marker must still appear.
 	marker := filepath.Join(t.TempDir(), "teardown-ran")
 	path := writeRunnerDats(t, `
 teardown: touch `+marker+`

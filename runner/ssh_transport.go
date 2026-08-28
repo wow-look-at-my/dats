@@ -21,8 +21,7 @@ const sshProbePayload = "dats probe: '\"$`\\ * {} ${x} <>|& ;"
 // sshConnectTimeout bounds the wait for the multiplexing master.
 const sshConnectTimeout = 30 * time.Second
 
-// SSHConfig is the run-wide ssh target. A nil *SSHConfig runs commands on
-// the local machine, which is the default.
+// SSHConfig is the run-wide ssh target.
 type SSHConfig struct {
 	// Target is [user@]host, exactly as ssh spells it.
 	Target string
@@ -39,8 +38,6 @@ func NewSSHConfig(target string) *SSHConfig {
 	return &SSHConfig{Target: target}
 }
 
-// Connect starts the multiplexing master and proves the target is usable,
-// at most once per config no matter how many files ask.
 func (c *SSHConfig) Connect(ctx context.Context) error {
 	c.once.Do(func() { c.err = c.connect(ctx) })
 	return c.err
@@ -65,9 +62,7 @@ func (c *SSHConfig) connect(ctx context.Context) error {
 	return c.probe(ctx)
 }
 
-// startMaster runs the master as a child we own. "-f" would daemonize it
-// beyond our reach, and ControlMaster=auto would make some ordinary command
-// the master, so that command finishing would drop everyone else.
+// startMaster runs the master as a child we own.
 func (c *SSHConfig) startMaster(ctx context.Context) error {
 	args := []string{
 		"-T",
@@ -106,9 +101,7 @@ func (c *SSHConfig) startMaster(ctx context.Context) error {
 	return fmt.Errorf("ssh: cannot connect to %s: %s", c.Target, detail)
 }
 
-// probe proves the remote shell returns a quoted argument unchanged and has
-// the two tools a run needs. Reachability alone proves neither: a csh login
-// shell mangles the quoting, and a stripped image has no tar.
+// probe proves the remote shell returns a quoted argument unchanged and has the two tools a run needs.
 func (c *SSHConfig) probe(ctx context.Context) error {
 	script := "command -v bash >/dev/null 2>&1 || { echo 'no bash on the remote host' >&2; exit 90; }; " +
 		"command -v tar >/dev/null 2>&1 || { echo 'no tar on the remote host' >&2; exit 91; }; " +
@@ -147,8 +140,6 @@ func (c *SSHConfig) command(ctx context.Context, script string) *exec.Cmd {
 	return exec.CommandContext(ctx, "ssh", sshArgv(c.Target, c.controlPath, script)[1:]...)
 }
 
-// output runs script on the target and returns its stdout, reporting the
-// remote stderr on failure so the caller sees the real reason.
 func (c *SSHConfig) output(ctx context.Context, script string) (string, error) {
 	cmd := c.command(ctx, script)
 	var stdout, stderr bytes.Buffer
@@ -176,8 +167,6 @@ func (c *SSHConfig) AllocBase(ctx context.Context) (string, error) {
 	return base, nil
 }
 
-// RemoveBase deletes a remote temp directory, best-effort: the run is over
-// and a leftover directory is not worth failing it.
 func (c *SSHConfig) RemoveBase(base string) {
 	if base == "" {
 		return
@@ -187,9 +176,6 @@ func (c *SSHConfig) RemoveBase(base string) {
 	_ = c.command(ctx, "rm -rf "+sshQuote(base)).Run()
 }
 
-// KillRemote kills the process group recorded for one command. ssh forwards
-// no signal, so killing the local client leaves the remote workload running.
-// The group is tried first, since that is what reaches forked children.
 func (c *SSHConfig) KillRemote(base, id string) {
 	if base == "" || id == "" {
 		return
@@ -206,9 +192,7 @@ func (c *SSHConfig) KillRemote(base, id string) {
 // sshPidDirName holds the per-command pid files under a file's remote base.
 const sshPidDirName = ".pids"
 
-// Push copies a local directory tree onto the target. The stream carries
-// mode bits, so a copied fixture keeps its executable bit; "-p" is required
-// because a non-root tar otherwise applies the umask.
+// Push copies a local directory tree onto the target.
 func (c *SSHConfig) Push(ctx context.Context, localDir, remoteDir string) error {
 	var buf bytes.Buffer
 	if err := writeTarDir(localDir, &buf); err != nil {
@@ -225,8 +209,7 @@ func (c *SSHConfig) Push(ctx context.Context, localDir, remoteDir string) error 
 	return nil
 }
 
-// Pull copies one directory back from the target into localParent. Output
-// files are read from the local copy, so this must run before any assertion.
+// Pull copies one directory back from the target into localParent.
 func (c *SSHConfig) Pull(ctx context.Context, remoteParent, name, localParent string) error {
 	script := "exec tar -cf - -C " + sshQuote(remoteParent) + " " + sshQuote(name)
 	cmd := c.command(ctx, script)
@@ -241,8 +224,6 @@ func (c *SSHConfig) Pull(ctx context.Context, remoteParent, name, localParent st
 	return nil
 }
 
-// writeTarDir packs dir's contents (not dir itself) into w. Fixture trees are
-// small, so the archive is built in memory rather than streamed.
 func writeTarDir(dir string, w io.Writer) error {
 	tw := tar.NewWriter(w)
 	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
@@ -289,8 +270,7 @@ func writeTarDir(dir string, w io.Writer) error {
 	return tw.Close()
 }
 
-// extractTar unpacks r under dest. A member that escapes dest is refused:
-// the archive comes off a remote machine and is not trusted to stay inside.
+// extractTar unpacks r under dest.
 func extractTar(r io.Reader, dest string) error {
 	tr := tar.NewReader(r)
 	for {

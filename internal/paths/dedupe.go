@@ -7,8 +7,6 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// Dedupe removes duplicate paths, compared by absolute path, keeping the
-// first occurrence (and its original spelling) of each.
 func Dedupe(paths []string) []string {
 	seen := set.New[string](len(paths))
 	out := make([]string, 0, len(paths))

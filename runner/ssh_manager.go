@@ -7,8 +7,6 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// SSHManager decides, per file, which machine that file's commands run on,
-// and owns one connection per distinct target for the whole run.
 type SSHManager struct {
 	// Target is the operator's typed target; it outranks a file's own ssh:.
 	Target string
@@ -20,9 +18,6 @@ type SSHManager struct {
 	configs map[string]*SSHConfig
 }
 
-// Resolve returns the connection for one file, the file's own target when it
-// was refused in favour of a typed one (so the run can announce it rather
-// than swap silently), or nil when the file's commands run here.
 func (m *SSHManager) Resolve(datsPath string, spec *schema.SSHSpec) (*SSHConfig, string, error) {
 	if m == nil {
 		return nil, "", nil
@@ -51,8 +46,6 @@ func (m *SSHManager) Resolve(datsPath string, spec *schema.SSHSpec) (*SSHConfig,
 	return m.config(fileTarget), "", nil
 }
 
-// config memoizes one connection per target: several files may share one,
-// and a run must not open a second connection for the same machine.
 func (m *SSHManager) config(target string) *SSHConfig {
 	m.mu.Lock()
 	defer m.mu.Unlock()

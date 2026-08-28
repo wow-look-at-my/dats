@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// isolate points the store at a throwaway config directory, so a test never
-// reads or writes the developer's real approvals.
 func isolate(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -78,9 +76,6 @@ func TestRevoke(t *testing.T) {
 	assert.False(t, removed, "revoking twice reports that there was nothing to remove")
 }
 
-// TestApprovalKeyIsTheResolvedPath pins that two spellings of one file share
-// an approval: otherwise the same suite would be asked about again from a
-// different working directory.
 func TestApprovalKeyIsTheResolvedPath(t *testing.T) {
 	isolate(t)
 	dir := t.TempDir()
@@ -96,9 +91,6 @@ func TestApprovalKeyIsTheResolvedPath(t *testing.T) {
 	assert.True(t, ok)
 }
 
-// TestCorruptStoreIsAnErrorNotAnEmptyList pins that a damaged file never
-// reads as "nothing was approved": that would silently drop the operator's
-// own decisions.
 func TestCorruptStoreIsAnErrorNotAnEmptyList(t *testing.T) {
 	dir := isolate(t)
 	path := filepath.Join(dir, "dats", "ssh-trust.json")

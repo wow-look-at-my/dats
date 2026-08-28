@@ -1,10 +1,5 @@
 package cmd
 
-// Tests for the watch command's engine: the pure event-relevance filter, the
-// watch-directory computation, the debouncing loop core (driven by a fake
-// event channel), the header rendering, and one real-fsnotify integration
-// probe. The full re-run behavior against real test files is exercised at
-// the binary level; these tests pin the parts unit tests can reach.
 
 import (
 	"context"
@@ -22,8 +17,6 @@ import (
 
 func TestRelevantChange(t *testing.T) {
 	tmp := t.TempDir()
-	// demo.dats stands in for a FILE argument: its parent dir is watched but
-	// no tree scope covers it. tree/ is a DIRECTORY argument.
 	resolved := filepath.Join(tmp, "suite", "demo.dats")
 	snapDir := filepath.Join(tmp, "suite", "demo.snapshots")
 	dirArg := filepath.Join(tmp, "tree")
@@ -74,13 +67,6 @@ func TestRelevantChange(t *testing.T) {
 	}
 }
 
-// tempDir is t.TempDir() with symlinks resolved. computeWatchDirs runs the
-// paths through discovery, which resolves a directory root (WalkDir will not
-// follow a symlinked one), so on macOS -- where the temp root reached via
-// /tmp is a symlink to /private/tmp -- the watch set legitimately holds
-// /private/tmp/... while an unresolved t.TempDir() still says /tmp/....
-// Resolving up front makes the expectation match, and is a no-op where the
-// temp dir is already a real path.
 func tempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -93,9 +79,6 @@ func tempDir(t *testing.T) string {
 
 func TestComputeWatchDirs(t *testing.T) {
 	tmp := tempDir(t)
-	// A resolved file with an existing snapshot dir, a second resolved file
-	// without one, and a directory-argument tree with nested and hidden
-	// subdirectories.
 	fileDir := filepath.Join(tmp, "suite")
 	resolved := filepath.Join(fileDir, "demo.dats")
 	snapDir := filepath.Join(fileDir, "demo.snapshots")
@@ -111,8 +94,6 @@ func TestComputeWatchDirs(t *testing.T) {
 	require.Nil(t, os.WriteFile(resolved, []byte("tests:\n\t- cmd: true\n"), 0o644))
 	require.Nil(t, os.WriteFile(second, []byte("tests:\n\t- cmd: true\n"), 0o644))
 
-	// The duplicate resolved entry must collapse; the missing more.snapshots
-	// dir must not be registered; the hidden subdir must be skipped.
 	dirs := computeWatchDirs([]string{resolved, second, resolved}, []string{tree})
 	assert.ElementsMatch(t, []string{fileDir, snapDir, otherDir, tree, sub, nested}, dirs)
 }
@@ -126,9 +107,6 @@ func TestWatchHeader(t *testing.T) {
 		watchHeader(3, at, []string{"/a.dats", "/b.golden", "/c.dats", "/d.dats", "/e.dats"}))
 }
 
-// startWatchLoop runs watchLoop in a goroutine with a recording cycle
-// function, returning the channel of recorded batches and a done channel
-// closed when the loop returns.
 func startWatchLoop(ctx context.Context, events chan watchEvent, debounce time.Duration, onCycle func(changed []string)) (<-chan []string, <-chan struct{}) {
 	cycles := make(chan []string, 16)
 	done := make(chan struct{})
@@ -178,8 +156,7 @@ func TestWatchLoopBatchesBurstIntoOneCycle(t *testing.T) {
 	cycles, _ := startWatchLoop(ctx, events, 20*time.Millisecond, nil)
 	waitCycle(t, cycles, "initial cycle")
 
-	// A burst of events, duplicate included: exactly one re-cycle, carrying
-	// the deduplicated batch.
+	// A burst of events, duplicate included: exactly one re-cycle, carrying the deduplicated batch.
 	events <- watchEvent{path: "/w/a.dats"}
 	events <- watchEvent{path: "/w/b.dats"}
 	events <- watchEvent{path: "/w/a.dats"}
@@ -198,9 +175,6 @@ func TestWatchLoopEventsDuringCycleCoalesce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Hold the initial cycle open while events arrive: they must queue and
-	// then coalesce into exactly one follow-up cycle. onCycle runs on the
-	// watchLoop goroutine only, so the plain bool is race-free.
 	release := make(chan struct{})
 	first := true
 	cycles, _ := startWatchLoop(ctx, events, 20*time.Millisecond, func([]string) {
@@ -225,11 +199,6 @@ func TestWatchLoopEventsDuringCycleCoalesce(t *testing.T) {
 }
 
 func TestWatchRealFsnotifyIntegration(t *testing.T) {
-	// One probe against the real fsnotify plumbing: a watchSession watching
-	// an actual .dats file must re-cycle after the file is written. The
-	// write is retried until the cycle fires so a slow watcher registration
-	// on the CI filesystem cannot flake the test; the overall deadline is
-	// generous for the same reason.
 	dir := t.TempDir()
 	file := filepath.Join(dir, "probe.dats")
 	require.Nil(t, os.WriteFile(file, []byte("tests:\n\t- cmd: true\n"), 0o644))

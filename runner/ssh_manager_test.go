@@ -24,9 +24,6 @@ func TestSSHManagerNoTargetAnywhereIsLocal(t *testing.T) {
 	assert.Nil(t, c)
 }
 
-// TestSSHManagerTypedTargetOutranksTheFile mirrors --sandbox-image: a value
-// the operator typed is theirs, and a file cannot swap it out underneath
-// them -- but the file's request is refused OUT LOUD, never dropped.
 func TestSSHManagerTypedTargetOutranksTheFile(t *testing.T) {
 	m := &SSHManager{Target: "typed@box"}
 	c, refused, err := m.Resolve("a.dats", &schema.SSHSpec{Target: "file@box"})
@@ -43,9 +40,6 @@ func TestSSHManagerTypedTargetMatchingTheFileRefusesNothing(t *testing.T) {
 	assert.Empty(t, refused)
 }
 
-// TestSSHManagerRefusesAFileTargetWithoutAnApprover pins the default for a
-// library caller: saying nothing must never mean "dial out on the file's
-// say-so".
 func TestSSHManagerRefusesAFileTargetWithoutAnApprover(t *testing.T) {
 	m := &SSHManager{}
 	_, _, err := m.Resolve("a.dats", &schema.SSHSpec{Target: "file@box"})
@@ -87,8 +81,6 @@ func TestSSHManagerNeverAsksAboutATypedTarget(t *testing.T) {
 	assert.False(t, asked)
 }
 
-// TestSSHManagerReusesOneConnectionPerTarget: several files may share a
-// target, and a run must not open a second connection for one machine.
 func TestSSHManagerReusesOneConnectionPerTarget(t *testing.T) {
 	m := &SSHManager{Target: "build@box"}
 	first, _, err := m.Resolve("a.dats", nil)

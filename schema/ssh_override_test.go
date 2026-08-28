@@ -1,7 +1,5 @@
 package schema
 
-// Tests for the per-test ssh override: when it is legal, and that matrix
-// expansion gives each instance its own target rather than a shared one.
 
 import (
 	"testing"
@@ -46,9 +44,7 @@ tests:
 	assert.Contains(t, err.Error(), "cannot move a command onto the machine running dats")
 }
 
-// TestMatrixSubstitutesThePerTestTarget is the feature's best demo: one test
-// fanned across a fleet. The file-level target is out of scope for the
-// opposite reason -- it resolves once, before any instance exists.
+// TestMatrixSubstitutesThePerTestTarget is the feature's best demo: one test fanned across a fleet.
 func TestMatrixSubstitutesThePerTestTarget(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `ssh: home@box
 tests:
@@ -65,8 +61,6 @@ tests:
 	assert.Equal(t, "alpha", instances[0].Test.SSH.TargetName())
 	assert.Equal(t, "beta", instances[1].Test.SSH.TargetName())
 
-	// The SSH field is a pointer: a shallow copy would make every instance
-	// share one struct, so substituting into one would corrupt its siblings.
 	assert.NotSame(t, instances[0].Test.SSH, instances[1].Test.SSH)
 	assert.Equal(t, "{matrix.host}", tf.Tests[0].SSH.TargetName(), "the template must be untouched")
 }

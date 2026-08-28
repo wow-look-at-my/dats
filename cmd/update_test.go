@@ -1,10 +1,5 @@
 package cmd
 
-// Tests for the --update flag: registration, the plumbing into
-// Runner.Update (proven by goldens actually written through the real
-// runTests pipeline), the end-of-run goldens summary line, syntax-command
-// acceptance, and snapshot failures landing in the report files like any
-// other assertion failure.
 
 import (
 	"bytes"
@@ -19,8 +14,6 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// setUpdateFlag sets the --update flag variable for the duration of the
-// test, restoring the previous value afterwards (mirrors setReportFlags).
 func setUpdateFlag(t *testing.T, value bool) {
 	t.Helper()
 	prev := updateGoldens
@@ -43,8 +36,6 @@ func TestUpdateFlagRegistration(t *testing.T) {
 }
 
 func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
-	// The full plumbing: updateGoldens -> Runner.Update -> golden on disk,
-	// with the per-instance listing and the end-of-run summary line.
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
 	setUpdateFlag(t, true)
 
@@ -83,8 +74,7 @@ func TestRunTestsUpdateSummaryCountsPrunes(t *testing.T) {
 }
 
 func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
-	// Flag off (the default): a missing golden is a failure and no summary
-	// line appears.
+	// Flag off (the default): a missing golden is a failure and no summary line appears.
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
 	setUpdateFlag(t, false)
 
@@ -98,9 +88,6 @@ func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
 }
 
 func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
-	// `dats syntax --update <file>` parses the flag (persistent on root,
-	// inherited by syntax), validates the snapshot key, runs nothing, and
-	// writes nothing.
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
 
 	t.Cleanup(func() {
@@ -117,10 +104,6 @@ func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "dats syntax must not touch goldens")
 }
 
-// TestExampleSnapshotGoldensInSync guards the committed example goldens:
-// examples/snapshot.dats must pass against examples/snapshot.snapshots/ as
-// checked in. Regenerate with `dats --update examples/snapshot.dats` if the
-// example legitimately changed.
 func TestExampleSnapshotGoldensInSync(t *testing.T) {
 	example := filepath.Join("..", "examples", "snapshot.dats")
 	setUpdateFlag(t, false)
@@ -131,9 +114,6 @@ func TestExampleSnapshotGoldensInSync(t *testing.T) {
 }
 
 func TestReportsIncludeSnapshotFailures(t *testing.T) {
-	// A snapshot failure is an ordinary assertion failure to the report
-	// writers: it appears in the JSON failures list and the JUnit failure
-	// element with no format change.
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
 	setUpdateFlag(t, false)
 	outDir := t.TempDir()

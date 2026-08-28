@@ -12,10 +12,6 @@ import (
 	"github.com/wow-look-at-my/go-containers/set"
 )
 
-// requireSSH skips unless a target is configured AND usable: a second
-// machine is not a reasonable prerequisite for every dev box. CI provisions
-// loopback sshd and runs this same probe as its own step, so a skip can
-// never be how CI reports that remote execution works.
 func requireSSH(t *testing.T) *SSHManager {
 	t.Helper()
 	target := os.Getenv("DATS_TEST_SSH_TARGET")
@@ -52,9 +48,6 @@ func runRemoteSuite(t *testing.T, ssh *SSHManager, body string) (*FileResult, st
 	return res, out.String()
 }
 
-// TestFileDeclaredSSHTargetRunsWhenApproved is the end-to-end proof for the
-// file-level key: nothing is typed on the command line, the file names the
-// host, and an approval is what lets it through.
 func TestFileDeclaredSSHTargetRunsWhenApproved(t *testing.T) {
 	target := requireSSH(t).Target
 
@@ -82,8 +75,7 @@ func TestFileDeclaredSSHTargetRunsWhenApproved(t *testing.T) {
 	assert.Contains(t, out.String(), target)
 }
 
-// TestFileDeclaredSSHTargetIsRefusedWithoutApproval pins that a file cannot
-// dial out on its own say-so.
+// TestFileDeclaredSSHTargetIsRefusedWithoutApproval pins that a file cannot dial out on its own say-so.
 func TestFileDeclaredSSHTargetIsRefusedWithoutApproval(t *testing.T) {
 	target := requireSSH(t).Target
 
@@ -98,10 +90,6 @@ func TestFileDeclaredSSHTargetIsRefusedWithoutApproval(t *testing.T) {
 	assert.Contains(t, err.Error(), "not approved")
 }
 
-// TestPerTestSSHOverrideRunsOnItsOwnHost proves a single test can move to a
-// different machine, with its own temp directory and its own mirror of
-// shared/. DATS_TEST_SSH_TARGET2 must name the same or another reachable
-// host under a DIFFERENT target string, so the alt-scope path is exercised.
 func TestPerTestSSHOverrideRunsOnItsOwnHost(t *testing.T) {
 	home := requireSSH(t).Target
 	other := os.Getenv("DATS_TEST_SSH_TARGET2")
@@ -141,8 +129,6 @@ func TestPerTestSSHOverrideRunsOnItsOwnHost(t *testing.T) {
 	assert.True(t, seen.Contains(other), "an overriding target must be approved too")
 }
 
-// TestSSHRunsCommandsOnTheTarget is the end-to-end proof: the command runs
-// over ssh, its fixtures arrive, and its output files come home.
 func TestSSHRunsCommandsOnTheTarget(t *testing.T) {
 	ssh := requireSSH(t)
 	res, out := runRemoteSuite(t, ssh, "tests:\n"+
@@ -163,8 +149,6 @@ func TestSSHRunsCommandsOnTheTarget(t *testing.T) {
 	assert.Contains(t, out, "ssh", "the header must announce where commands ran")
 }
 
-// TestSSHRunsOnTheOtherMachine proves the command really went through the
-// transport rather than falling back to running here.
 func TestSSHRunsOnTheOtherMachine(t *testing.T) {
 	ssh := requireSSH(t)
 	res, out := runRemoteSuite(t, ssh, "tests:\n"+
@@ -208,9 +192,6 @@ func TestSSHCarriesEnvAndStdin(t *testing.T) {
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
-// TestSSHKeepsStderrSeparateFromStdout is what -T buys: a pty would merge
-// the two streams and rewrite newlines, breaking every stderr assertion and
-// every byte-exact golden.
 func TestSSHKeepsStderrSeparateFromStdout(t *testing.T) {
 	ssh := requireSSH(t)
 	res, out := runRemoteSuite(t, ssh, "tests:\n"+
@@ -235,8 +216,7 @@ func TestSSHSurfacesARemoteExitCode(t *testing.T) {
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
-// TestSSHCopyFixtureKeepsItsExecutableBit pins end to end the one property a
-// plain file copy would lose.
+// TestSSHCopyFixtureKeepsItsExecutableBit pins end to end the one property a plain file copy would lose.
 func TestSSHCopyFixtureKeepsItsExecutableBit(t *testing.T) {
 	ssh := requireSSH(t)
 	dir := t.TempDir()
@@ -260,9 +240,6 @@ func TestSSHCopyFixtureKeepsItsExecutableBit(t *testing.T) {
 	require.True(t, res.Ok(), "output:\n%s", out.String())
 }
 
-// TestSSHNormalizesRemotePathsInSnapshots keeps golden files portable: a
-// remote command prints remote paths, and the goldens must come out
-// byte-identical to a local run's.
 func TestSSHNormalizesRemotePathsInSnapshots(t *testing.T) {
 	ssh := requireSSH(t)
 	suite := writeSuite(t, t.TempDir(), "tests:\n"+

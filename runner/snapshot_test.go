@@ -1,10 +1,5 @@
 package runner
 
-// Tests for snapshot (golden-file) assertions: naming (SnapshotDir,
-// GoldenFileName, slug derivation), output normalization, the
-// compare-vs-golden failure messages, --update write/skip/no-op semantics,
-// stale-golden pruning, matrix per-instance goldens, and serial/jobs
-// equivalence of both output and written goldens.
 
 import (
 	"bytes"
@@ -26,8 +21,6 @@ func TestSnapshotDir(t *testing.T) {
 }
 
 func TestGoldenFileName(t *testing.T) {
-	// index is the 0-based expanded-instance index; the printed number is the
-	// canonical 1-based instance number, zero-padded to three digits.
 	assert.Equal(t, "001-snap.stdout.golden", GoldenFileName(0, "snap", "stdout"))
 	assert.Equal(t, "012-x.stderr.golden", GoldenFileName(11, "X", "stderr"))
 	assert.Equal(t, "003-greets-greeting-hello-name-alice.stdout.golden",
@@ -70,17 +63,13 @@ func TestNormalizeSnapshotText(t *testing.T) {
 	assert.Equal(t, "out={testdir}/outputs/f.txt cfg={shareddir}/c.json root={tmproot} tail",
 		NormalizeSnapshotText(in, ctx))
 
-	// Longest-path-first: the test and shared directories are replaced
-	// before the temp root they live under, so neither can surface as
-	// "{tmproot}/test-3" or "{tmproot}/shared".
 	assert.NotContains(t, NormalizeSnapshotText(testDir+" "+ctx.SharedDir, ctx), "{tmproot}/")
 
 	// Trailing newlines and everything else stay byte-exact.
 	assert.Equal(t, "plain\n\n", NormalizeSnapshotText("plain\n\n", ctx))
 }
 
-// runSnapshotFile runs one .dats file and returns the file result plus the
-// printed output.
+// runSnapshotFile runs one .dats file and returns the file result plus the printed output.
 func runSnapshotFile(t *testing.T, path string, update bool) (*FileResult, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -112,9 +101,6 @@ tests:
 }
 
 func TestSnapshotMismatchFirstDifference(t *testing.T) {
-	// Each case pins one shape of the first-difference parenthetical: a
-	// differing middle line, extra actual lines, extra golden lines, and the
-	// trailing-newline special case.
 	cases := []struct {
 		name   string
 		golden string
@@ -149,8 +135,6 @@ tests:
 }
 
 func TestSnapshotUnreadableGoldenFails(t *testing.T) {
-	// A golden path that exists but cannot be read as a file (here: a
-	// directory) is a loud read error, not a silent mismatch.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: snap
@@ -187,8 +171,6 @@ tests:
 }
 
 func TestSnapshotUpdateWritesAndLists(t *testing.T) {
-	// One update run creates goldens for both streams and for a desc-less
-	// test (whose name -- and thus slug -- derives from the command).
 	path := writeRunnerDats(t, `
 tests:
 	- desc: snap
@@ -224,8 +206,7 @@ tests:
 	require.Nil(t, err)
 	assert.Equal(t, "err\n", string(content))
 
-	// A second update run is a complete no-op: identical output, nothing
-	// rewritten, nothing listed.
+	// A second update run is a complete no-op: identical output, nothing rewritten, nothing listed.
 	result2, out2 := runSnapshotFile(t, path, true)
 	assert.Equal(t, 2, result2.Passed)
 	for i := range result2.Results {
@@ -262,8 +243,6 @@ tests:
 }
 
 func TestSnapshotUpdateSkipsFailingInstance(t *testing.T) {
-	// Goldens never update from a failing run: the exit-code failure leaves
-	// the stale golden untouched and unlisted.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: snap
@@ -308,8 +287,6 @@ tests:
 }
 
 func TestSnapshotTimeoutSkipsSnapshot(t *testing.T) {
-	// The ranToCompletion gate: a timed-out command reports only the
-	// timeout, exactly like every other assertion.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: slow
@@ -327,9 +304,6 @@ tests:
 }
 
 func TestSnapshotNormalizedPathsInGolden(t *testing.T) {
-	// A command that prints fixture paths produces a golden holding the
-	// stable tokens, so the golden passes on the next run even though the
-	// temp directory differs.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: paths
@@ -347,8 +321,7 @@ tests:
 	require.Nil(t, err)
 	assert.Equal(t, "input at {testdir}/inputs/data.txt shared at {shareddir}/cfg.txt\n", string(content))
 
-	// Re-run without update: a fresh temp root normalizes to the same
-	// tokens, so the golden still matches.
+	// Re-run without update: a fresh temp root normalizes to the same tokens, so the golden still matches.
 	result2, _ := runSnapshotFile(t, path, false)
 	assert.Equal(t, 1, result2.Passed)
 	assert.Equal(t, 0, result2.Failed)
@@ -441,8 +414,6 @@ tests:
 }
 
 func TestSnapshotMatrixInstanceGoldens(t *testing.T) {
-	// Two matrix instances get two distinct goldens -- distinct NNN and
-	// distinct slug -- and the compare run passes per instance.
 	path := writeRunnerDats(t, `
 tests:
 	- desc: greet
@@ -471,8 +442,6 @@ tests:
 	assert.Equal(t, 0, result2.Failed)
 }
 
-// snapshotCorpus is a deterministic multi-shape corpus: passing snapshots on
-// both streams, a matrix snapshot test, and a plain non-snapshot test.
 const snapshotCorpus = `
 tests:
 	- desc: both streams
@@ -497,9 +466,6 @@ tests:
 `
 
 func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
-	// The same file, goldens pre-created, run serially and with -j: output
-	// must be byte-identical (pass case), and again for the failure case of
-	// a missing golden.
 	path := writeRunnerDats(t, snapshotCorpus)
 	_, updateOut := runSnapshotFile(t, path, true)
 	require.Contains(t, updateOut, "updated golden")
@@ -518,8 +484,7 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 	assert.Equal(t, serial.String(), parallel.String(),
 		"jobs-mode snapshot output must be byte-identical to a serial run")
 
-	// Remove one golden: both modes report the identical missing-golden
-	// failure bytes.
+	// Remove one golden: both modes report the identical missing-golden failure bytes.
 	require.Nil(t, os.Remove(filepath.Join(SnapshotDir(path), "002-greet-who-alice.stdout.golden")))
 	var serialFail, parallelFail bytes.Buffer
 	rsf := NewRunner(&serialFail, false, false, "")
@@ -533,8 +498,6 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 }
 
 func TestSnapshotParallelUpdateWritesIdenticalGoldens(t *testing.T) {
-	// Two copies of the same corpus, one updated serially and one under -j:
-	// the resulting golden trees must be identical in names and bytes.
 	serialPath := writeRunnerDats(t, snapshotCorpus)
 	parallelPath := writeRunnerDats(t, snapshotCorpus)
 

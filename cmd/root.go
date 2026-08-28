@@ -16,20 +16,13 @@ var rootCmd = &cobra.Command{
 	Long:  "DATS runs tests defined in declarative YAML files (.dats).",
 	RunE:  runTestsCommand,
 	Args:  cobra.ArbitraryArgs,
-	// Errors are reported by Execute (or, for test/syntax failures, already
-	// reported by the runner output); cobra should not add usage dumps or a
-	// second error line.
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
 
-// Execute runs the root command and exits non-zero on failure. Sentinel
-// failures (failing tests or syntax checks) have already been reported by
-// their command's output, so they exit silently; any other error is printed
-// exactly once.
+// Execute runs the root command and exits non-zero on failure.
 func Execute() {
-	// Make-style -jN needs rewriting to --jobs=N before cobra parses the
-	// args; see normalizeJobsShorthand.
+	// Make-style -jN needs rewriting to --jobs=N before cobra parses the args; see normalizeJobsShorthand.
 	rootCmd.SetArgs(normalizeJobsShorthand(os.Args[1:]))
 	err := rootCmd.Execute()
 	if err == nil {
@@ -42,8 +35,6 @@ func Execute() {
 }
 
 func init() {
-	// Persistent flags are inherited by subcommands, so `dats --keep-temp f.dats`
-	// and `dats test --keep-temp f.dats` both work with a single registration.
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show verbose output")
 	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep temp directory for debugging")
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on executed commands to collect coverage data")

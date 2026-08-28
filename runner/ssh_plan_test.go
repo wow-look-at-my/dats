@@ -7,17 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// sshPlan is a plan wired to a target without connecting, which is all the
-// argv builders need.
+// sshPlan is a plan wired to a target without connecting, which is all the argv builders need.
 func sshPlan(t *testing.T, remoteBase string) *sandboxPlan {
 	t.Helper()
 	return &sandboxPlan{ssh: NewSSHConfig("build@box"), remoteBase: remoteBase, work: t.TempDir()}
 }
 
-// TestSSHCommandWrapsTheSameBashInvocation is the ssh counterpart of
-// TestBwrapAndDockerExposeTheSameHostPaths: it pins that ssh changes WHERE a
-// command runs and nothing about WHAT runs. The tail every other backend
-// ends in must survive the trip through the remote shell.
 func TestSSHCommandWrapsTheSameBashInvocation(t *testing.T) {
 	plan := sshPlan(t, "/tmp/dats-remote")
 	got := plan.command("echo 'hi there' > $X", nil)
@@ -47,8 +42,6 @@ func TestSSHPlanDescribesItselfAsUnsandboxed(t *testing.T) {
 	assert.Contains(t, desc, "none", "a remote run has no sandbox, and the header must not imply one")
 }
 
-// TestSSHRefusesATypedSandboxBackend pins that a remote run never silently
-// downgrades a backend the operator asked for by name.
 func TestSSHRefusesATypedSandboxBackend(t *testing.T) {
 	for _, mode := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
 		t.Run(string(mode), func(t *testing.T) {
@@ -69,8 +62,6 @@ func TestSSHUnderAutoSandboxWins(t *testing.T) {
 	assert.NotNil(t, plan.ssh, "auto is nobody's explicit choice, so the target takes it")
 }
 
-// TestCommandPathRewritesOnlyUnderTheBase proves placeholder expansion moves
-// onto the target while anything outside the temp tree is left alone.
 func TestCommandPathRewritesOnlyUnderTheBase(t *testing.T) {
 	ctx := &TestContext{BaseDir: "/tmp/dats-local", RemoteBase: "/tmp/dats-remote"}
 	assert.Equal(t, "/tmp/dats-remote/test-1/outputs/a.txt",
@@ -83,9 +74,6 @@ func TestCommandPathRewritesOnlyUnderTheBase(t *testing.T) {
 		"a local run must be byte-identical to before")
 }
 
-// TestNormalizeSnapshotTextTokenizesRemotePaths is what keeps a golden file
-// reproducible across machines: a remote command prints remote paths, and an
-// un-normalized one bakes one run's temp directory into the golden.
 func TestNormalizeSnapshotTextTokenizesRemotePaths(t *testing.T) {
 	ctx := &TestContext{
 		BaseDir:    "/tmp/dats-local",
