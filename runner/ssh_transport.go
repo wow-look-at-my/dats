@@ -15,8 +15,8 @@ import (
 	"time"
 )
 
-// sshProbePayload is shell syntax on purpose. A remote shell that cannot
-// return it byte for byte cannot run a dats command either.
+// sshProbePayload is shell syntax on purpose: a shell that cannot return it
+// unchanged cannot run a dats command either.
 const sshProbePayload = "dats probe: '\"$`\\ * {} ${x} <>|& ;"
 
 // sshConnectTimeout bounds the wait for the multiplexing master.

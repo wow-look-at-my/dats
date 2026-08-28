@@ -45,8 +45,7 @@ func ValidateSSHTarget(target string) error {
 	return nil
 }
 
-// remoteJoin builds a path on the target. Remote paths are always POSIX,
-// and callers holding a variable named "path" cannot reach the package.
+// remoteJoin builds a POSIX path on the target.
 func remoteJoin(base string, elem ...string) string {
 	return path.Join(append([]string{base}, elem...)...)
 }

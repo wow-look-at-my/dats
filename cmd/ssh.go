@@ -1,11 +1,8 @@
 package cmd
 
-// The --ssh flag: run this run's commands on another machine.
-//
-// Long-only, like the sandbox flags, and for the same reason: a one-letter
-// shorthand for something this consequential invites the typo nobody
-// notices. Registration and resolution live here; the transport itself is
-// runner.SSHConfig.
+// The --ssh flag: run this run's commands on another machine. Long-only,
+// like the sandbox flags: a shorthand for something this consequential
+// invites the typo nobody notices.
 
 import (
 	"github.com/spf13/pflag"
