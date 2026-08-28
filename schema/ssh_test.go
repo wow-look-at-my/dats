@@ -1,8 +1,7 @@
 package schema
 
 // Tests for the file-level ssh block: the shape it accepts, and the parse
-// errors that keep a file from pulling a command onto the reader's own
-// machine or from smuggling an ssh option through the target.
+// errors that stop a file smuggling an ssh option through the target.
 
 import (
 	"testing"
@@ -41,9 +40,8 @@ func TestParseSSHExplicitNullIsAbsent(t *testing.T) {
 }
 
 // TestParseSSHFalseIsRejected pins the direction that surprises people:
-// running remotely is not a protection a file is waiving. The operator's own
-// machine is the MORE privileged place, so "run this one here" is the file
-// reaching for something it was never given.
+// remote is not a protection the file is waiving -- local is the privileged
+// side, so "run this one here" is the file reaching for more.
 func TestParseSSHFalseIsRejected(t *testing.T) {
 	_, err := parseSSH(t, "ssh: false\n")
 	require.Error(t, err)

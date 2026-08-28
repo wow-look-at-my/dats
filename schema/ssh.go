@@ -1,16 +1,11 @@
 package schema
 
-// The file-level `ssh` key: the machine this file's commands run on.
-//
-// The key is a REQUEST, never a decision. Whether a run reaches another
-// machine at all belongs to whoever types dats: a .dats file arrives from
-// somewhere, and a file that could dial out on its own would spend the
-// reader's credentials before they knew it had asked. A target the operator
-// typed outranks this one, and an unapproved (file, target) pair is refused.
-//
-// This mirrors `sandbox` and points the same way. For sandbox a file may only
-// NARROW; for ssh a file may only PROPOSE. Both rules say the same thing: a
-// file never changes what runs on the operator's own machine.
+// The file-level `ssh` key: a REQUEST for the machine this file's commands
+// run on. A file that could dial out on its own would spend the reader's
+// credentials before they knew it had asked, so a typed target outranks this
+// one and an unapproved (file, target) pair is refused. For `sandbox` a file
+// may only NARROW; for `ssh` it may only PROPOSE -- both say that a file
+// never changes what runs on the operator's own machine.
 
 import (
 	"fmt"
@@ -33,25 +28,21 @@ func (s *SSHSpec) TargetName() string {
 	return s.Target
 }
 
-// errSSHLocal is the parse error for a file trying to pull a command back
-// onto the machine running dats. That direction is the dangerous one: the
-// operator's own machine is the MORE privileged place, so "run this one
-// here" is a file reaching for something it was never given.
+// errSSHLocal is the parse error for the dangerous direction: the operator's
+// machine is the MORE privileged place, so a file cannot pull a command onto
+// it. That is the file reaching for what it was never given.
 var errSSHLocal = fmt.Errorf("ssh: a file cannot move a command onto the machine running dats -- remove the key")
 
 // errSSHBare is its counterpart: a file stating a target it did not name.
 var errSSHBare = fmt.Errorf("ssh: name the target ([user@]host); whether a run goes remote at all is --ssh")
 
-// sshTargetPattern is the character set a target may use. A target starting
-// with "-" is read by ssh as an OPTION, and -oProxyCommand= runs a command on
-// the machine that merely opened this file, so this is a security control.
+// sshTargetPattern is the character set a target may use.
 var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]-]+$`)
 
 // UnmarshalYAML decodes the ssh block: a bare target string. There is
-// deliberately no mapping form yet, and no port, identity or options key --
-// connection policy is spent from the reader's credentials, so it belongs in
-// their ~/.ssh/config where they can see it. A non-default port is a Host
-// alias away.
+// deliberately no port, identity or options key -- connection policy is spent
+// from the reader's credentials, so it lives in their ~/.ssh/config, and a
+// non-default port is a Host alias away.
 func (s *SSHSpec) UnmarshalYAML(value any) error {
 	switch v := value.(type) {
 	case bool:

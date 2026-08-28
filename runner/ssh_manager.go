@@ -10,15 +10,13 @@ import (
 // SSHManager decides, per file, which machine that file's commands run on,
 // and owns one connection per distinct target for the whole run.
 type SSHManager struct {
-	// Target is the operator's typed target. It applies to every file and
-	// outranks any file's own ssh:, the way a typed --sandbox-image outranks
-	// a file's image:.
+	// Target is the operator's typed target: it applies to every file and
+	// outranks a file's own ssh:, like a typed --sandbox-image.
 	Target string
 
-	// Allow is consulted for a target a FILE named, never for Target. A
-	// non-nil error refuses the file, and its text is what the operator
-	// sees. Nil refuses every file-declared target: a library caller that
-	// says nothing must not dial out on a file's say-so.
+	// Allow is consulted for a target a FILE named, never for Target; an
+	// error refuses the file. Nil refuses every file-declared target, so a
+	// caller that says nothing never dials out on a file's say-so.
 	Allow func(datsPath, target string) error
 
 	mu      sync.Mutex
