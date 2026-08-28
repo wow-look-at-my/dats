@@ -9,15 +9,14 @@ import (
 	"strings"
 )
 
-// sshQuote makes s one literal word for a POSIX shell. Quote it once, here:
-// a second pass, or any concatenation, re-opens the injection this closes.
+// sshQuote makes s one literal word for a POSIX shell.
+// Quote once only: a second pass re-opens the injection.
 func sshQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// sshRemoteScript joins argv into the one string the remote login shell
-// parses. ssh passes no argv to the far side, so quoting is the whole
-// interface. The remote shell must be POSIX; csh cannot parse the escape.
+// sshRemoteScript joins argv into the one string the remote login
+// shell parses: ssh gives the far side no argv.
 func sshRemoteScript(argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, arg := range argv {
@@ -26,8 +25,7 @@ func sshRemoteScript(argv []string) string {
 	return strings.Join(quoted, " ")
 }
 
-// sshTargetPattern covers a user, a host or address, a port separator, an
-// IPv6 scope, and the brackets around a literal IPv6 address.
+// sshTargetPattern covers a user, host or address, port, IPv6 scope, brackets.
 var sshTargetPattern = regexp.MustCompile(`^[A-Za-z0-9._@:%\[\]-]+$`)
 
 // ValidateSSHTarget rejects a target that ssh would read as an option.
@@ -47,24 +45,19 @@ func ValidateSSHTarget(target string) error {
 	return nil
 }
 
-// sshControlPathMax bounds the control socket path: a unix socket path stops
-// at 104 bytes on macOS, and ssh reports the overflow obscurely.
+// sshControlPathMax bounds the socket path: macOS stops at 104 bytes.
 const sshControlPathMax = 100
 
-// sshControlPath names one target's multiplexing socket inside dir. The
-// idiomatic ~/.ssh/cm-%r@%h:%p spelling grows with the host name and
-// overflows the limit above, so the name is a fixed-width hash.
+// sshControlPath names one target's socket inside dir. A fixed-width
+// hash keeps it under the limit above.
 func sshControlPath(dir, target string) string {
 	sum := sha256.Sum256([]byte(target))
 	return path.Join(dir, hex.EncodeToString(sum[:])[:8])
 }
 
-// sshTransportArgs are the options every ssh invocation carries. Each is
-// load-bearing: -T refuses a pty, which would merge stderr into stdout and
-// rewrite newlines (the default turns on dats' own stdin, so state it);
-// BatchMode makes an unknown host key a failure, not a prompt nobody can
-// answer; LogLevel drops the known-hosts warning, which otherwise lands in
-// captured stderr on the first run against a host and fails an assertion once.
+// sshTransportArgs: -T refuses a pty (it merges stderr into stdout),
+// BatchMode fails on an unknown host key rather than prompting, and
+// LogLevel keeps the known-hosts warning out of captured stderr.
 func sshTransportArgs(controlPath string) []string {
 	args := []string{
 		"-T",
