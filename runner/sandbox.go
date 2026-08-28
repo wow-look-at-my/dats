@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -306,6 +307,12 @@ type sandboxPlan struct {
 	// relative paths keep resolving as they do on the host (read-only under
 	// docker; already covered by the read-only root under bwrap).
 	workdir string
+	// ssh, when set, runs this file's commands on another machine. The
+	// remote shell is then the whole boundary: dats installs no sandbox
+	// there, and describe says so on the file's header line.
+	ssh *SSHConfig
+	// remoteBase is the file's temp directory ON the target, mirroring work.
+	remoteBase string
 }
 
 // describe renders the plan for the run's output: the backend, the image it
@@ -315,6 +322,9 @@ type sandboxPlan struct {
 func (p *sandboxPlan) describe() string {
 	if p == nil {
 		return ""
+	}
+	if p.ssh != nil {
+		return "none -- ssh " + p.ssh.Target + " (commands run on the remote host)"
 	}
 	desc := string(p.backend)
 	// A weaker sandbox than the one dats asks for is never silent: the run
@@ -346,6 +356,17 @@ func (p *sandboxPlan) describe() string {
 // adjust it (image); nothing in a file can widen it, and nothing in a file can
 // switch the sandbox off.
 func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sandboxPlan, error) {
+	// An ssh target replaces the sandbox rather than nesting inside one, so
+	// a backend the operator TYPED is a contradiction, not something to
+	// downgrade quietly. Under the default auto, the target wins and the
+	// file's sandbox block goes inert -- exactly as it does under
+	// --no-sandbox -- which describe puts on the file's header line.
+	if r.SSH != nil {
+		if r.Sandbox != nil && r.Sandbox.Mode != SandboxAuto && r.Sandbox.Mode != SandboxNone && r.Sandbox.Mode != "" {
+			return nil, fmt.Errorf("--sandbox=%s cannot be combined with --ssh: commands run on %s, and dats does not install a sandbox there", r.Sandbox.Mode, r.SSH.Target)
+		}
+		return &sandboxPlan{ssh: r.SSH, remoteBase: r.remoteBase, work: workDir}, nil
+	}
 	if r.Sandbox == nil || r.Sandbox.Mode == SandboxNone || r.Sandbox.Mode == "" {
 		return nil, nil
 	}
@@ -402,9 +423,10 @@ type sandboxCommand struct {
 	Kill func()
 }
 
-// containerSeq numbers the docker containers this process starts, so each one
+// commandSeq numbers the workloads this process starts that outlive the
+// process we spawn -- docker containers and remote ssh commands -- so each
 // gets a name we can kill by even when many run concurrently.
-var containerSeq atomic.Uint64
+var commandSeq atomic.Uint64
 
 // command rewrites `bash -c <cmd>` into the sandboxed argv that runs it.
 // extraEnv holds the environment entries dats adds on top of the parent
@@ -415,9 +437,21 @@ func (p *sandboxPlan) command(cmd string, extraEnv []string) sandboxCommand {
 	if p == nil {
 		return sandboxCommand{Argv: []string{"bash", "-c", cmd}}
 	}
+	// ssh is a location, not a sandbox: it wraps the same `bash -c cmd`
+	// every other path ends in, and carries the run environment itself
+	// because an ssh session inherits none of it.
+	if p.ssh != nil {
+		id := fmt.Sprintf("dats-%d-%d", os.Getpid(), commandSeq.Add(1))
+		env := append(inheritedEnv(), extraEnv...)
+		script := sshRemoteCommand(path.Join(p.remoteBase, sshPidDirName), id, env, []string{"bash", "-c", cmd})
+		return sandboxCommand{
+			Argv: sshArgv(p.ssh.Target, p.ssh.controlPath, script),
+			Kill: func() { p.ssh.KillRemote(p.remoteBase, id) },
+		}
+	}
 	switch p.backend {
 	case SandboxDocker:
-		name := fmt.Sprintf("dats-%d-%d", os.Getpid(), containerSeq.Add(1))
+		name := fmt.Sprintf("dats-%d-%d", os.Getpid(), commandSeq.Add(1))
 		return sandboxCommand{
 			Argv: p.dockerArgv(name, cmd, extraEnv),
 			Kill: func() { killContainer(name) },

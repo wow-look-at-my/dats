@@ -84,6 +84,7 @@ func (r *Runner) RunFiles(ctx context.Context, paths []string, jobs int) ([]*Fil
 				CoverDir:    r.CoverDir,
 				Update:      r.Update,
 				Sandbox:     r.Sandbox,
+				SSH:         r.SSH,
 				Env:         r.Env,
 				Formatter:   &Formatter{Writer: &buffers[i], Verbose: r.Verbose},
 				lowPriority: true,

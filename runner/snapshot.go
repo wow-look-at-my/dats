@@ -75,6 +75,14 @@ func slugifySnapshotName(name string) string {
 // "{tmproot}/test-0". Everything else is left byte-exact; trailing newlines
 // are never munged.
 func NormalizeSnapshotText(s string, ctx *TestContext) string {
+	// A remote command prints REMOTE paths, so those roots normalize to the
+	// same tokens. Without this a golden bakes in one run's remote temp dir,
+	// and every existing golden breaks the moment its suite runs over ssh.
+	if ctx.RemoteBase != "" {
+		s = strings.ReplaceAll(s, ctx.commandPath(testDirPath(ctx.BaseDir, ctx.TestIndex)), "{testdir}")
+		s = strings.ReplaceAll(s, ctx.commandPath(ctx.SharedDir), "{shareddir}")
+		s = strings.ReplaceAll(s, ctx.RemoteBase, "{tmproot}")
+	}
 	s = strings.ReplaceAll(s, testDirPath(ctx.BaseDir, ctx.TestIndex), "{testdir}")
 	s = strings.ReplaceAll(s, ctx.SharedDir, "{shareddir}")
 	return strings.ReplaceAll(s, ctx.BaseDir, "{tmproot}")

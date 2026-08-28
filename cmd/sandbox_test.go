@@ -116,6 +116,6 @@ tests:
 			- hi
 `)
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil, ""))
 	assert.NotContains(t, out.String(), "# sandbox:")
 }

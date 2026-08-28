@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/wow-look-at-my/dats/schema"
 )
@@ -21,6 +23,9 @@ var (
 // directory: RunFile creates it there and {shared.X} placeholders resolve
 // into it, so the two must always agree.
 const sharedDirName = "shared"
+
+// outputsDirName is the per-instance outputs directory's name.
+const outputsDirName = "outputs"
 
 // testDirPath returns the per-instance test directory under baseDir for the
 // given expanded-instance index. SetupFixtures builds the fixture tree there
@@ -38,6 +43,33 @@ type TestContext struct {
 	OutputsDir  string            // Directory {outputs.X} placeholders resolve into
 	OutputPaths map[string]string // output name -> absolute path
 	SharedDir   string            // File-wide directory {shared.X} placeholders resolve into
+
+	// RemoteBase mirrors BaseDir on an ssh target. Only placeholder
+	// expansion rewrites onto it, so a command sees where its fixtures
+	// really are. Assertions keep reading the local copy, which the runner
+	// pulls back first. Empty means commands run here.
+	RemoteBase string
+}
+
+// commandPath maps a local path under BaseDir onto the ssh target.
+func (c *TestContext) commandPath(local string) string {
+	if c.RemoteBase == "" || local == "" {
+		return local
+	}
+	rel, err := filepath.Rel(c.BaseDir, local)
+	if err != nil || !filepath.IsLocal(rel) {
+		return local
+	}
+	return path.Join(c.RemoteBase, filepath.ToSlash(rel))
+}
+
+// joinFixturePath joins name under dir, keeping a remote POSIX root POSIX
+// even when dats itself runs on Windows.
+func joinFixturePath(dir, name string) string {
+	if strings.HasPrefix(dir, "/") {
+		return path.Join(dir, filepath.ToSlash(name))
+	}
+	return filepath.Join(dir, name)
 }
 
 // SetupFixtures creates fixture files for a test and returns the context.
@@ -91,7 +123,7 @@ func SetupFixtures(baseDir string, testIndex int, test *schema.Test, sourceDir s
 	// The outputs directory always exists so that every {outputs.X}
 	// placeholder resolves to a writable path, whether or not a files
 	// check references X.
-	ctx.OutputsDir = filepath.Join(testDir, "outputs")
+	ctx.OutputsDir = filepath.Join(testDir, outputsDirName)
 	if err := os.MkdirAll(ctx.OutputsDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating output dir: %w", err)
 	}
@@ -180,8 +212,8 @@ func ExpandPlaceholders(s string, ctx *TestContext) string {
 	// Replace {inputs.X}
 	s = inputPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		name := inputPlaceholderRe.FindStringSubmatch(match)[1]
-		if path, ok := ctx.InputPaths[name]; ok {
-			return path
+		if p, ok := ctx.InputPaths[name]; ok {
+			return ctx.commandPath(p)
 		}
 		return match // Keep original if not found
 	})
@@ -189,20 +221,20 @@ func ExpandPlaceholders(s string, ctx *TestContext) string {
 	// Replace {outputs.X}
 	s = outputPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		name := outputPlaceholderRe.FindStringSubmatch(match)[1]
-		if path, ok := ctx.OutputPaths[name]; ok {
-			return path
+		if p, ok := ctx.OutputPaths[name]; ok {
+			return ctx.commandPath(p)
 		}
 		// Unregistered names resolve into the outputs directory only when
 		// they stay inside it; traversal and absolute names stay verbatim.
 		if ctx.OutputsDir != "" && filepath.IsLocal(name) {
-			return filepath.Join(ctx.OutputsDir, name)
+			return joinFixturePath(ctx.commandPath(ctx.OutputsDir), name)
 		}
 		return match // No safe outputs path known for this placeholder
 	})
 
 	// Replace {shared.X}: like {outputs.X}, the name needs no declaration and
 	// resolves into the file-wide shared directory as long as it stays local.
-	return ExpandSharedPlaceholders(s, ctx.SharedDir)
+	return ExpandSharedPlaceholders(s, ctx.commandPath(ctx.SharedDir))
 }
 
 // ExpandSharedPlaceholders replaces only {shared.X} placeholders, resolving X
@@ -217,7 +249,7 @@ func ExpandSharedPlaceholders(s, sharedDir string) string {
 	return sharedPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		name := sharedPlaceholderRe.FindStringSubmatch(match)[1]
 		if sharedDir != "" && filepath.IsLocal(name) {
-			return filepath.Join(sharedDir, name)
+			return joinFixturePath(sharedDir, name)
 		}
 		return match // No safe shared path known for this placeholder
 	})

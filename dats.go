@@ -91,6 +91,44 @@ type Options struct {
 	// Sandbox selects the isolation every command runs under. The zero value
 	// is auto; see the package comment.
 	Sandbox Sandbox
+
+	// SSH runs every command on another machine. The zero value runs them
+	// here, which is the default.
+	SSH SSH
+}
+
+// SSH names the machine a run's commands execute on. The zero value is the
+// local machine.
+//
+// A target replaces the sandbox rather than nesting inside one: the remote
+// shell is the whole boundary, and every file's header line says so. Naming
+// a target together with a TYPED Sandbox.Mode is an error, never a quiet
+// downgrade.
+type SSH struct {
+	// Target is [user@]host, as ssh spells it. Empty runs commands locally.
+	// Connection policy (port, identity, options) belongs in the caller's
+	// ssh config, where it is visible to whoever's credentials are spent.
+	Target string
+}
+
+// config resolves the target into the runner's transport, or nil when the
+// run stays local. Nothing connects here; the first file that needs the
+// target opens the connection.
+func (s SSH) config(coverDir string) (*runner.SSHConfig, error) {
+	if s.Target == "" {
+		return nil, nil
+	}
+	if err := runner.ValidateSSHTarget(s.Target); err != nil {
+		return nil, err
+	}
+	// Coverage data is written by the command itself into a host directory
+	// that must outlive the run. Remotely that path does not exist and the
+	// data never comes home, so collecting nothing quietly is the one
+	// outcome this must not have.
+	if coverDir != "" {
+		return nil, fmt.Errorf("--coverdir cannot be combined with --ssh: coverage is written on %s and never reaches this machine", s.Target)
+	}
+	return runner.NewSSHConfig(s.Target), nil
 }
 
 // Sandbox selects the sandbox backend for a run. The zero value means auto:
@@ -214,9 +252,18 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
+	ssh, err := opts.SSH.config(opts.CoverDir)
+	if err != nil {
+		return nil, err
+	}
+	if ssh != nil {
+		defer ssh.Close()
+	}
+
 	r := runner.NewRunner(out, opts.Verbose, opts.KeepTemp, opts.CoverDir)
 	r.Update = opts.Update
 	r.Sandbox = sandbox
+	r.SSH = ssh
 	r.Env = opts.Env
 
 	// Wall time of the execution phase, consumed only by the reports; the

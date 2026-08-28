@@ -43,7 +43,11 @@ func runTestsCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	return runTests(context.Background(), args, os.Stdout, jobs, sandbox)
+	sshTarget, err := resolveSSH(cmd.Flags())
+	if err != nil {
+		return err
+	}
+	return runTests(context.Background(), args, os.Stdout, jobs, sandbox, sshTarget)
 }
 
 // runTests is the CLI's thin layer over dats.Run: it maps the parsed flags
@@ -55,11 +59,12 @@ func runTestsCommand(cmd *cobra.Command, args []string) error {
 //
 // A nil sandbox means the run opted out; the library's zero Sandbox is auto,
 // so opting out has to be spelled explicitly here.
-func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandbox *runner.SandboxConfig) error {
+func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandbox *runner.SandboxConfig, sshTarget string) error {
 	opts := dats.Options{
 		Paths:    args,
 		Output:   out,
 		Jobs:     jobs,
+		SSH:      dats.SSH{Target: sshTarget},
 		Verbose:  verbose,
 		Update:   updateGoldens,
 		KeepTemp: keepTemp,

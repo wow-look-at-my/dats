@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -51,6 +52,15 @@ type Runner struct {
 	// inputs.copy/shared.copy source, so a copy fixture is portable
 	// regardless of dats' own working directory.
 	sourceDir string
+
+	// SSH runs every command of the run on another machine. Nil (the
+	// default) runs them here. The remote shell is then the whole boundary:
+	// dats installs no sandbox there.
+	SSH *SSHConfig
+
+	// remoteBase mirrors the current file's temp directory on the target,
+	// set by runFile alongside plan. Empty when the run is local.
+	remoteBase string
 
 	// lowPriority runs every spawned workload command -- test instances and
 	// file-level setup/teardown hooks alike -- at low OS priority (unix nice
@@ -129,6 +139,23 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		}
 	}
 
+	// Claim the file's directory on the ssh target before anything runs, for
+	// the same reason the sandbox resolves here: a file that cannot reach
+	// where its commands must run fails outright.
+	if r.SSH != nil {
+		if err := r.SSH.Connect(ctx); err != nil {
+			return nil, err
+		}
+		if r.remoteBase, err = r.SSH.AllocBase(ctx); err != nil {
+			return nil, err
+		}
+		if !r.KeepTemp {
+			defer r.SSH.RemoveBase(r.remoteBase)
+		} else {
+			fmt.Fprintf(r.Formatter.Writer, "# Remote temp directory: %s:%s\n", r.SSH.Target, r.remoteBase)
+		}
+	}
+
 	// Resolve the file's sandbox before anything runs: a file that must be
 	// sandboxed and cannot be fails outright, rather than quietly running its
 	// commands on the host.
@@ -173,12 +200,24 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
 		}
 	}
+	// hookSharedDir is the shared directory a hook command SEES. Shared
+	// fixtures are built locally and copied over, so setup finds them there.
+	// The push happens even with no shared block: {shared.X} must resolve to
+	// a real directory whether or not the file declares one.
+	hookSharedDir := sharedDir
+	if r.SSH != nil && result.SetupFailure == nil {
+		hookSharedDir = path.Join(r.remoteBase, sharedDirName)
+		if err := r.SSH.Push(ctx, sharedDir, hookSharedDir); err != nil {
+			result.SetupFailure = &CommandFailure{Detail: err.Error()}
+			r.Formatter.PrintHookFailure("setup", result.SetupFailure)
+		}
+	}
 	if result.SetupFailure == nil {
 		for _, hc := range testFile.Setup {
 			// Hook commands hold a pool slot exactly like instance commands,
 			// so N bounds every spawned process, not just the test ones.
 			pool.acquire()
-			fail := r.runHookCommand(ctx, "setup", hc, sharedDir)
+			fail := r.runHookCommand(ctx, "setup", hc, hookSharedDir)
 			pool.release()
 			if fail != nil {
 				result.SetupFailure = fail
@@ -262,7 +301,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 	}
 	for _, hc := range testFile.Teardown {
 		pool.acquire()
-		fail := r.runHookCommand(teardownCtx, "teardown", hc, sharedDir)
+		fail := r.runHookCommand(teardownCtx, "teardown", hc, hookSharedDir)
 		pool.release()
 		if fail != nil {
 			result.TeardownFailures = append(result.TeardownFailures, *fail)
@@ -421,6 +460,19 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		return result
 	}
 
+	// Fixtures are built here and copied over, so the command finds them on
+	// the machine it runs on. Setting RemoteBase first is what makes every
+	// {inputs.X}/{outputs.X}/{shared.X} below expand to a remote path.
+	if r.SSH != nil {
+		fixtures.RemoteBase = r.remoteBase
+		local := testDirPath(baseDir, index)
+		if err := r.SSH.Push(ctx, local, fixtures.commandPath(local)); err != nil {
+			result.Failures = append(result.Failures, err.Error())
+			result.Duration = time.Since(start)
+			return result
+		}
+	}
+
 	// Expand placeholders in command
 	cmd := ExpandPlaceholders(test.Cmd, fixtures)
 	result.Command = cmd
@@ -452,6 +504,16 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 
 	result.Stdout = execResult.Stdout
 	result.Stderr = execResult.Stderr
+
+	// Bring the outputs home before ANY assertion reads them. Unconditional:
+	// a !files assertion ("must not exist") means nothing if the directory
+	// was never collected.
+	if r.SSH != nil {
+		local := testDirPath(baseDir, index)
+		if err := r.SSH.Pull(ctx, fixtures.commandPath(local), outputsDirName, local); err != nil {
+			result.Failures = append(result.Failures, err.Error())
+		}
+	}
 
 	// On timeout, report only the timeout and skip every other assertion:
 	// checking the partial output or missing files would bury the real cause
@@ -583,7 +645,7 @@ func outputPath(ctx *TestContext, baseDir string, index int, name string) string
 	if !filepath.IsLocal(name) {
 		return name
 	}
-	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), "outputs", name)
+	return filepath.Join(baseDir, fmt.Sprintf("test-%d", index), outputsDirName, name)
 }
 
 // checkFile applies a FileCheck (exists/match/notMatch) at path and returns
