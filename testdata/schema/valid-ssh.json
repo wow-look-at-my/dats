@@ -1,0 +1,9 @@
+{
+  "ssh": "build@box",
+  "tests": [
+    {
+      "desc": "runs on the host the file named, once the pair is approved",
+      "cmd": "echo produced > {outputs.out.txt}"
+    }
+  ]
+}

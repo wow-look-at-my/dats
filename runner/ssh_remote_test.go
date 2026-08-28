@@ -51,6 +51,52 @@ func runRemoteSuite(t *testing.T, ssh *SSHManager, body string) (*FileResult, st
 	return res, out.String()
 }
 
+// TestFileDeclaredSSHTargetRunsWhenApproved is the end-to-end proof for the
+// file-level key: nothing is typed on the command line, the file names the
+// host, and an approval is what lets it through.
+func TestFileDeclaredSSHTargetRunsWhenApproved(t *testing.T) {
+	target := requireSSH(t).Target
+
+	asked := 0
+	m := &SSHManager{Allow: func(_, got string) error {
+		asked++
+		assert.Equal(t, target, got)
+		return nil
+	}}
+	t.Cleanup(m.Close)
+
+	var out bytes.Buffer
+	r := NewRunner(&out, false, false, "")
+	r.SSH = m
+	res, err := r.RunFile(context.Background(), writeSuite(t, t.TempDir(), "ssh: "+target+"\n"+
+		"tests:\n"+
+		"\t- desc: the file chose the host\n"+
+		"\t  cmd: echo from-a-declared-target\n"+
+		"\t  outputs:\n"+
+		"\t\tstdout:\n"+
+		"\t\t\t- from-a-declared-target\n"))
+	require.NoError(t, err)
+	require.True(t, res.Ok(), "output:\n%s", out.String())
+	assert.Equal(t, 1, asked, "the approval must be consulted exactly once per file")
+	assert.Contains(t, out.String(), target)
+}
+
+// TestFileDeclaredSSHTargetIsRefusedWithoutApproval pins that a file cannot
+// dial out on its own say-so.
+func TestFileDeclaredSSHTargetIsRefusedWithoutApproval(t *testing.T) {
+	target := requireSSH(t).Target
+
+	var out bytes.Buffer
+	r := NewRunner(&out, false, false, "")
+	r.SSH = &SSHManager{}
+	_, err := r.RunFile(context.Background(), writeSuite(t, t.TempDir(), "ssh: "+target+"\n"+
+		"tests:\n"+
+		"\t- desc: refused\n"+
+		"\t  cmd: echo nope\n"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not approved")
+}
+
 // TestSSHRunsCommandsOnTheTarget is the end-to-end proof: the command runs
 // over ssh, its fixtures arrive, and its output files come home.
 func TestSSHRunsCommandsOnTheTarget(t *testing.T) {
