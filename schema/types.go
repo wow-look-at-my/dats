@@ -19,11 +19,11 @@ var exitCodeNames = set.Of(
 // TestFile represents the root of a .dats file
 type TestFile struct {
 	// Schema optionally references the JSON Schema for IDE validation; the runner ignores its value.
-	Schema string `yaml:"$schema,omitempty"`
-	Setup SetupCommands `yaml:"setup,omitempty"`
+	Schema   string           `yaml:"$schema,omitempty"`
+	Setup    SetupCommands    `yaml:"setup,omitempty"`
 	Teardown TeardownCommands `yaml:"teardown,omitempty"`
-	Shared *Shared `yaml:"shared,omitempty"`
-	Sandbox *SandboxSpec `yaml:"sandbox,omitempty"`
+	Shared   *Shared          `yaml:"shared,omitempty"`
+	Sandbox  *SandboxSpec     `yaml:"sandbox,omitempty"`
 	// SSH proposes the machine this file's commands run on; a run approves it.
 	SSH   *SSHSpec `yaml:"ssh,omitempty"`
 	Tests []Test   `yaml:"tests"`
@@ -34,8 +34,8 @@ const DefaultHookTimeout = 30 * time.Second
 
 // HookCommand is one setup/teardown list entry: a command plus the settings that shape how it runs.
 type HookCommand struct {
-	Cmd string
-	Env map[string]string
+	Cmd       string
+	Env       map[string]string
 	StdinFile string
 	// Timeout is the entry's own bound, or nil when unstated (the runner then applies DefaultHookTimeout).
 	Timeout *Duration
@@ -196,7 +196,7 @@ func bannedRedirect(s string) string {
 type Shared struct {
 	// Files maps file name to content.
 	Files map[string]string `yaml:"files,omitempty"`
-	Copy map[string]string `yaml:"copy,omitempty"`
+	Copy  map[string]string `yaml:"copy,omitempty"`
 }
 
 // Test represents a single test case
@@ -205,7 +205,7 @@ type Test struct {
 	Exit    ExitCode `yaml:"exit"`
 	Cmd     string   `yaml:"cmd"`
 	Timeout Duration `yaml:"timeout,omitempty"`
-	Matrix Matrix `yaml:"matrix,omitempty"`
+	Matrix  Matrix   `yaml:"matrix,omitempty"`
 	// SSH overrides the file's target for this test; needs a file-level ssh:.
 	SSH     *SSHSpec    `yaml:"ssh,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
@@ -216,7 +216,7 @@ type Test struct {
 type InputBlock struct {
 	Stdin string            `yaml:"stdin,omitempty"`
 	Files map[string]string `yaml:"files,omitempty"`
-	Copy map[string]string `yaml:"copy,omitempty"`
+	Copy  map[string]string `yaml:"copy,omitempty"`
 	// Env maps environment variable names to values.
 	Env map[string]string `yaml:"env,omitempty"`
 }
@@ -305,7 +305,7 @@ type OutputBlock struct {
 	Files     map[string]FileCheck `yaml:"files,omitempty"`
 	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
 	// Snapshot configures golden-file assertions for the test's output streams (snapshot key).
-	Snapshot SnapshotCheck `yaml:"snapshot,omitempty"`
+	Snapshot   SnapshotCheck         `yaml:"snapshot,omitempty"`
 	JSONOutput jsonOutputExpectation `yaml:"json_output,omitempty"`
 }
 

@@ -11,11 +11,11 @@ import (
 var verbose bool
 
 var rootCmd = &cobra.Command{
-	Use:   "dats",
-	Short: "Declarative Automated Testing System",
-	Long:  "DATS runs tests defined in declarative YAML files (.dats).",
-	RunE:  runTestsCommand,
-	Args:  cobra.ArbitraryArgs,
+	Use:           "dats",
+	Short:         "Declarative Automated Testing System",
+	Long:          "DATS runs tests defined in declarative YAML files (.dats).",
+	RunE:          runTestsCommand,
+	Args:          cobra.ArbitraryArgs,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }

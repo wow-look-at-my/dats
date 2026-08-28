@@ -90,7 +90,7 @@ func WriteJSON(w io.Writer, results []*runner.FileResult, wall time.Duration) er
 			tr := &fr.Results[i]
 			fileDuration += tr.Duration
 			test := jsonTest{
-				Name: tr.Name,
+				Name:            tr.Name,
 				Index:           tr.Index + 1,
 				Ok:              tr.Passed,
 				DurationSeconds: tr.Duration.Seconds(),

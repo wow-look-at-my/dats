@@ -1,6 +1,5 @@
 package schema
 
-
 import (
 	"fmt"
 	"maps"
@@ -15,7 +14,7 @@ import (
 
 var (
 	// matrixNameRe is the allowed shape of a matrix variable name.
-	matrixNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	matrixNameRe        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	matrixPlaceholderRe = regexp.MustCompile(`\{matrix\.([^}]*)\}`)
 )
 
@@ -112,7 +111,7 @@ type MatrixAssignment struct {
 
 // TestInstance is one concrete, runnable instance of a test after matrix expansion.
 type TestInstance struct {
-	Test Test
+	Test  Test
 	Label string
 	// Assignments holds the instance's variable=value bindings in declaration order.
 	Assignments []MatrixAssignment

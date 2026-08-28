@@ -20,7 +20,7 @@ type Runner struct {
 	KeepTemp  bool   // Keep temp directory for debugging
 	CoverDir  string // Directory for GOCOVERDIR coverage data
 	Formatter *Formatter
-	Update bool
+	Update    bool
 	// Sandbox selects the sandbox every command runs under.
 	Sandbox *SandboxConfig
 

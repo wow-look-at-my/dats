@@ -1,6 +1,5 @@
 package schema
 
-
 import (
 	"testing"
 	"time"

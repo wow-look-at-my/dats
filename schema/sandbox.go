@@ -1,6 +1,5 @@
 package schema
 
-
 import (
 	"errors"
 	"fmt"

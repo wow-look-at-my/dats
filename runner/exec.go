@@ -28,9 +28,9 @@ type execRequest struct {
 	Cmd   string
 	Stdin string
 	// Env is the child's complete environment (nil = inherit ours).
-	Env []string
-	EnvExtra []string
-	Timeout  time.Duration
+	Env         []string
+	EnvExtra    []string
+	Timeout     time.Duration
 	LowPriority bool
 	// Sandbox wraps the command in an OS-level sandbox; nil runs it directly on the host.
 	Sandbox *sandboxPlan

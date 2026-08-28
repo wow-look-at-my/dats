@@ -1,6 +1,5 @@
 package cmd
 
-
 import (
 	"bytes"
 	"context"
@@ -104,7 +103,7 @@ func runCorpusWithReports(t *testing.T, dir string, files []string, jobs int) (j
 var (
 	reXMLTime     = regexp.MustCompile(`time="[0-9.eE+-]+"`)
 	reJSONSeconds = regexp.MustCompile(`"(wall_seconds|duration_seconds)": [0-9.eE+-]+`)
-	reTempDir = regexp.MustCompile(`(` + regexp.QuoteMeta(resolvedTempDir()) +
+	reTempDir     = regexp.MustCompile(`(` + regexp.QuoteMeta(resolvedTempDir()) +
 		`|` + regexp.QuoteMeta(os.TempDir()) + `)/dats-[0-9]+`)
 )
 

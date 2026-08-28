@@ -9,11 +9,11 @@ import (
 
 // TestResult contains the result of running a single test
 type TestResult struct {
-	Name     string
-	Index    int
-	Passed   bool
-	Duration time.Duration
-	Failures []string
+	Name           string
+	Index          int
+	Passed         bool
+	Duration       time.Duration
+	Failures       []string
 	UpdatedGoldens []string
 	// Verbose output
 	Command string
@@ -33,7 +33,7 @@ type FileResult struct {
 	SetupFailure *CommandFailure
 	// TeardownFailures records every teardown command that failed.
 	TeardownFailures []CommandFailure
-	PrunedGoldens []string
+	PrunedGoldens    []string
 }
 
 func (fr *FileResult) Ok() bool {

@@ -52,7 +52,7 @@ type SandboxConfig struct {
 	// Image is the operator's docker image, and empty means they named none.
 	Image string
 
-	once sync.Once
+	once       sync.Once
 	noticeOnce sync.Once
 	backend    SandboxMode
 	// proc is the /proc shape the bwrap probe settled on, meaningful only for that backend.
@@ -185,9 +185,9 @@ type sandboxPlan struct {
 	// refusedImage is the file's own `image:` when the operator pinned a different one on the command line.
 	refusedImage string
 	network      bool
-	work string
-	coverDir string
-	workdir string
+	work         string
+	coverDir     string
+	workdir      string
 	// ssh runs this file's commands on another machine, with no sandbox there.
 	ssh *SSHConfig
 	// refusedSSH is the file's own target when a typed one outranked it.
