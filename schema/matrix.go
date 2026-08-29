@@ -1,10 +1,7 @@
 package schema
 
-// Matrix (parameterized) tests: a test may declare `matrix:`, a mapping of
-// variable name to a list of scalar values, expanding the test into one
-// instance per combination (cartesian product). This file holds the Matrix
-// type, the single definition of the matrix substitution scope (shared by
-// parse-time reference validation and instance expansion), and ExpandMatrix.
+// Matrix tests: the type, the one definition of the substitution scope, and
+// ExpandMatrix.
 
 import (
 	"fmt"
@@ -21,41 +18,25 @@ import (
 var (
 	// matrixNameRe is the allowed shape of a matrix variable name.
 	matrixNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-	// matrixPlaceholderRe matches {matrix.X} references, including the
-	// malformed empty-name form {matrix.} so validation can reject it.
+	// Matches {matrix.} too, so validation can reject the empty name.
 	matrixPlaceholderRe = regexp.MustCompile(`\{matrix\.([^}]*)\}`)
 )
 
-// MatrixVariable is one declared matrix variable: its name and its ordered
-// list of values. A quoted value is kept as its literal text (so "1.50"
-// stays "1.50"); an unquoted value is reformatted from its resolved type
-// (so 1.50 becomes "1.5" and true becomes "true") -- yaml-fixed resolves a
-// bare scalar to a Go value rather than keeping its source spelling.
+// MatrixVariable is one variable's name and ordered values. A quoted value
+// keeps its text; an unquoted one is reformatted from its resolved type, so
+// 1.50 becomes "1.5".
 type MatrixVariable struct {
 	Name   string
 	Values []string
 }
 
-// Matrix is a test's matrix block: the declared variables in declaration
-// order. Declaration order is semantic -- it fixes both the label order and
-// the expansion order of instances -- so Matrix is an ordered slice rather
-// than a map.
+// Matrix is a slice, not a map: declaration order fixes the label order and
+// the expansion order.
 type Matrix []MatrixVariable
 
-// UnmarshalYAML decodes the matrix mapping, preserving declaration order (a
-// plain Go map would lose it) via the parsed *yamlfixed.Map's own Keys
-// order. That Map can never hold a duplicate key (the parser rejects that
-// before this ever runs), so no manual duplicate-variable-name bookkeeping
-// is needed. Each value must itself be a
-// scalar's literal text -- yaml-fixed resolves scalars to Go values rather
-// than keeping source text, so a value is reformatted from its resolved type
-// rather than echoed verbatim (a float like 1.50 becomes "1.5", not "1.50";
-// see docs/file-format.md). An explicit `matrix: null` is treated the same
-// as an absent key (matching how `shared:`/`sandbox:` -- pointer-typed
-// fields the decoder never dereferences for a nil value -- already behave):
-// decodeStruct invokes UnmarshalYAML for any key that is present, null value
-// included, so a slice-typed field like Matrix must opt into that "null
-// means absent" reading itself rather than getting it for free.
+// UnmarshalYAML decodes the mapping through the parsed Map's Keys, which is
+// what preserves declaration order. A slice field must opt into reading an
+// explicit null as absent; a pointer field gets that for free.
 func (m *Matrix) UnmarshalYAML(value any) error {
 	if value == nil {
 		return nil
@@ -83,15 +64,12 @@ func (m *Matrix) UnmarshalYAML(value any) error {
 		values := make([]string, 0, len(valueList))
 		seen := set.New[string](len(valueList))
 		for j, item := range valueList {
-			// Only scalar values make sense as substitution text; null has no
-			// text at all, and a mapping/sequence has no scalar text either.
+			// Only a scalar has substitution text.
 			text, ok := matrixValueText(item)
 			if !ok {
 				return fmt.Errorf("matrix variable %q value %d: values must be scalar strings, numbers, or booleans", name, j+1)
 			}
-			// Duplicates are compared after stringification: 1.50 and "1.50"
-			// would produce byte-identical instances, so the repeat can only
-			// be a mistake.
+			// Compared after stringification: 1.50 and "1.50" are one instance.
 			if !seen.Add(text) {
 				return fmt.Errorf("matrix variable %q lists duplicate value %q", name, text)
 			}
@@ -149,27 +127,17 @@ type MatrixAssignment struct {
 // TestInstance is one concrete, runnable instance of a test after matrix
 // expansion. Ordinary tests expand to exactly one instance with no label.
 type TestInstance struct {
-	// Test is a deep copy of the source test with every in-scope {matrix.X}
-	// placeholder substituted and its Matrix cleared: an instance is a
-	// concrete test, not a template.
+	// Test is a substituted deep copy with Matrix cleared: not a template.
 	Test Test
-	// Label is the display suffix identifying the instance, e.g.
-	// "[greeting=hello, name=alice]" (assignments in declaration order).
-	// Empty for tests without a matrix.
+	// Label is the display suffix, e.g. "[greeting=hello, name=alice]".
 	Label string
-	// Assignments holds the instance's variable=value bindings in
-	// declaration order. Nil for tests without a matrix.
+	// Assignments are the bindings, in declaration order; nil without a matrix.
 	Assignments []MatrixAssignment
 }
 
-// ExpandMatrix expands test into its ordered list of instances: one per
-// combination of matrix values (cartesian product). Variables keep their
-// declaration order in both the label and the expansion order, with the LAST
-// declared variable varying fastest. Substitution is a single pass --
-// substituted text is never re-scanned, so a matrix value containing a
-// literal {matrix.y} stays literal. A test without a matrix expands to a
-// single unlabeled instance. Every instance's Test is a deep copy, fully
-// independent of the source test and of sibling instances.
+// ExpandMatrix returns one instance per combination, the LAST variable
+// varying fastest. Substitution is a single pass, so a matrix value holding
+// {matrix.y} stays literal, and each instance's Test is an independent copy.
 func ExpandMatrix(test *Test) []TestInstance {
 	if len(test.Matrix) == 0 {
 		return []TestInstance{{Test: copyTest(test)}}
@@ -208,11 +176,8 @@ func ExpandMatrix(test *Test) []TestInstance {
 	return instances
 }
 
-// substituteMatrix replaces every {matrix.X} in s with X's assigned value, in
-// a single pass: the substituted text is not re-scanned, so values containing
-// brace constructs pass through literally. A placeholder naming an unassigned
-// variable is left verbatim (ParseFile rejects those, so this only arises for
-// callers constructing tests directly).
+// substituteMatrix replaces every {matrix.X} in one pass, leaving text it
+// wrote alone. An unassigned name stays verbatim; ParseFile rejects those.
 func substituteMatrix(s string, assignments []MatrixAssignment) string {
 	return matrixPlaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		name := matrixPlaceholderRe.FindStringSubmatch(match)[1]
@@ -225,17 +190,10 @@ func substituteMatrix(s string, assignments []MatrixAssignment) string {
 	})
 }
 
-// applyToMatrixScope applies f, in place, to every string of test that is
-// inside the matrix substitution scope: desc, cmd, inputs.stdin, inputs.files
-// contents, inputs.copy sources, inputs.env values, every output pattern
-// string (stdout, stderr, !stdout, and !stderr in both the list and line-map
-// forms; files and !files match/notMatch entries), and every string scalar
-// inside json_output (keys and values). Out of scope and left untouched:
-// fixture file names (files and copy destinations alike), env var names,
-// exit, timeout, and the matrix block itself. This is the single definition
-// of the scope -- parse-time reference validation and instance expansion both
-// walk it, so they can never disagree. Maps are visited in sorted key order
-// so validation reports deterministically.
+// applyToMatrixScope applies f in place to every string in the substitution
+// scope. Fixture NAMES, env var names, exit and timeout stay out of it. This
+// is the scope's one definition: validation and expansion both walk it, so
+// they cannot disagree. Maps are visited in sorted key order.
 func applyToMatrixScope(test *Test, f func(string) string) {
 	test.Desc = f(test.Desc)
 	test.Cmd = f(test.Cmd)
@@ -278,13 +236,9 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 	}
 }
 
-// substituteJSONValue returns a deep copy of v -- json_output's generic
-// value tree (nil, bool, int, float64, string, []any, or map[string]any) --
-// with f applied to every string, mapping keys included; non-string scalars
-// (numbers, bools, null) are untouched, so substitution inside json_output
-// cannot change a value's JSON type. Passing the identity function makes
-// this a pure deep copy, which is how copyTest duplicates JSONOutput without
-// a second, separate copying mechanism.
+// substituteJSONValue deep-copies json_output's value tree, applying f to
+// every string and mapping key. A non-string scalar is untouched, so no
+// substitution can change a JSON type. The identity f is copyTest's deep copy.
 func substituteJSONValue(v any, f func(string) string) any {
 	switch val := v.(type) {
 	case string:
@@ -306,11 +260,8 @@ func substituteJSONValue(v any, f func(string) string) any {
 	}
 }
 
-// validateMatrixRefs checks every {matrix.X} reference in the test's matrix
-// substitution scope against the test's declared variables, returning the
-// first violation. ParseFile calls it per test (prefixing "test N:") so
-// `dats syntax` catches a typoed or undeclared variable without running
-// anything.
+// validateMatrixRefs returns the first {matrix.X} naming an undeclared
+// variable, so `dats syntax` catches a typo without running anything.
 func validateMatrixRefs(test *Test) error {
 	var firstErr error
 	scanMatrixScope(test, func(s string) {
@@ -338,9 +289,8 @@ func validateMatrixRefs(test *Test) error {
 	return firstErr
 }
 
-// scanMatrixScope calls visit on every string in the test's matrix
-// substitution scope, without modifying anything. It walks the exact same
-// scope as instance expansion (both are applyToMatrixScope).
+// scanMatrixScope visits the scope without modifying it -- the same
+// applyToMatrixScope walk expansion uses.
 func scanMatrixScope(test *Test, visit func(s string)) {
 	applyToMatrixScope(test, func(s string) string {
 		visit(s)
@@ -348,10 +298,8 @@ func scanMatrixScope(test *Test, visit func(s string)) {
 	})
 }
 
-// findMatrixPlaceholder returns the name of the first {matrix.X} reference in
-// s, if any. It backs the parse-time guard rejecting matrix placeholders in
-// file-level setup/teardown commands and shared file contents, where no
-// matrix instance exists.
+// findMatrixPlaceholder names the first {matrix.X} in s. It backs the guard
+// on setup/teardown/shared, where no instance exists yet.
 func findMatrixPlaceholder(s string) (string, bool) {
 	match := matrixPlaceholderRe.FindStringSubmatch(s)
 	if match == nil {

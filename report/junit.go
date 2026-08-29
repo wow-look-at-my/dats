@@ -27,9 +27,8 @@ type junitTestSuites struct {
 	Suites   []junitTestSuite `xml:"testsuite"`
 }
 
-// junitTestSuite is one <testsuite> per .dats file, named by the path as
-// given on the command line (or discovered). Its time is the sum of its
-// cases' durations, which under -j can exceed the run's wall time.
+// junitTestSuite is one <testsuite> per .dats file. Its time sums its cases,
+// which under -j can exceed the run's wall time.
 type junitTestSuite struct {
 	Name     string          `xml:"name,attr"`
 	Tests    int             `xml:"tests,attr"`
@@ -88,8 +87,7 @@ func WriteJUnit(w io.Writer, results []*runner.FileResult, wall time.Duration) e
 					Message: sanitizeXML(firstString(tr.Failures)),
 					Text:    sanitizeXML(strings.Join(tr.Failures, "\n")),
 				}
-				// Captured output is included only for failed cases, keeping
-				// reports lean when everything passes.
+				// Failed cases only, so a green report stays lean.
 				c.SystemOut = sanitizeXML(tr.Stdout)
 				c.SystemErr = sanitizeXML(tr.Stderr)
 				suite.Failures++
@@ -159,9 +157,8 @@ func firstString(s []string) string {
 	return s[0]
 }
 
-// validXMLRune reports whether r is a legal XML 1.0 character. Notably the
-// C0 control characters other than tab/newline/carriage-return -- which
-// command output can easily contain (\x00, \x1b, ...) -- are not.
+// validXMLRune reports whether r is legal in XML 1.0. A C0 control other
+// than tab/newline/return is not, and command output is full of them.
 func validXMLRune(r rune) bool {
 	return r == 0x9 || r == 0xA || r == 0xD ||
 		(r >= 0x20 && r <= 0xD7FF) ||

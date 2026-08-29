@@ -19,33 +19,21 @@ var exitCodeNames = set.Of(
 
 // TestFile represents the root of a .dats file
 type TestFile struct {
-	// Schema optionally references the JSON Schema for IDE validation; the
-	// runner ignores its value.
+	// Schema names the JSON Schema for IDE validation; the runner ignores it.
 	Schema string `yaml:"$schema,omitempty"`
-	// Setup commands run once, in declared order, before any of the file's
-	// tests (after shared files are written). If one fails, the remaining
-	// setup commands are skipped and every test in the file is reported as
-	// failed.
+	// Setup runs once before the tests; a failure fails every test in the file.
 	Setup SetupCommands `yaml:"setup,omitempty"`
-	// Teardown commands always run once, in declared order, after the file's
-	// tests -- after test failures and even when setup failed. A failing
-	// teardown command does not stop the rest, but marks the file failed.
+	// Teardown always runs after the tests, and a failure fails the file.
 	Teardown TeardownCommands `yaml:"teardown,omitempty"`
-	// Shared declares fixture files written once per file into the shared
-	// directory; nil when the file has no shared block.
+	// Shared declares fixtures written once per file; nil when there is none.
 	Shared *Shared `yaml:"shared,omitempty"`
-	// Sandbox refines (or opts out of) the sandbox the CLI selected for this
-	// file's commands; nil when the file has no sandbox block, leaving every
-	// decision to the CLI.
+	// Sandbox narrows the CLI's sandbox for this file; nil narrows nothing.
 	Sandbox *SandboxSpec `yaml:"sandbox,omitempty"`
 	Tests   []Test       `yaml:"tests"`
 }
 
-// DefaultHookTimeout bounds a setup/teardown command when its entry does not
-// state its own timeout. Unlike a test's timeout (0/omitted = unbounded), a
-// hook command always has one: it runs once per file, before or after every
-// test, and an unbounded hook can hang a whole run with no per-test signal to
-// notice it.
+// DefaultHookTimeout bounds a hook that states none: unlike a test, a hook
+// always has a bound, since an unbounded one hangs the run silently.
 const DefaultHookTimeout = 30 * time.Second
 
 // HookCommand is one setup/teardown list entry: a command plus the settings
@@ -54,25 +42,16 @@ const DefaultHookTimeout = 30 * time.Second
 // plus optional env, stdin_file, and timeout.
 type HookCommand struct {
 	Cmd string
-	// Env adds KEY=VALUE entries to the command's environment, on top of the
-	// run's own Env and the inherited environment. Values expand only
-	// {shared.X}, the same namespace Cmd expands -- {inputs.X}/{outputs.X}
-	// are per-test namespaces that do not exist at file scope.
+	// Env adds entries on top of the inherited environment; {shared.X} only.
 	Env map[string]string
-	// StdinFile names a host file whose raw content is piped to the
-	// command's stdin, unexpanded -- the stdin counterpart of a copy fixture
-	// rather than of inputs.stdin's inline, placeholder-expanded text. A
-	// relative path resolves against the directory holding the .dats file,
-	// same as inputs.copy/shared.copy. Empty means no stdin.
+	// StdinFile pipes a host file's raw content in, resolved like inputs.copy.
 	StdinFile string
-	// Timeout is the entry's own bound, or nil when unstated (the runner
-	// then applies DefaultHookTimeout). An explicit value must be greater
-	// than 0 -- there is no way to spell "no timeout" for a hook command.
+	// Timeout is this entry's bound; nil means DefaultHookTimeout, and an
+	// explicit value must be > 0. A hook cannot spell "no timeout".
 	Timeout *Duration
 }
 
-// EffectiveTimeout returns the bound the runner enforces on this command:
-// the entry's own Timeout if it set one, else DefaultHookTimeout.
+// EffectiveTimeout is the entry's own Timeout, else DefaultHookTimeout.
 func (h HookCommand) EffectiveTimeout() time.Duration {
 	if h.Timeout != nil {
 		return h.Timeout.Value
@@ -80,16 +59,11 @@ func (h HookCommand) EffectiveTimeout() time.Duration {
 	return DefaultHookTimeout
 }
 
-// CommandList is an ordered list of setup/teardown commands: the value shape
-// of the file-level setup and teardown keys. In YAML it is written as either
-// a single entry or a sequence of entries (each a bare string or a mapping;
-// see HookCommand). SetupCommands and TeardownCommands wrap it so parse
-// errors can name their key, mirroring how ExitCode and Duration hardcode
-// "exit" and "timeout" in their messages.
+// CommandList is one entry or a sequence of them; the wrappers below exist so
+// a parse error can name its key.
 type CommandList []HookCommand
 
-// SetupCommands is the file-level setup key: commands run once, in order,
-// before any of the file's tests.
+// SetupCommands is the file-level setup key.
 type SetupCommands CommandList
 
 func (s *SetupCommands) UnmarshalYAML(value any) error {
@@ -101,8 +75,7 @@ func (s *SetupCommands) UnmarshalYAML(value any) error {
 	return nil
 }
 
-// TeardownCommands is the file-level teardown key: commands that always run
-// once, in order, after the file's tests.
+// TeardownCommands is the file-level teardown key.
 type TeardownCommands CommandList
 
 func (td *TeardownCommands) UnmarshalYAML(value any) error {
@@ -236,20 +209,14 @@ func commandFromValue(value any, key, label string) (string, error) {
 	return s, nil
 }
 
-// heredocBanMessage is the error text for a heredoc (<<WORD, <<-WORD, or
-// <<~WORD): it embeds a file's content inline in a single shell string,
-// bypassing dats' own fixture mechanisms.
+// A heredoc embeds a file inline, bypassing dats' fixtures.
 const heredocBanMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
 
-// herestringBanMessage is the error text for a herestring (<<<): it redirects
-// stdin from the end of the line, bypassing the normal left-to-right
-// pipe/inputs.stdin data flow.
+// A herestring feeds stdin from the end of the line, against the data flow.
 const herestringBanMessage = "must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line"
 
-// bannedRedirect reports why s is rejected, if at all: a heredoc (<<WORD) or
-// a herestring (<<<) are both banned in cmd/setup/teardown, for different
-// reasons (see heredocBanMessage and herestringBanMessage), so the first "<<"
-// in s determines which message applies. Returns "" when s contains neither.
+// bannedRedirect reports why s is rejected, or "". The first "<<" decides
+// which message applies.
 func bannedRedirect(s string) string {
 	idx := strings.Index(s, "<<")
 	if idx == -1 {
@@ -261,18 +228,13 @@ func bannedRedirect(s string) string {
 	return heredocBanMessage
 }
 
-// Shared declares file-level fixture files, written once into the file's
-// shared directory before setup runs. Tests address them with {shared.X}
-// placeholders and should treat them as read-only.
+// Shared declares fixtures written once per file, before setup, and addressed
+// as {shared.X}.
 type Shared struct {
-	// Files maps file name to content. Contents go through {shared.X}
-	// placeholder expansion only; names must be local relative paths.
+	// Files maps a local name to content, expanding {shared.X} only.
 	Files map[string]string `yaml:"files,omitempty"`
-	// Copy maps a fixture name to a host file to copy into the shared
-	// directory, writable -- the read-write counterpart of the sandbox's
-	// read-only bind mount of the working directory. A relative source
-	// resolves against the directory holding the .dats file; names follow
-	// the same locality rule as Files, and a name may not appear in both.
+	// Copy maps a local name to a host file, copied in writable. A relative
+	// source resolves against the .dats file, and a name cannot also be Files.
 	Copy map[string]string `yaml:"copy,omitempty"`
 }
 
@@ -282,9 +244,7 @@ type Test struct {
 	Exit    ExitCode `yaml:"exit"`
 	Cmd     string   `yaml:"cmd"`
 	Timeout Duration `yaml:"timeout,omitempty"`
-	// Matrix declares the test's parameter variables; when non-empty, the
-	// test expands into one instance per combination of values (see
-	// ExpandMatrix). Nil for ordinary tests.
+	// Matrix expands the test into one instance per combination; nil is one.
 	Matrix  Matrix      `yaml:"matrix,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
@@ -294,16 +254,10 @@ type Test struct {
 type InputBlock struct {
 	Stdin string            `yaml:"stdin,omitempty"`
 	Files map[string]string `yaml:"files,omitempty"`
-	// Copy maps a fixture name to a host file to copy into the test's input
-	// directory, writable -- the read-write counterpart of the sandbox's
-	// read-only bind mount of the working directory: a file the test needs
-	// to modify. A relative source resolves against the directory holding
-	// the .dats file; names follow the same locality rule as Files, and a
-	// name may not appear in both.
+	// Copy maps a local name to a host file, copied in writable: the file the
+	// test needs to modify. Resolved and validated exactly like Shared.Copy.
 	Copy map[string]string `yaml:"copy,omitempty"`
-	// Env maps environment variable names to values. The variables are added
-	// to the inherited environment for the test's command; values go through
-	// the same placeholder expansion as the command.
+	// Env adds variables to the inherited environment; values expand as cmd does.
 	Env map[string]string `yaml:"env,omitempty"`
 }
 
@@ -322,13 +276,10 @@ func (e *ExitCode) UnmarshalYAML(value any) error {
 		e.Value = v
 		return nil
 	case float64:
-		// Reject floats explicitly (even integral ones like 2.0): decoding
-		// into int would otherwise silently truncate them, and schema.json
-		// types exit as an integer.
+		// Even 2.0 is rejected: decoding into int would truncate silently.
 		return fmt.Errorf("exit code must be an integer in range 0-255, got float %s", formatFloatForError(v))
 	case string:
-		// A quoted integer (e.g. "0") counts as its numeric value;
-		// otherwise it must be a name the runner can resolve.
+		// A quoted integer counts as its value; else it must be a known name.
 		if intVal, err := strconv.Atoi(v); err == nil {
 			if intVal < 0 || intVal > 255 {
 				return fmt.Errorf("exit code %d must be in range 0-255", intVal)
@@ -361,14 +312,11 @@ func (d *Duration) UnmarshalYAML(value any) error {
 		d.Value = time.Duration(v) * time.Second
 		return nil
 	case float64:
-		// Reject floats explicitly (even integral ones like 1.0): decoding
-		// into int would otherwise silently truncate them, turning
-		// timeout: 0.9 into 0 seconds -- i.e. no timeout at all. Fractional
-		// seconds are expressed as a duration string instead.
+		// A truncated float turns timeout: 0.9 into no timeout at all.
+		// Fractional seconds are a duration string instead.
 		return fmt.Errorf("timeout must be an integer number of seconds or a duration string (e.g. \"900ms\", \"1.5s\"), got float %s", formatFloatForError(v))
 	case string:
-		// A quoted bare integer (e.g. "5") means seconds, matching the
-		// unquoted form.
+		// A quoted bare integer means seconds, like the unquoted form.
 		if intVal, err := strconv.Atoi(v); err == nil {
 			if intVal < 0 {
 				return fmt.Errorf("timeout %d must not be negative", intVal)
@@ -389,10 +337,8 @@ func (d *Duration) UnmarshalYAML(value any) error {
 	return fmt.Errorf("timeout must be an integer (seconds) or duration string")
 }
 
-// formatFloatForError renders a rejected float value for an error message.
-// The parser resolves a scalar straight to its Go value rather than keeping
-// the source text, so a source spelling like "1e3" is reported using its
-// resolved value ("1000") rather than verbatim.
+// formatFloatForError renders a rejected float. The parser keeps no source
+// text, so "1e3" is reported as its resolved value.
 func formatFloatForError(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
@@ -405,21 +351,15 @@ type OutputBlock struct {
 	NotStderr OutputCheck          `yaml:"!stderr,omitempty"`
 	Files     map[string]FileCheck `yaml:"files,omitempty"`
 	NotFiles  map[string]FileCheck `yaml:"!files,omitempty"`
-	// Snapshot configures golden-file assertions for the test's output
-	// streams (snapshot key). A value type so matrix expansion's copyTest
-	// duplicates it by plain value copy.
+	// Snapshot is a value type, so matrix copyTest duplicates it by copy.
 	Snapshot SnapshotCheck `yaml:"snapshot,omitempty"`
-	// JSONOutput is the expected JSON value of the whole stdout (json_output
-	// key), wrapped so an explicit null expectation is distinguishable from
-	// an omitted key.
+	// JSONOutput is wrapped so an explicit null differs from an absent key.
 	JSONOutput jsonOutputExpectation `yaml:"json_output,omitempty"`
 }
 
-// jsonOutputExpectation wraps the outputs.json_output expectation. decodeStruct
-// (yaml-fixed) only invokes UnmarshalYAML for a key that is actually present in
-// the source -- an absent key leaves the field at its Go zero value -- so Set
-// becoming true is itself the "was this key given at all" signal, including
-// when the given value is an explicit `null`.
+// jsonOutputExpectation wraps outputs.json_output. yaml-fixed calls
+// UnmarshalYAML only for a key that is present, so set IS "the key was given",
+// explicit null included.
 type jsonOutputExpectation struct {
 	set   bool
 	value any
@@ -436,10 +376,8 @@ func (o *OutputBlock) HasJSONOutput() bool {
 	return o.JSONOutput.set
 }
 
-// JSONOutputValue returns the json_output expectation as plain Go values
-// (map[string]any, []any, string, bool, numbers, nil). The error return is
-// kept for caller compatibility; the value is already fully resolved by
-// parse time, so it is always nil.
+// JSONOutputValue returns the expectation as plain Go values. The error is
+// kept for callers and is always nil: parsing resolved the value already.
 func (o *OutputBlock) JSONOutputValue() (any, error) {
 	return o.JSONOutput.value, nil
 }
@@ -452,9 +390,8 @@ type OutputCheck struct {
 	LineChecks map[int]string // line-specific patterns (0-indexed)
 }
 
-// UnmarshalYAML decodes the two accepted OutputCheck shapes. An explicit
-// null (e.g. `outputs.stdout: null`) is treated the same as an absent key,
-// matching Matrix and SnapshotCheck.
+// UnmarshalYAML decodes both OutputCheck shapes. An explicit null reads as
+// an absent key, matching Matrix and SnapshotCheck.
 func (o *OutputCheck) UnmarshalYAML(value any) error {
 	if value == nil {
 		return nil
@@ -471,10 +408,8 @@ func (o *OutputCheck) UnmarshalYAML(value any) error {
 		o.Patterns = patterns
 		return nil
 	}
-	// A parsed *yamlfixed.Map can never hold a duplicate KEY (the parser
-	// rejects that before this ever runs) -- but two distinct keys can still
-	// name the same line number ("0" and "00"), which the parser has no way
-	// to know is a collision, so that check still belongs here.
+	// The parser rejects a duplicate KEY, but "0" and "00" are two keys
+	// naming one line number, and only this code knows that collides.
 	if m, ok := value.(*yamlfixed.Map); ok {
 		o.LineChecks = make(map[int]string, m.Len())
 		for _, k := range m.Keys {
@@ -505,23 +440,17 @@ func (o OutputCheck) IsEmpty() bool {
 	return len(o.Patterns) == 0 && len(o.LineChecks) == 0
 }
 
-// SnapshotCheck configures golden-file (snapshot) assertions for a test's
-// output streams. Zero value = no snapshot assertion.
+// SnapshotCheck configures golden-file assertions; the zero value is none.
 type SnapshotCheck struct {
-	// Enabled distinguishes a present snapshot key from an absent one:
-	// `snapshot: false` and an omitted key are both the zero value.
+	// Enabled marks the key present: false and omitted are both the zero value.
 	Enabled bool
 	Stdout  bool
 	Stderr  bool
 }
 
-// UnmarshalYAML decodes the two accepted snapshot shapes: a scalar boolean
-// (`snapshot: true` snapshots stdout; `snapshot: false` is the documented
-// toggle-off, identical to omitting the key) or a mapping of stream names
-// (stdout, stderr) to booleans, of which at least one must be true. An
-// explicit `snapshot: null` is treated the same as an absent key. A parsed
-// *yamlfixed.Map can never hold a duplicate key (the parser rejects that
-// before this ever runs), so no manual duplicate-key bookkeeping is needed.
+// UnmarshalYAML decodes both snapshot shapes: a bool (true = stdout, false =
+// omitted), or a stream mapping with at least one true. Null reads as absent,
+// and the parser has already rejected any duplicate key.
 func (s *SnapshotCheck) UnmarshalYAML(value any) error {
 	if value == nil {
 		return nil
@@ -551,8 +480,7 @@ func (s *SnapshotCheck) UnmarshalYAML(value any) error {
 				check.Stderr = enabled
 			}
 		}
-		// A mapping that enables nothing (empty, or explicit falses) can only
-		// be a mistake: it looks like an assertion but asserts nothing.
+		// A mapping enabling nothing looks like an assertion and is not one.
 		if !check.Stdout && !check.Stderr {
 			return fmt.Errorf("snapshot: must enable at least one of stdout, stderr")
 		}
@@ -570,10 +498,7 @@ type FileCheck struct {
 	NotMatch []string `yaml:"notMatch,omitempty"`
 }
 
-// IsEmpty reports whether the check asserts nothing explicitly (no exists,
-// match, or notMatch). The runner treats an empty check as an implicit
-// existence assertion: under files the file must exist, under !files it must
-// not.
+// IsEmpty means the check asserts nothing; the runner reads that as existence.
 func (f FileCheck) IsEmpty() bool {
 	return f.Exists == nil && len(f.Match) == 0 && len(f.NotMatch) == 0
 }

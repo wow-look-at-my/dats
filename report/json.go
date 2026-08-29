@@ -8,13 +8,11 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// FormatVersion is the JSON report's format_version value. Field names and
-// document structure are stable within a version; a breaking change bumps it.
+// FormatVersion is a stability contract: a breaking change bumps it.
 const FormatVersion = 1
 
-// jsonReport is the JSON report document. Summary counts cover test
-// instances only -- exactly the CLI summary numbers; file-level hook
-// failures live in setup_failure/teardown_failures, never in tests.
+// jsonReport is the report document. Summary counts are the CLI's instance
+// counts; a hook failure lives in setup_failure/teardown_failures, not tests.
 type jsonReport struct {
 	FormatVersion int         `json:"format_version"`
 	Ok            bool        `json:"ok"`
@@ -102,8 +100,7 @@ func WriteJSON(w io.Writer, results []*runner.FileResult, wall time.Duration) er
 			fileDuration += tr.Duration
 			test := jsonTest{
 				Name: tr.Name,
-				// The canonical 1-based instance number, matching the "ok N -"
-				// numbering the CLI prints (TestResult.Index is 0-based).
+				// 1-based, matching the CLI's "ok N -" numbering.
 				Index:           tr.Index + 1,
 				Ok:              tr.Passed,
 				DurationSeconds: tr.Duration.Seconds(),

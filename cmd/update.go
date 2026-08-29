@@ -1,10 +1,7 @@
 package cmd
 
-// The --update flag: rewrite snapshot golden files. Registration lives here;
-// the golden writing and pruning themselves are the runner's snapshot logic
-// (runner/snapshot.go), reached through Runner.Update. runTests prints the
-// end-of-run goldens summary line. `dats syntax` accepts the flag but
-// ignores it -- nothing runs, so there is nothing to update.
+// The --update flag: registration only. The writing and pruning are
+// runner/snapshot.go, reached through Runner.Update.
 
 import (
 	"github.com/spf13/pflag"
@@ -16,8 +13,6 @@ var updateGoldens bool
 // default: ordinary runs compare against goldens and fail on mismatch.
 func registerUpdateFlag(flags *pflag.FlagSet) {
 	flags.BoolVar(&updateGoldens, "update", false,
-		// No backticks in a usage string: pflag reads the first backticked
-		// word as the flag's value placeholder, so a bool flag would render
-		// as if it took an argument.
+		// No backticks: pflag reads one as the flag's value placeholder.
 		"rewrite snapshot golden files from actual output instead of failing (see: dats docs format)")
 }

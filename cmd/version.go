@@ -58,8 +58,7 @@ func versionFromBuildInfo(info *debug.BuildInfo) string {
 }
 
 func init() {
-	// Also expose the same string as `dats --version` (cobra adds the flag
-	// whenever Version is non-empty), formatted identically to `dats version`.
+	// A non-empty Version makes cobra add --version; match `dats version`.
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("dats {{.Version}}\n")
 

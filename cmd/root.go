@@ -50,9 +50,7 @@ This binary carries its own complete documentation:
   dats syntax tests/              # parse and validate, run nothing`,
 	RunE: runTestsCommand,
 	Args: cobra.ArbitraryArgs,
-	// Errors are reported by Execute (or, for test/syntax failures, already
-	// reported by the runner output); cobra should not add usage dumps or a
-	// second error line.
+	// Execute reports errors; cobra must not add a usage dump or a second line.
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -62,8 +60,7 @@ This binary carries its own complete documentation:
 // their command's output, so they exit silently; any other error is printed
 // exactly once.
 func Execute() {
-	// Make-style -jN needs rewriting to --jobs=N before cobra parses the
-	// args; see normalizeJobsShorthand.
+	// -jN must become --jobs=N before cobra parses it.
 	rootCmd.SetArgs(normalizeJobsShorthand(os.Args[1:]))
 	err := rootCmd.Execute()
 	if err == nil {
@@ -76,8 +73,7 @@ func Execute() {
 }
 
 func init() {
-	// Persistent flags are inherited by subcommands, so `dats --keep-temp f.dats`
-	// and `dats test --keep-temp f.dats` both work with a single registration.
+	// Persistent flags are inherited, so one registration serves every command.
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show command details, durations, and full output on failure")
 	rootCmd.PersistentFlags().BoolVar(&keepTemp, "keep-temp", false, "Keep the per-run temp directory (prints its path) for debugging")
 	rootCmd.PersistentFlags().StringVar(&coverDir, "coverdir", "", "Set GOCOVERDIR on every executed command (tests and hooks) to collect coverage data")

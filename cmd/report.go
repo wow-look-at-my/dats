@@ -1,10 +1,7 @@
 package cmd
 
-// The --report-junit/--report-json flags: machine-readable report files.
-// Registration and the write-to-disk plumbing live here; the document
-// rendering itself is the report package. Reports are written by runTests
-// whenever the run executed -- especially when tests failed and the process
-// is about to exit 1 -- from the same results in both serial and jobs mode.
+// The --report-junit/--report-json flags: registration and the write to
+// disk. Rendering is the report package.
 
 import (
 	"errors"
