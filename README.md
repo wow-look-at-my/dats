@@ -6,6 +6,8 @@ Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` 
 
 Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
 
+The whole reference under [docs/](docs/README.md) is compiled into the binary, so a machine with `dats` and nothing else still has it: `dats docs` lists the topics, `dats docs format` prints the file-format reference, and `dats help <topic>` prints the same pages.
+
 ## Installation
 
 ```bash
@@ -82,6 +84,11 @@ dats syntax
 
 # Print the version
 dats version
+
+# The documentation ships in the binary: topics, one page, or all of it
+dats docs
+dats docs format
+dats help format
 ```
 
 Both `test` and `syntax` accept any mix of `.dats` files and directories.
@@ -96,6 +103,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | `test` | Run tests from `.dats` files or directories (default when no subcommand given) |
 | `watch` | Run tests, then re-run the **complete** argument scope whenever the resolved `.dats` files, their `.snapshots/` golden dirs, or directory arguments change (debounced; no per-file re-run — dats has no test filtering by design). Ctrl-C exits 0. See [docs/cli.md](docs/cli.md#watch-mode-dats-watch) |
 | `syntax` | Validate `.dats` file syntax without executing tests |
+| `docs` | Print the documentation compiled into the binary: `dats docs` lists the topics, `dats docs format` prints the file-format reference, `dats docs all` prints everything |
 | `version` | Print a one-line `dats <version>` |
 
 ### Flags

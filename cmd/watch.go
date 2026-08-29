@@ -36,7 +36,16 @@ per-file or otherwise narrowed re-run.
 
 Ctrl-C (or SIGTERM) exits with code 0. When a run is in flight, the
 interrupt kills the running commands' whole process groups promptly; the
-interrupted file's teardown still runs.`,
+interrupted file's teardown still runs.
+
+A parse error or a failing test never ends the watch -- it is reported and the
+next change re-runs. Only a startup argument error (a nonexistent path, a
+non-.dats file, a directory with no suites) exits, exactly like "dats test".
+
+Depth: "dats docs cli", section "Watch Mode".`,
+	Example: `  dats watch                    # watch the whole tree
+  dats watch tests/             # watch a directory, new files join the scope
+  dats watch --update tests/    # re-run and rewrite goldens on every change`,
 	RunE: runWatchCommand,
 	Args: cobra.ArbitraryArgs,
 }

@@ -16,11 +16,25 @@ import (
 var errSyntaxFailed = errors.New("syntax validation failed")
 
 var syntaxCmd = &cobra.Command{
-	Use:   "syntax [files...]",
+	Use:   "syntax [files-or-dirs...]",
 	Short: "Validate .dats file syntax without running tests",
-	Long: `Parse and validate .dats files without executing any tests.
-If no files are specified, recursively finds and validates all .dats files
-in the current directory tree.`,
+	Long: `Parse and validate .dats files without executing any test, hook, or command.
+Arguments resolve exactly as they do for "dats test"; with none, every .dats
+file under the working directory is validated.
+
+Validation is the parser's full strictness: tab-only indentation, unknown or
+duplicate keys, non-local fixture names, undeclared {matrix.X} references,
+heredocs and herestrings in a command, and a file that tries to switch its own
+sandbox off are all reported here.
+
+Each valid file prints "ok   <path>" on stdout; each invalid one prints
+"FAIL <path>: <error>" on stderr. The exit status is 0 when every file parsed
+and 1 otherwise. Nothing runs, so no sandbox backend has to be installed.
+
+Depth: "dats docs format".`,
+	Example: `  dats syntax                # validate every .dats file in the tree
+  dats syntax tests/         # validate a directory
+  dats syntax -v one.dats    # also print each file's test count`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		files, err := dats.FindFiles(args)
 		if err != nil {
