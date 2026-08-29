@@ -1,10 +1,6 @@
 package cmd
 
 // The --report-junit/--report-json flags: machine-readable report files.
-// Registration and the write-to-disk plumbing live here; the document
-// rendering itself is the report package. Reports are written by runTests
-// whenever the run executed -- especially when tests failed and the process
-// is about to exit 1 -- from the same results in both serial and jobs mode.
 
 import (
 	"errors"
@@ -25,8 +21,6 @@ var (
 )
 
 // registerReportFlags registers --report-junit and --report-json on flags.
-// Both are long-only (no shorthand) and require a value; both may be used at
-// once. Empty (absent) means no report of that kind is written.
 func registerReportFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&reportJUnit, "report-junit", "",
 		"write a JUnit XML report of the run to the given file")
@@ -35,9 +29,6 @@ func registerReportFlags(flags *pflag.FlagSet) {
 }
 
 // writeReports writes every requested report file from the run's results.
-// Both reports are attempted even if the first fails; a failure to write a
-// report is a real error (stderr message, exit 1) even when every test
-// passed.
 func writeReports(results []*runner.FileResult, wall time.Duration) error {
 	var errs []error
 	if reportJUnit != "" {
@@ -53,8 +44,7 @@ func writeReports(results []*runner.FileResult, wall time.Duration) error {
 	return errors.Join(errs...)
 }
 
-// writeReportFile creates path -- parent directories included -- and renders
-// one report into it via write.
+// writeReportFile creates path -- parent directories included -- and renders one report into it via write.
 func writeReportFile(path string, write func(io.Writer) error) error {
 	fail := func(err error) error {
 		return fmt.Errorf("writing report %s: %w", path, err)

@@ -13,16 +13,9 @@ import (
 	"unicode/utf8"
 )
 
-// maxJSONDiffs bounds how many individual differences are reported for a
-// single json_output assertion; the remainder is summarized in one line.
 const maxJSONDiffs = 10
 
-// AssertJSONOutput checks that stdout parses as a single JSON value that
-// deep-equals expected. Object keys are compared order-insensitively; array
-// elements are order-sensitive. Numbers are compared by numeric value, so 2
-// and 2.0 are equal. On mismatch it returns one error per difference (capped
-// at maxJSONDiffs plus a summary line), each naming the JSONPath-style
-// location of the difference.
+// AssertJSONOutput checks that stdout parses as a single JSON value that deep-equals expected.
 func AssertJSONOutput(stdout string, expected any) []error {
 	canonical, err := canonicalizeJSON(expected)
 	if err != nil {
@@ -58,9 +51,6 @@ func AssertJSONOutput(stdout string, expected any) []error {
 	return errs
 }
 
-// canonicalizeJSON round-trips a value through encoding/json so both sides of
-// the comparison use the same representation (map[string]any, []any, string,
-// bool, json.Number, nil).
 func canonicalizeJSON(v any) (any, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -75,9 +65,6 @@ func canonicalizeJSON(v any) (any, error) {
 	return out, nil
 }
 
-// compareJSON walks expected and actual in lockstep, appending one message
-// per difference to diffs. path is the JSONPath-style location of the
-// current values.
 func compareJSON(path string, expected, actual any, diffs []string) []string {
 	switch exp := expected.(type) {
 	case map[string]any:
@@ -155,11 +142,6 @@ func compareJSON(path string, expected, actual any, diffs []string) []string {
 	}
 }
 
-// jsonNumbersEqual compares two JSON numbers by value: textual equality
-// first, then exact arbitrary-precision comparison (so 2 and 2.0 are equal,
-// while distinct big integers beyond float64 precision are not conflated).
-// If either text cannot be parsed exactly, that pair falls back to float64
-// comparison.
 func jsonNumbersEqual(a, b json.Number) bool {
 	if a.String() == b.String() {
 		return true
@@ -202,7 +184,6 @@ func jsonTypeName(v any) string {
 }
 
 // renderJSON renders a value as compact JSON, truncated for readability.
-// Truncation never splits a multi-byte UTF-8 rune.
 func renderJSON(v any) string {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -230,8 +211,6 @@ func childPath(path, key string) string {
 	return path + "[" + strconv.Quote(key) + "]"
 }
 
-// sortedStringKeys returns the map's keys in sorted order for deterministic
-// output (JSON diffs, file-check failures).
 func sortedStringKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {

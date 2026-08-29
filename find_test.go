@@ -12,15 +12,6 @@ import (
 )
 
 // tempDir is t.TempDir() with symlinks resolved.
-//
-// Discovery resolves a directory root through filepath.EvalSymlinks (see
-// findDatsFiles -- WalkDir will not follow a symlinked root, so without it a
-// symlinked directory arg yields nothing). On macOS the temp root reached
-// via /tmp is itself a symlink to /private/tmp, so discovery legitimately
-// returns /private/tmp/... while an unresolved t.TempDir() string still says
-// /tmp/... -- the assertion fails on a path difference the product is right
-// about. Resolving here makes the expectation match what discovery returns,
-// on every platform (a no-op where the temp dir is already a real path).
 func tempDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -57,8 +48,6 @@ func TestFindFilesNonexistent(t *testing.T) {
 }
 
 func TestFindFilesStatError(t *testing.T) {
-	// A path with a regular file as an intermediate component fails Stat with
-	// ENOTDIR rather than ENOENT; it must be reported, not silently accepted.
 	tmp := tempDir(t)
 	blocker := filepath.Join(tmp, "blocker")
 	require.Nil(t, os.WriteFile(blocker, []byte(""), 0644))
@@ -148,9 +137,6 @@ func TestFindFilesDirectoryArgEmpty(t *testing.T) {
 }
 
 func TestFindFilesSymlinkedDirArg(t *testing.T) {
-	// A symlink to a directory stats as a directory, but filepath.WalkDir does
-	// not follow a symlink root; without resolving the root first the walk
-	// yields nothing and the arg errors with "no .dats files found".
 	tmp := tempDir(t)
 	realDir := filepath.Join(tmp, "real")
 	require.Nil(t, os.MkdirAll(realDir, 0755))
@@ -172,8 +158,7 @@ func TestFindFilesDedupe(t *testing.T) {
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte(""), 0644))
 
-	// The same file named twice explicitly, plus covered by a directory arg,
-	// must run exactly once. First-seen order (and spelling) is preserved.
+	// The same file named twice explicitly, plus covered by a directory arg, must run exactly once.
 	files, err := FindFiles([]string{datsFile, tmp, datsFile})
 	require.Nil(t, err)
 	assert.Equal(t, []string{datsFile}, files)
@@ -229,8 +214,6 @@ func TestFindDatsFilesSkipsHiddenFile(t *testing.T) {
 }
 
 func TestFindDatsFilesHiddenRoot(t *testing.T) {
-	// The walk root itself is exempt from the hidden-name rule: running inside
-	// (or on) a dotted directory must still discover its contents.
 	tmp := tempDir(t)
 	dottedRoot := filepath.Join(tmp, ".dotted")
 	require.Nil(t, os.MkdirAll(dottedRoot, 0755))

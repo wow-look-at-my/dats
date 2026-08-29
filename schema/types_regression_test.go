@@ -1,9 +1,5 @@
 package schema
 
-// Regression tests for parsing fixes: duplicate and negative line-check keys,
-// quoted integer exit codes, quoted bare-integer timeouts, empty file checks,
-// and float exit/timeout rejection.
-
 import (
 	"testing"
 	"time"
@@ -14,8 +10,6 @@ import (
 )
 
 func TestOutputCheck_UnmarshalYAML_DuplicateLineKeys(t *testing.T) {
-	// Two literally identical keys are rejected by the parser itself, before
-	// OutputCheck's own decoding ever runs.
 	var o OutputCheck
 	err := yaml.Unmarshal([]byte("0: \"a\"\n0: \"b\"\n"), &o)
 	require.NotNil(t, err)
@@ -31,8 +25,6 @@ func TestOutputCheck_UnmarshalYAML_DuplicateLineKeysDifferentSpelling(t *testing
 }
 
 func TestOutputCheck_UnmarshalYAML_NegativeLineKey(t *testing.T) {
-	// Negative line numbers are nonsense: a positive check on line -1 always
-	// fails and a negated check silently passes. schema.json forbids them too.
 	var o OutputCheck
 	err := yaml.Unmarshal([]byte("\"-1\": never\n"), &o)
 	require.NotNil(t, err)
@@ -134,13 +126,6 @@ func TestFileCheck_IsEmpty(t *testing.T) {
 }
 
 func TestDuration_UnmarshalYAML_FloatRejected(t *testing.T) {
-	// Decoding a float scalar into an int truncates, so without an explicit
-	// rejection timeout: 0.9 would parse as 0 seconds -- no timeout at all
-	// -- and timeout: 1.5 as 1s. Even integral floats like 1.0 are rejected:
-	// schema.json types timeout as an integer. The echoed value is the
-	// scalar's RESOLVED float (yaml-fixed resolves a scalar to its Go value
-	// rather than keeping source text), so "1.0" and "1e3" echo as "1" and
-	// "1000".
 	cases := []struct{ input, wantFloat string }{
 		{"0.9", "0.9"},
 		{"1.5", "1.5"},
@@ -160,7 +145,6 @@ func TestDuration_UnmarshalYAML_FloatRejected(t *testing.T) {
 
 func TestExitCode_UnmarshalYAML_FloatRejected(t *testing.T) {
 	// Same truncation hazard as Duration: exit: 1.5 silently became exit: 1.
-	// Integral floats like 2.0 are rejected too (schema.json says integer).
 	cases := []struct{ input, wantFloat string }{
 		{"1.5", "1.5"},
 		{"2.0", "2"},
@@ -176,9 +160,6 @@ func TestExitCode_UnmarshalYAML_FloatRejected(t *testing.T) {
 }
 
 func TestTestFile_FloatTimeoutDoesNotDisableTimeout(t *testing.T) {
-	// Before the float check, this document PARSED SUCCESSFULLY with
-	// Timeout.Value == 0, i.e. "timeout: 0.9" silently meant NO timeout and
-	// the command could run forever. It must now fail to parse.
 	var f TestFile
 	err := yaml.Unmarshal([]byte("tests:\n\t- cmd: sleep 2\n\t  timeout: 0.9\n"), &f)
 	require.NotNil(t, err)
@@ -186,8 +167,6 @@ func TestTestFile_FloatTimeoutDoesNotDisableTimeout(t *testing.T) {
 }
 
 func TestFileCheck_UnmarshalYAML_NullValueIsEmpty(t *testing.T) {
-	// A null file check ("out.txt:" with no value) decodes to the zero
-	// FileCheck, which the runner treats as an implicit existence assertion.
 	var o OutputBlock
 	err := yaml.Unmarshal([]byte("files:\n\tout.txt:\n"), &o)
 	require.Nil(t, err)

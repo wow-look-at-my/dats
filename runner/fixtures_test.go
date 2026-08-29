@@ -89,8 +89,6 @@ func TestSetupFixturesExpandsPlaceholdersInContents(t *testing.T) {
 	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
-	// Placeholders in contents expand to the same paths as in cmd; unknown
-	// input placeholders and non-placeholder braces are left untouched.
 	content, err := os.ReadFile(ctx.InputPaths["script.sh"])
 	require.Nil(t, err)
 	want := "cp " + ctx.InputPaths["data.txt"] + " " + ctx.OutputPaths["result.txt"] +
@@ -178,8 +176,7 @@ func TestExpandPlaceholdersUnregisteredOutput(t *testing.T) {
 	result := ExpandPlaceholders("touch {outputs.new.txt}", ctx)
 	assert.Equal(t, "touch /tmp/test/outputs/new.txt", result)
 
-	// Without an outputs directory (context not from SetupFixtures), the
-	// placeholder is left untouched
+	// Without an outputs directory (context not from SetupFixtures), the placeholder is left untouched
 	bare := &TestContext{InputPaths: map[string]string{}, OutputPaths: map[string]string{}}
 	result = ExpandPlaceholders("touch {outputs.new.txt}", bare)
 	assert.Equal(t, "touch {outputs.new.txt}", result)
@@ -213,8 +210,6 @@ func TestSetupFixturesSetsSharedDir(t *testing.T) {
 	ctx, err := SetupFixtures(tmp, 0, &schema.Test{Cmd: "true"}, "")
 	require.Nil(t, err)
 	assert.Equal(t, filepath.Join(tmp, "shared"), ctx.SharedDir)
-	// The shared directory exists so {shared.X} resolves to a writable path
-	// even when RunTest is driven directly.
 	info, err := os.Stat(ctx.SharedDir)
 	require.Nil(t, err)
 	assert.True(t, info.IsDir())
@@ -319,8 +314,7 @@ func TestSetupFixturesCreatesNestedOutputParents(t *testing.T) {
 	ctx, err := SetupFixtures(tmp, 0, test, "")
 	require.Nil(t, err)
 
-	// The registered output's parent directory exists so commands can write
-	// the file directly.
+	// The registered output's parent directory exists so commands can write the file directly.
 	info, statErr := os.Stat(filepath.Dir(ctx.OutputPaths["sub/dir/out.txt"]))
 	require.Nil(t, statErr)
 	assert.True(t, info.IsDir())
@@ -333,8 +327,6 @@ func TestExpandPlaceholdersNonLocalOutputLeftVerbatim(t *testing.T) {
 		OutputPaths: map[string]string{},
 	}
 
-	// Unregistered output names only resolve into the outputs directory when
-	// they stay inside it; traversal and absolute names are left verbatim.
 	assert.Equal(t, "cat {outputs.../../evil}", ExpandPlaceholders("cat {outputs.../../evil}", ctx))
 	assert.Equal(t, "cat {outputs./etc/passwd}", ExpandPlaceholders("cat {outputs./etc/passwd}", ctx))
 }
@@ -357,8 +349,6 @@ func TestSetupFixturesCopy(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, "#!/bin/sh\necho hi\n", string(content))
 
-	// The copy preserves the source's permission bits (the executable bit
-	// matters for a script pulled in to be run).
 	info, err := os.Stat(ctx.InputPaths["script.sh"])
 	require.Nil(t, err)
 	assert.Equal(t, os.FileMode(0755), info.Mode().Perm())
@@ -394,8 +384,6 @@ func TestSetupFixturesCopyMissingSourceFails(t *testing.T) {
 }
 
 func TestSetupFixturesCopyCollisionWithFiles(t *testing.T) {
-	// ParseFile already rejects this; SetupFixtures checks again for a
-	// library caller constructing a Test directly.
 	tmp := t.TempDir()
 	test := &schema.Test{
 		Cmd: "true",

@@ -7,9 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The negated output keys are written bare. yaml-fixed never parses tags, so a
-// leading '!' is an ordinary scalar character there -- a guarantee that repo
-// documents (see its "Not supported" section) and dats' file format depends on.
 func TestParseFile_NegatedOutputKeysUnquoted(t *testing.T) {
 	path := writeTempDats(t, `
 tests:
@@ -32,8 +29,6 @@ tests:
 	assert.Contains(t, out.NotFiles, "stray.txt")
 }
 
-// The quoted spelling is the same key after unquoting, so files written before
-// the bare form was documented keep parsing identically.
 func TestParseFile_NegatedOutputKeysQuotedMatchUnquoted(t *testing.T) {
 	bare := writeTempDats(t, `
 tests:
