@@ -12,7 +12,8 @@ import (
 	dats "github.com/wow-look-at-my/dats"
 )
 
-// errSyntaxFailed exits 1 silently: the FAIL lines are already printed.
+// errSyntaxFailed signals that at least one file failed validation. The FAIL
+// lines have already been printed, so Execute exits 1 without printing more.
 var errSyntaxFailed = errors.New("syntax validation failed")
 
 var syntaxCmd = &cobra.Command{
@@ -36,7 +37,8 @@ Depth: "dats docs format".`,
   dats syntax tests/         # validate a directory
   dats syntax -v one.dats    # also print each file's test count`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// The sandbox flags are inherited but inert: nothing runs here.
+		// The sandbox flags are inherited but inert here, exactly like
+		// --update: syntax runs no commands, so there is nothing to sandbox.
 		files, err := dats.FindFiles(args)
 		if err != nil {
 			return err

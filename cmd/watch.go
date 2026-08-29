@@ -1,8 +1,14 @@
 package cmd
 
-// The watch command: run, then re-run the COMPLETE argument scope on every
-// relevant fsnotify change. There is no narrowed re-run -- dats has no test
-// filtering by design. Ctrl-C exits 0, discarding the aborted run.
+// The watch command: run the resolved tests once, then keep watching the
+// resolved .dats files, their snapshot golden directories, and any directory
+// arguments (where new .dats files change the scope) via fsnotify, and
+// re-run on every relevant change (debounced). Every re-run executes the
+// COMPLETE original argument scope: dats has a hard design ban on test
+// filtering/selection, so there is no per-file or narrowed re-run and no
+// flag to add one. Ctrl-C/SIGTERM exits 0; a run interrupted mid-flight is
+// aborted via the context plumbed through the runner (in-flight process
+// groups are killed, teardown still runs) and its outcome is discarded.
 
 import (
 	"context"
@@ -26,7 +32,8 @@ import (
 	"github.com/wow-look-at-my/dats/internal/paths"
 )
 
-// watchDebounce coalesces an editor's save storm into one re-run.
+// watchDebounce is how long the watcher waits after the LAST relevant event
+// before re-running, so editor save storms coalesce into a single run.
 const watchDebounce = 250 * time.Millisecond
 
 var watchCmd = &cobra.Command{
@@ -68,8 +75,9 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	// A startup resolution error exits like dats test; each cycle below
-	// re-resolves, so a later scope change is picked up instead.
+	// A hard resolution error at startup (nonexistent argument, no .dats
+	// files found, wrong extension) exits like dats test would. Every cycle
+	// below re-resolves from scratch so scope changes are picked up.
 	if _, err := dats.FindFiles(args); err != nil {
 		return err
 	}
@@ -89,7 +97,8 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 
 	watchLoop(ctx, w.events, w.cycle, watchDebounce)
 
-	// watchLoop returns only on cancellation, so this is always the goodbye.
+	// watchLoop only returns on cancellation: whether idle or mid-run (the
+	// aborted run's outcome is discarded), watch says goodbye and exits 0.
 	fmt.Fprint(w.out, "\n# watch: interrupted, exiting\n")
 	return nil
 }
@@ -164,8 +173,11 @@ type watchSession struct {
 // watch set, print the header, run the COMPLETE original argument scope, and
 // print the waiting footer. changed is nil on the initial run.
 func (w *watchSession) cycle(ctx context.Context, changed []string) {
-	// Re-resolve so a new or deleted file joins or leaves the scope. On error,
-	// keep the previous list and skip the run; the fix triggers the next cycle.
+	// Re-resolve so new, renamed, or removed .dats files under directory
+	// arguments join or leave the scope. On error (e.g. the only resolved
+	// file was deleted), report once, keep the previous resolved list and
+	// watch set, and skip the run -- runTests would only repeat the same
+	// resolution error, and the fix will trigger the next cycle.
 	files, err := dats.FindFiles(w.args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -174,7 +186,8 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 	}
 	w.files = files
 
-	// Rebuild BEFORE running, so a mid-run change coalesces into one re-run.
+	// Rebuild the watch set BEFORE running: changes made while the run is in
+	// flight are then caught and coalesce into one pending re-run.
 	if err := w.rebuildWatches(); err != nil {
 		// Keep the previous watcher; watching degrades, the run still counts.
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -185,10 +198,14 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 
 	runErr := runTests(ctx, w.args, w.out, w.jobs, w.sandbox)
 	if ctx.Err() != nil {
-		return // interrupted: discard the outcome, no footer, no error
+		// Interrupted mid-run: the outcome is discarded and watch is about
+		// to exit -- no footer, no error reporting for the aborted run.
+		return
 	}
 	if runErr != nil && !errors.Is(runErr, errTestsFailed) {
-		// A parse error must not kill the watch: report it and keep waiting.
+		// A parse or infrastructure error must not kill the watch: report it
+		// and keep waiting -- the user fixes the file and it re-runs.
+		// (errTestsFailed needs nothing extra: the runner already reported.)
 		fmt.Fprintf(os.Stderr, "Error: %v\n", runErr)
 	}
 	w.printFooter()
@@ -235,8 +252,13 @@ func watchHeader(run int, now time.Time, changed []string) string {
 	return header + ")"
 }
 
-// rebuildWatches swaps in a fresh watcher for the current scope: the new one
-// is registered before the old closes, and a vanished directory is skipped.
+// rebuildWatches replaces the fsnotify watcher with a fresh one covering the
+// current scope -- recreating the watcher each cycle is the simplest way to
+// track a changing directory set. The new watcher is registered before the
+// old one closes, so the only unwatched moments fall inside the rebuild
+// itself, immediately before a run that re-reads everything anyway.
+// Directory registrations are best-effort: a directory vanishing mid-rebuild
+// is skipped.
 func (w *watchSession) rebuildWatches() error {
 	scope := buildWatchScope(w.files, w.args)
 	watcher, err := fsnotify.NewWatcher()
@@ -258,9 +280,11 @@ func (w *watchSession) closeWatcher() {
 	}
 }
 
-// pumpEvents forwards relevant events until the watcher closes. The send
-// never blocks: a full channel means a re-run is pending, and every re-run
-// covers the complete scope, so the dropped event loses nothing.
+// pumpEvents forwards relevant filesystem events from one fsnotify watcher
+// into the session's shared event channel until the watcher is closed. The
+// send never blocks: when the channel is full, a re-run is already pending
+// -- and every re-run covers the complete scope, so dropping the overflow
+// loses nothing. Watcher errors are ignored (watching is best-effort).
 func pumpEvents(watcher *fsnotify.Watcher, scope *watchScope, out chan<- watchEvent) {
 	for {
 		select {
@@ -311,8 +335,9 @@ func buildWatchScope(files, args []string) *watchScope {
 	for _, file := range files {
 		abs := watchAbs(file)
 		scope.files.Add(abs)
-		// A snapshot dir counts before it exists; existence gates only the
-		// watch-dir registration.
+		// All snapshot dirs count for relevance whether or not they exist
+		// yet -- in tree mode a freshly blessed golden arrives via the tree
+		// watch. (Existence gates only the watch-dir registration.)
 		scope.snapDirs = append(scope.snapDirs, runner.SnapshotDir(abs))
 	}
 	scope.dirTrees = watchDirTrees(args)
@@ -324,8 +349,9 @@ func buildWatchScope(files, args []string) *watchScope {
 	return scope
 }
 
-// watchDirTrees returns the absolute directory arguments, or the cwd when
-// there are none: the trees where a new .dats file changes the scope.
+// watchDirTrees returns the absolute directory-argument roots -- every
+// argument that is a directory, or the current directory when no arguments
+// were given: the trees where newly created .dats files change the scope.
 func watchDirTrees(args []string) []string {
 	if len(args) == 0 {
 		if cwd, err := os.Getwd(); err == nil {
@@ -342,10 +368,20 @@ func watchDirTrees(args []string) []string {
 	return trees
 }
 
-// relevantChange reports whether an event should trigger a re-run. A report
-// path and, under --update, a golden never count: those are the run's own
-// outputs, and reacting to one would retrigger the watch forever. Hidden
-// names are skipped, matching discovery.
+// relevantChange reports whether a filesystem event should trigger a re-run:
+//   - Chmod-only events are ignored; Write, Create, Remove, and Rename count.
+//   - The report file paths never count -- they are the run's own outputs,
+//     and reacting to them would retrigger the watch forever.
+//   - A directory created under a directory-argument tree counts (the
+//     re-cycle registers it, so its future files are seen); hidden names are
+//     skipped, matching discovery.
+//   - A .dats path counts when it is one of the resolved files, or when it
+//     lies (non-hidden, like discovery) under a directory-argument tree --
+//     creation or removal there changes the scope.
+//   - A .golden path counts when it lies under a resolved file's snapshot
+//     directory AND --update is not set: goldens are inputs, but under
+//     --update the run itself rewrites them -- reacting would self-retrigger,
+//     and the re-run would be a no-op anyway.
 func (s *watchScope) relevantChange(op fsnotify.Op, path string, isDir bool) bool {
 	if !op.Has(fsnotify.Write) && !op.Has(fsnotify.Create) && !op.Has(fsnotify.Remove) && !op.Has(fsnotify.Rename) {
 		return false
@@ -369,9 +405,13 @@ func (s *watchScope) relevantChange(op fsnotify.Op, path string, isDir bool) boo
 	return false
 }
 
-// computeWatchDirs returns the directories to register: each resolved file's
-// parent (watching a directory survives an editor's rename-replace save) and
-// existing snapshot dir, plus each directory tree, non-hidden subdirs and all.
+// computeWatchDirs returns the deduplicated list of directories to register
+// with fsnotify: the parent directory of every resolved .dats file (watching
+// directories rather than files survives editors' rename-replace saves),
+// each resolved file's snapshot golden directory when it exists (goldens are
+// inputs), and every directory-argument tree -- the root plus all non-hidden
+// subdirectories recursively (the same hidden-skip rule as discovery), so
+// new .dats files and new subdirectories are noticed.
 func computeWatchDirs(files, dirTrees []string) []string {
 	var dirs []string
 	for _, file := range files {
@@ -442,6 +482,10 @@ func stdoutIsTTY() bool {
 }
 
 func init() {
-	// watch adds no flags of its own: no narrowing, ever.
+	// watch inherits every persistent flag (-v, -j/--jobs, --report-junit/
+	// --report-json, --update, --keep-temp, --coverdir, --sandbox/
+	// --no-sandbox/--sandbox-image) and adds none of its
+	// own -- in particular no filtering or narrowing flags: dats always runs
+	// everything in scope.
 	rootCmd.AddCommand(watchCmd)
 }

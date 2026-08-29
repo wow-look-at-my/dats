@@ -1,7 +1,13 @@
 package cmd
 
-// The sandbox flags. Commands are sandboxed by default, and this is the ONLY
-// place that comes down: a file narrows its sandbox, it never turns one off.
+// The sandbox flags: --sandbox, --no-sandbox, and --sandbox-image. Test
+// commands are sandboxed by DEFAULT (--sandbox=auto: bubblewrap, falling back
+// to docker), so running them straight on the host is an explicit opt-out,
+// and it is made HERE: a file can narrow its own sandbox but never turn one
+// off, so this is the only place the isolation comes down.
+//
+// Registration and resolution live here; the backends themselves are
+// runner.SandboxConfig.
 
 import (
 	"fmt"
@@ -52,8 +58,9 @@ func resolveSandbox(flags *pflag.FlagSet) (*runner.SandboxConfig, error) {
 	if mode == runner.SandboxNone {
 		return nil, nil
 	}
-	// Only a TYPED --sandbox-image travels: untouched, it is nobody's choice,
-	// so it stays "" and a file's image: may pick. Typed, it outranks the file.
+	// Only a TYPED --sandbox-image is carried through. Left at its default the
+	// value is nobody's choice, so it travels as "" and a file's `image:` is
+	// free to pick; typed, it is the operator's, and it outranks the file.
 	var image string
 	if flags.Changed("sandbox-image") {
 		if image, err = flags.GetString("sandbox-image"); err != nil {
