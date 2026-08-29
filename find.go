@@ -11,17 +11,8 @@ import (
 	"github.com/wow-look-at-my/dats/internal/paths"
 )
 
-// findDatsFiles recursively finds all .dats files under root. Hidden
-// directories and hidden files (names starting with ".") are skipped, except
-// for root itself, so discovery works even when started inside a dotted
-// directory. Paths that cannot be walked (e.g. unreadable directories) are
-// reported as a warning on warnw and skipped instead of aborting discovery.
+// findDatsFiles recursively finds all .dats files under root.
 func findDatsFiles(root string, warnw io.Writer) ([]string, error) {
-	// filepath.WalkDir does not follow a symlink root (it lstats the root,
-	// sees a non-directory, and stops), so a symlinked directory arg would
-	// silently yield nothing. Resolve the root only; symlinks encountered
-	// during the walk are still not followed. On resolution failure keep the
-	// original root and let the walk report the problem.
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}
@@ -51,11 +42,7 @@ func findDatsFiles(root string, warnw io.Writer) ([]string, error) {
 	return files, nil
 }
 
-// FindFiles expands paths into the list of .dats files to run. A file path
-// must have the .dats extension; a directory is searched recursively with the
-// same rules as no-arg discovery and must contain at least one .dats file.
-// With no paths, files are discovered from the current directory. The result
-// is deduplicated by absolute path, preserving first-seen order.
+// FindFiles expands paths into the list of .dats files to run.
 func FindFiles(args []string) ([]string, error) {
 	if len(args) == 0 {
 		cwd, err := os.Getwd()

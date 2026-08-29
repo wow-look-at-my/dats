@@ -31,7 +31,24 @@ jobs:
             || echo "bwrap blocked with the restriction in force (see error above)"
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc --tmpfs /tmp --die-with-parent true
+      # Its own step, so an unusable loopback sshd fails here rather than skipping every ssh test.
+      - run: |
+          sudo apt-get install -y openssh-server
+          sudo systemctl start ssh || sudo service ssh start
+          ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/id_ed25519
+          cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+          chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
+          # BatchMode refuses an unknown host key rather than prompting.
+          ssh-keyscan -H localhost 127.0.0.1 >> ~/.ssh/known_hosts
+          # Two target STRINGS for one machine: the per-test override needs a second.
+          for t in localhost 127.0.0.1; do
+            ssh -o BatchMode=yes -o ConnectTimeout=5 "$t" 'echo ssh ok; command -v tar bash'
+          done
       - uses: wow-look-at-my/go-toolchain@v1
+        env:
+          # Job level, not step level: the tests run inside the action.
+          DATS_TEST_SSH_TARGET: localhost
+          DATS_TEST_SSH_TARGET2: 127.0.0.1
         with:
           autorelease: true
           upload-artifacts: true

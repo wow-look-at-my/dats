@@ -25,6 +25,9 @@
     "sandbox": {
       "$ref": "#/definitions/sandbox"
     },
+    "ssh": {
+      "$ref": "#/definitions/ssh"
+    },
     "tests": {
       "type": "array",
       "minItems": 1,
@@ -136,6 +139,18 @@
         }
       }
     },
+    "ssh": {
+      "description": "The machine this file's commands run on, as [user@]host. This is a REQUEST, not a decision: a run goes remote only when the operator approves the (file, host) pair (dats trust add), and a target they typed with --ssh outranks this one. A remote run has NO sandbox -- the remote shell is the boundary, and every file's header line says so. There is deliberately no port, identity or options key: connection policy is spent from the reader's own credentials, so it belongs in their ~/.ssh/config, and a non-default port is a Host alias away. The working directory does NOT travel, so a command using a relative path outside its fixtures fails remotely; pull what it needs in with inputs.copy or shared.copy.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._@:%\\[\\]-]+$"
+    },
+    "testSSH": {
+      "description": "The machine this ONE test's command runs on, overriding the file's target. Legal only in a file that declares its own ssh:, because a per-test target may only move a command between remote hosts -- never back onto the reader's machine, which is the more privileged side. The test gets its own temp directory on that host plus a push-only mirror of shared/, so {shared.X} still resolves. setup, teardown and shared/ always run on the FILE's target, so a file whose setup prepares a service prepares only that host. {matrix.X} is substituted here, so a matrix fans one test across a fleet.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._@:%\\[\\]{}-]+$"
+    },
     "test": {
       "type": "object",
       "required": ["cmd"],
@@ -144,6 +159,9 @@
         "desc": {
           "type": "string",
           "description": "Optional description of the test case"
+        },
+        "ssh": {
+          "$ref": "#/definitions/testSSH"
         },
         "cmd": {
           "type": "string",

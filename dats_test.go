@@ -14,10 +14,7 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// writeSuite writes a .dats file into a fresh temp directory and returns its
-// path. Suites here run unsandboxed: these tests exercise the library's own
-// contract, not the backends (runner/sandbox_run_test.go covers those), and
-// the host is where the test binary already is.
+// writeSuite writes a .dats file into a fresh temp directory and returns its path.
 func writeSuite(t *testing.T, body string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "suite.dats")
@@ -25,16 +22,13 @@ func writeSuite(t *testing.T, body string) string {
 	return path
 }
 
-// minimalSuite is the smallest valid suite: dats rejects a file with no
-// tests, so "nothing to assert" still needs one command.
 const minimalSuite = `
 tests:
 	- desc: trivial
 	  cmd: "true"
 `
 
-// hostOpts is the common shape: run these files, on the host, capturing
-// output.
+// hostOpts is the common shape: run these files, on the host, capturing output.
 func hostOpts(out *bytes.Buffer, paths ...string) Options {
 	return Options{
 		Paths:   paths,
@@ -45,8 +39,6 @@ func hostOpts(out *bytes.Buffer, paths ...string) Options {
 
 func TestRunReportsFailingTestsInTheResultNotAsAnError(t *testing.T) {
 	// The library's central contract: a red suite is a Result, not an error.
-	// A caller must never have to string-match or errors.Is a sentinel to
-	// tell "your tests failed" from "dats could not run them".
 	suite := writeSuite(t, `
 tests:
 	- desc: passes
@@ -88,8 +80,6 @@ tests:
 	assert.True(t, res.Ok())
 	assert.Equal(t, 1, res.Passed)
 	assert.Zero(t, res.Failed)
-	// The totals line is for multi-file runs only, exactly as the CLI prints
-	// it -- a single file already ends in its own summary.
 	assert.NotContains(t, out.String(), "Total:")
 }
 
@@ -141,8 +131,6 @@ tests:
 }
 
 func TestRunEnvAppliesToTestsAndHooks(t *testing.T) {
-	// Options.Env reaches every command, hooks included -- the setup command
-	// asserts it too, and a setup failure would fail every test below.
 	suite := writeSuite(t, `
 setup:
 	- "[ \"$FROM_CALLER\" = \"yes\" ]"
@@ -163,8 +151,6 @@ tests:
 }
 
 func TestRunEnvEmptyValueClearsAnInheritedVariable(t *testing.T) {
-	// The go-toolchain case: plumbing the parent must not hand to children
-	// (GOCACHEPROG and friends) is cleared by an empty value.
 	t.Setenv("DATS_TEST_INHERITED", "leaked")
 	suite := writeSuite(t, `
 tests:
@@ -254,9 +240,7 @@ func TestRunHardErrors(t *testing.T) {
 	t.Run("invalid jobs", func(t *testing.T) {
 		opts := hostOpts(&out, writeSuite(t, minimalSuite))
 		opts.Jobs = -1
-		// Only the ZERO value means "choose for me" (one per CPU). A
-		// negative is a caller bug and fails loudly rather than being
-		// silently read as something else.
+		// Only the ZERO value means "choose for me" (one per CPU).
 		_, err := Run(context.Background(), opts)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "at least 1")
@@ -280,15 +264,12 @@ func TestRunHardErrors(t *testing.T) {
 }
 
 func TestZeroSandboxIsAuto(t *testing.T) {
-	// The safe default lives here: a caller that says nothing about the
-	// sandbox gets one, not a host-level run. Weakening this silently
-	// weakens every consumer that links the library.
+	// The safe default lives here: a caller that says nothing about the sandbox gets one, not a host-level run.
 	cfg, err := Sandbox{}.config()
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, runner.SandboxAuto, cfg.Mode)
-	// No image named: the file may pick one, and the runner falls back to
-	// DefaultSandboxImage when it does not.
+	// No image named: the file may pick one, and the runner falls back to DefaultSandboxImage when it does not.
 	assert.Equal(t, "", cfg.Image)
 
 	// And the zero Options value carries that same default.
@@ -364,8 +345,7 @@ tests:
 	assert.Equal(t, 1, res.UpdatedGoldens)
 	assert.Contains(t, out.String(), "Updated 1 golden file(s)")
 
-	// The written golden now makes an ordinary (non-update) run pass, and
-	// nothing is reported as updated.
+	// The written golden now makes an ordinary (non-update) run pass, and nothing is reported as updated.
 	out.Reset()
 	res, err = Run(context.Background(), hostOpts(&out, suite))
 	require.NoError(t, err)
@@ -423,8 +403,7 @@ tests:
 }
 
 func TestRunNilOutputDoesNotPanic(t *testing.T) {
-	// Output defaults to os.Stdout; the point is that the zero value is
-	// usable, not where the bytes land.
+	// Output defaults to os.Stdout; the point is that the zero value is usable, not where the bytes land.
 	suite := writeSuite(t, minimalSuite)
 	res, err := Run(context.Background(), Options{
 		Paths:   []string{suite},

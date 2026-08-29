@@ -91,6 +91,12 @@ var docPages = []DocPage{
 		File:    "docs/action.md",
 	},
 	{
+		Name:    "sandbox-internals",
+		Aliases: []string{"backends", "argv"},
+		Summary: "How each backend builds its argv, and which details are load-bearing",
+		File:    "docs/sandbox-internals.md",
+	},
+	{
 		Name:    "masked-proc",
 		Aliases: []string{"sandbox-masked-proc", "proc"},
 		Summary: "Why a container refuses the sandbox a private /proc, and what the fallback keeps",

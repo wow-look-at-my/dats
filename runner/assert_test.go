@@ -75,8 +75,7 @@ func TestRefuteFileExists(t *testing.T) {
 	assert.NotNil(t, RefuteFileExists(existing))
 }
 
-// symlinkLoopPath creates a path whose os.Stat fails with ELOOP (an error
-// that is NOT ErrNotExist). Skips the test if symlinks cannot be created.
+// symlinkLoopPath creates a path whose os.Stat fails with ELOOP (an error that is NOT ErrNotExist).
 func symlinkLoopPath(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()
@@ -95,8 +94,7 @@ func TestAssertFileExistsStatError(t *testing.T) {
 }
 
 func TestRefuteFileExistsStatError(t *testing.T) {
-	// A stat error other than not-exist means absence cannot be verified;
-	// that is a failure, not a pass.
+	// A stat error other than not-exist means absence cannot be verified; that is a failure, not a pass.
 	badPath := symlinkLoopPath(t)
 	err := RefuteFileExists(badPath)
 	require.NotNil(t, err, "an un-statable path must not pass a non-existence assertion")
@@ -139,8 +137,7 @@ func TestRefuteFileContains(t *testing.T) {
 	errs = RefuteFileContains(f, []string{"[invalid"})
 	assert.Len(t, errs, 1)
 
-	// A path that exists but cannot be read as a file (here: a directory) is
-	// a real failure, not a vacuous pass
+	// A path that exists but cannot be read as a file (here: a directory) is a real failure, not a vacuous pass
 	errs = RefuteFileContains(tmp, []string{"hello"})
 	require.Len(t, errs, 1)
 	assert.Contains(t, errs[0].Error(), "could not read file")

@@ -68,8 +68,6 @@ func TestVersionFromBuildInfo(t *testing.T) {
 }
 
 func TestVersionStringNonEmpty(t *testing.T) {
-	// Under `go test` there is no release version and usually no VCS stamp,
-	// but the derivation must always produce something.
 	assert.NotEmpty(t, versionString())
 	assert.Equal(t, versionString(), rootCmd.Version)
 }

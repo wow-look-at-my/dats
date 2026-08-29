@@ -16,8 +16,7 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// versionString derives a version string from the build info embedded in the
-// running binary.
+// versionString derives a version string from the build info embedded in the running binary.
 func versionString() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
@@ -26,10 +25,6 @@ func versionString() string {
 	return versionFromBuildInfo(info)
 }
 
-// versionFromBuildInfo prefers the main module version (set for `go install
-// module@version` builds), falling back to the VCS revision the binary was
-// built from, marked "+dirty" for modified trees. It is split from
-// versionString so the derivation is unit-testable with a fake BuildInfo.
 func versionFromBuildInfo(info *debug.BuildInfo) string {
 	if v := info.Main.Version; v != "" && v != "(devel)" {
 		return v
@@ -58,8 +53,6 @@ func versionFromBuildInfo(info *debug.BuildInfo) string {
 }
 
 func init() {
-	// Also expose the same string as `dats --version` (cobra adds the flag
-	// whenever Version is non-empty), formatted identically to `dats version`.
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("dats {{.Version}}\n")
 

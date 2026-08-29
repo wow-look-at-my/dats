@@ -1,9 +1,5 @@
 package schema
 
-// Tests for the file-level sandbox block: the shape it accepts, the defaults
-// an unstated key carries, and the parse errors that keep a file from
-// disabling isolation -- deliberately or through a misspelled key.
-
 import (
 	"testing"
 
@@ -45,11 +41,6 @@ func TestParseSandboxMapping(t *testing.T) {
 	assert.Equal(t, "alpine:3.20", tf.Sandbox.Image)
 }
 
-// TestParseSandboxCannotDisableItself is the protection this whole block
-// exists under: a file states how its commands are confined, never whether
-// they are. Every spelling of "off" is a parse error naming the flag that
-// really does it, because a file that could quietly run on the host would take
-// the isolation away from the person who never asked for that.
 func TestParseSandboxCannotDisableItself(t *testing.T) {
 	for _, body := range []string{
 		"sandbox: false\n",
@@ -63,9 +54,6 @@ func TestParseSandboxCannotDisableItself(t *testing.T) {
 	}
 }
 
-// TestParseSandboxRejectsStatingTheDefault keeps the counterpart honest: an
-// accepted `sandbox: true` would read as the file having secured something,
-// when it secured nothing and the operator could still be running --no-sandbox.
 func TestParseSandboxRejectsStatingTheDefault(t *testing.T) {
 	for _, body := range []string{"sandbox: true\n", "sandbox:\n\tenabled: true\n"} {
 		_, err := parseSandbox(t, body)
@@ -74,9 +62,6 @@ func TestParseSandboxRejectsStatingTheDefault(t *testing.T) {
 	}
 }
 
-// TestParseSandboxRejectsWritableKey pins the removal: declaring extra
-// writable HOST paths is not a thing a file can do. Somewhere to write is the
-// file's temp directory; needing the host itself is a --no-sandbox run.
 func TestParseSandboxRejectsWritableKey(t *testing.T) {
 	_, err := parseSandbox(t, "sandbox:\n\twritable:\n\t\t- /var/data\n")
 	require.NotNil(t, err)
@@ -110,9 +95,6 @@ func TestParseSandboxErrors(t *testing.T) {
 }
 
 func TestParseSandboxRejectsMatrixPlaceholders(t *testing.T) {
-	// The sandbox is resolved once per file, before any instance exists, so a
-	// {matrix.X} there could never resolve -- and silently doing nothing is
-	// the worst possible outcome for a security-relevant key.
 	_, err := parseSandbox(t, "sandbox:\n\timage: img:{matrix.tag}\n")
 	require.NotNil(t, err)
 	assert.Contains(t, err.Error(), "sandbox image: {matrix.tag} is not available outside tests")

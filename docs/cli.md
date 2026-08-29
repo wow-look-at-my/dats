@@ -52,6 +52,7 @@ the current directory tree.
 | `--sandbox <mode>` | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, or `none` (see [Sandboxing](#sandboxing---sandbox)) |
 | `--no-sandbox` | Run test commands directly on the host; same as `--sandbox=none`. Combining it with a different `--sandbox` value is an error |
 | `--sandbox-image <ref>` | Container image the docker backend runs commands in (default `debian:stable-slim`). Typing it pins the image for the whole run: it then outranks any file's `image:` |
+| `--ssh <[user@]host>` | Run every test command on another machine over ssh. Replaces the sandbox rather than nesting in one, and every file's header line says so (see [Remote Execution](#remote-execution---ssh)) |
 | `--keep-temp` | Keep the per-run temp directory (prints its path) for debugging |
 | `--coverdir <dir>` | Set `GOCOVERDIR` on executed commands — tests and file-level setup/teardown alike — to collect coverage data |
 | `--version` | Print `dats <version>` and exit |
@@ -195,6 +196,9 @@ an error — including on macOS, where it can only ever be an error.
 
 ### Opting out
 
+(`--ssh` also runs commands unsandboxed, on another machine — see
+[Remote Execution](#remote-execution---ssh).)
+
 `--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats`
 file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file
 that writes either one fails to parse with a message naming this flag.
@@ -232,6 +236,68 @@ The flag is the outer bound: a file can narrow what the CLI selected, never wide
 - **seatbelt confines files and network, not processes.** There is no PID namespace: a
   sandboxed command can still see the host's process table. It is the file-write and network
   boundary that is enforced.
+
+## Remote Execution (--ssh)
+
+`--ssh [user@]host` runs every command of the run on another machine: test instances and
+file-level `setup`/`teardown` alike. Fixtures are still built here and copied over, the
+command runs there, and its output files are copied back before any assertion reads them.
+
+```sh
+dats --ssh build@box tests/
+```
+
+**A target replaces the sandbox; it does not nest inside one.** dats installs nothing on the
+far side, so the remote shell is the whole boundary — and because that is a reduction, it is
+announced rather than inferred: every file's header line reads
+`# sandbox: none -- ssh build@box (commands run on the remote host)`. Pairing a target with a
+backend you TYPED (`--sandbox=bwrap`) is an error, not a quiet downgrade. Under the default
+`--sandbox=auto` the target wins, and a file's `sandbox:` block goes inert exactly as it does
+under `--no-sandbox`.
+
+### What travels, and what does not
+
+- **Fixtures.** `inputs.files`, `inputs.copy`, `shared.files` and `shared.copy` are all built
+  on this machine first, then copied over as a tar stream, so a `copy` source still resolves
+  against the `.dats` file's own directory and still keeps its permission bits.
+- **The environment.** An ssh session inherits none of the run's environment, so dats carries
+  it explicitly; `inputs.env` and `inputs.stdin` behave as they do locally.
+- **Output files and snapshots.** Outputs come home before assertions run, and remote paths
+  normalize to the same `{testdir}`/`{shareddir}`/`{tmproot}` tokens, so a suite's goldens are
+  byte-identical whether it ran here or there.
+- **The working directory does NOT travel.** Every sandbox backend exposes the local working
+  directory read-only so relative paths resolve as they do on the host. There is no such path
+  on the target, so a command like `./scripts/thing.sh` passes locally and fails remotely with
+  "No such file or directory". Pull what the command needs in with `inputs.copy` or
+  `shared.copy` instead.
+- **`--coverdir` is refused** alongside `--ssh`: the data would be written on the far side and
+  never come home, and collecting nothing quietly is the one outcome that must not happen.
+
+### Connection policy belongs to ssh, not to dats
+
+The flag names a target and nothing else — no port, no identity file, no options. Connection
+policy is spent from the caller's own credentials, so it lives in `~/.ssh/config`, where it is
+visible to the person it affects. A non-default port is a `Host` alias away:
+
+```
+Host build
+	HostName box.internal
+	Port 2222
+	User ci
+```
+
+Every connection runs under `BatchMode=yes`, so dats can never sit at a prompt nobody is
+present to answer. The deliberate consequence: an **unknown host key is a failure**, not a
+question. dats never writes `known_hosts` and offers no `StrictHostKeyChecking` knob — that
+would be the ssh analogue of a file switching its own sandbox off.
+
+### Caveats
+
+- A timeout kills the remote process group best-effort, over a second connection. It is weaker
+  than the local process-group kill.
+- OpenSSH reports a signal-killed remote command as exit 255, and uses 255 for its own
+  transport failures too. dats surfaces a recognized transport failure as an execution error
+  rather than as a test result, but a suite asserting `exit: 255` is not a supported case.
 
 ## Parallel Execution (-j)
 

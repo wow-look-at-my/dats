@@ -59,8 +59,6 @@ func TestExecuteWithinTimeout(t *testing.T) {
 }
 
 func TestExecuteOrphanDoesNotBlock(t *testing.T) {
-	// An orphaned background child inherits the stdout pipe; it must not be
-	// able to block Execute after bash itself has exited.
 	start := time.Now()
 	result, err := Execute(context.Background(), "sleep 3 & echo hi", "", nil, 0)
 	elapsed := time.Since(start)
@@ -72,9 +70,6 @@ func TestExecuteOrphanDoesNotBlock(t *testing.T) {
 }
 
 func TestExecuteTimeoutKillsOrphans(t *testing.T) {
-	// With a timeout, the whole process group is killed, so the orphan cannot
-	// hold the pipes open. bash itself exited 0 before the deadline, so the
-	// run is a success, not a timeout.
 	start := time.Now()
 	result, err := Execute(context.Background(), "sleep 3 & echo hi", "", nil, 100*time.Millisecond)
 	elapsed := time.Since(start)
@@ -95,10 +90,6 @@ func TestExecuteTimeoutKillsDirectChild(t *testing.T) {
 }
 
 func TestExecuteParentCancelKillsProcessGroup(t *testing.T) {
-	// Canceling the caller's context mid-run kills the whole process group
-	// promptly -- including the background child that would otherwise hold
-	// the output pipes open -- and reports a signal death, never a timeout
-	// (mirrors TestExecuteTimeoutKillsOrphans).
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(100 * time.Millisecond)
@@ -114,9 +105,6 @@ func TestExecuteParentCancelKillsProcessGroup(t *testing.T) {
 }
 
 func TestExecuteParentCancelWithTimeoutNotTimedOut(t *testing.T) {
-	// With a timeout layered on top, a parent cancellation that fires first
-	// surfaces as context.Canceled on the derived context: TimedOut stays
-	// false, distinguishing Ctrl-C from a real deadline.
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		time.Sleep(100 * time.Millisecond)
