@@ -8,13 +8,10 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// FormatVersion is the JSON report's format_version value. Field names and
-// document structure are stable within a version; a breaking change bumps it.
+// FormatVersion is the JSON report's format_version value.
 const FormatVersion = 1
 
-// jsonReport is the JSON report document. Summary counts cover test
-// instances only -- exactly the CLI summary numbers; file-level hook
-// failures live in setup_failure/teardown_failures, never in tests.
+// jsonReport is the JSON report document.
 type jsonReport struct {
 	FormatVersion int         `json:"format_version"`
 	Ok            bool        `json:"ok"`
@@ -46,9 +43,7 @@ type jsonCommandFailure struct {
 	Stderr  string `json:"stderr"`
 }
 
-// jsonTest is one test instance. Stdout/Stderr are pointers so the keys
-// appear exactly when the instance failed (even with empty captured output)
-// and never when it passed, keeping reports lean.
+// jsonTest is one test instance.
 type jsonTest struct {
 	Name            string   `json:"name"`
 	Index           int      `json:"index"`
@@ -60,12 +55,6 @@ type jsonTest struct {
 	Stderr          *string  `json:"stderr,omitempty"`
 }
 
-// WriteJSON writes an indented JSON report of results to w, followed by a
-// trailing newline. wall is the wall time of the whole execution phase.
-// Ordering is canonical: files as given, instances in expansion order. ok
-// mirrors the run's exit status (true exactly when every file passed as a
-// whole -- tests, setup, and teardown); summary.tests/passed/failed equal
-// the CLI summary counts, which count test instances only.
 func WriteJSON(w io.Writer, results []*runner.FileResult, wall time.Duration) error {
 	rep := jsonReport{
 		FormatVersion: FormatVersion,
@@ -101,9 +90,7 @@ func WriteJSON(w io.Writer, results []*runner.FileResult, wall time.Duration) er
 			tr := &fr.Results[i]
 			fileDuration += tr.Duration
 			test := jsonTest{
-				Name: tr.Name,
-				// The canonical 1-based instance number, matching the "ok N -"
-				// numbering the CLI prints (TestResult.Index is 0-based).
+				Name:            tr.Name,
 				Index:           tr.Index + 1,
 				Ok:              tr.Passed,
 				DurationSeconds: tr.Duration.Seconds(),

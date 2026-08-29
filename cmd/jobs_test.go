@@ -14,10 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newJobsProbe returns a fresh command with -j/--jobs registered exactly the
-// way the real root command registers it, whose RunE records the resolved
-// jobs value and the leftover positional args. A fresh instance per case
-// keeps pflag's Changed state from bleeding between tests.
 func newJobsProbe(jobs *int, positional *[]string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "probe",
@@ -56,9 +52,7 @@ func TestJobsFlagResolution(t *testing.T) {
 		{name: "explicit -j0 is an error", args: []string{"-j=0"}, wantErr: "at least 1"},
 		{name: "explicit --jobs=0 is an error", args: []string{"--jobs=0"}, wantErr: "at least 1"},
 		{name: "negative is an error", args: []string{"--jobs=-2"}, wantErr: "at least 1"},
-		// The documented pflag trap: with NoOptDefVal set, a SPACE-separated
-		// value does not bind to the flag. "-j 4" is bare -j (one worker per
-		// CPU) plus a positional "4" -- the same trap as GNU make.
+		// The documented pflag trap: with NoOptDefVal set, a SPACE-separated value does not bind to the flag.
 		{name: "space form -j 4 leaves 4 positional", args: []string{"-j", "4"}, wantJobs: runtime.NumCPU(), wantPos: []string{"4"}},
 		{name: "space form --jobs 4 leaves 4 positional", args: []string{"--jobs", "4"}, wantJobs: runtime.NumCPU(), wantPos: []string{"4"}},
 	}
@@ -83,11 +77,6 @@ func TestJobsFlagResolution(t *testing.T) {
 	}
 }
 
-// TestJobsAttachedShorthandNeedsNormalization pins WHY normalizeJobsShorthand
-// exists: pflag resolves a shorthand with NoOptDefVal set BEFORE considering
-// the attached "-farg" form, so a raw -j4 parses as bare -j followed by an
-// unknown '4' shorthand instead of binding 4. If this ever starts passing,
-// pflag changed and the normalization can go.
 func TestJobsAttachedShorthandNeedsNormalization(t *testing.T) {
 	var jobs int
 	var positional []string
@@ -101,8 +90,7 @@ func TestJobsAttachedShorthandNeedsNormalization(t *testing.T) {
 func TestNormalizeJobsShorthand(t *testing.T) {
 	assert.Equal(t, []string{"--jobs=4", "a.dats"}, normalizeJobsShorthand([]string{"-j4", "a.dats"}))
 	assert.Equal(t, []string{"--jobs=16"}, normalizeJobsShorthand([]string{"-j16"}))
-	// Only exact -jN tokens are rewritten; every other spelling is pflag's
-	// business.
+	// Only exact -jN tokens are rewritten; every other spelling is pflag's business.
 	assert.Equal(t, []string{"-j", "-j=4", "--jobs", "-jx", "-vj4"},
 		normalizeJobsShorthand([]string{"-j", "-j=4", "--jobs", "-jx", "-vj4"}))
 	// Everything after a "--" terminator is positional and stays untouched.
@@ -110,18 +98,12 @@ func TestNormalizeJobsShorthand(t *testing.T) {
 	assert.Equal(t, []string{}, normalizeJobsShorthand([]string{}))
 }
 
-// TestRunTestsJobsOutputMatchesSerial is the determinism guarantee: the same
-// corpus, run through the same runTests pipeline the CLI uses, must produce
-// byte-identical output with and without -j when the outcomes are equal. The
-// corpus is the repo's real example file -- 22 instances including matrix
-// expansion, shared fixtures, setup, and teardown; nothing in it is
-// timing-sensitive under parallel load.
 func TestRunTestsJobsOutputMatchesSerial(t *testing.T) {
 	example := filepath.Join("..", "examples", "example.dats")
 
 	var serial, parallel bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{example}, &serial, 0, nil))
-	require.Nil(t, runTests(context.Background(), []string{example}, &parallel, 4, nil))
+	require.Nil(t, runTests(context.Background(), []string{example}, &serial, 0, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{example}, &parallel, 4, nil, ""))
 
 	require.NotEmpty(t, serial.String())
 	assert.Contains(t, serial.String(), "(22 tests)")
@@ -130,9 +112,6 @@ func TestRunTestsJobsOutputMatchesSerial(t *testing.T) {
 		"jobs-mode output must be byte-identical to a serial run")
 }
 
-// TestRunTestsJobsMultiFileOutputMatchesSerial extends the byte-equality
-// guarantee to a generated multi-file corpus with matrix names, per-file
-// hooks, deterministic failures, and the multi-file Total line.
 func TestRunTestsJobsMultiFileOutputMatchesSerial(t *testing.T) {
 	dir := t.TempDir()
 	files := map[string]string{
@@ -191,8 +170,8 @@ tests:
 	}
 
 	var serial, parallel bytes.Buffer
-	errSerial := runTests(context.Background(), paths, &serial, 0, nil)
-	errParallel := runTests(context.Background(), paths, &parallel, 4, nil)
+	errSerial := runTests(context.Background(), paths, &serial, 0, nil, "")
+	errParallel := runTests(context.Background(), paths, &parallel, 4, nil, "")
 
 	// Equal outcomes in both modes, including the failing exit...
 	assert.ErrorIs(t, errSerial, errTestsFailed)

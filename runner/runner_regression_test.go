@@ -1,9 +1,5 @@
 package runner
 
-// Regression tests for RunTest behaviors around timeouts, signal deaths,
-// fixture path traversal, nested output files, and deterministic failure
-// ordering.
-
 import (
 	"bytes"
 	"context"
@@ -18,8 +14,6 @@ import (
 )
 
 func TestRunTestTimeoutSkipsOtherAssertions(t *testing.T) {
-	// A timed-out test reports ONLY the timeout: assertions against the
-	// partial output would bury the real cause under secondary failures.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -100,8 +94,6 @@ func TestRunTestRejectsTraversalOutputName(t *testing.T) {
 }
 
 func TestRunTestNestedOutputFile(t *testing.T) {
-	// A registered output like sub/out.txt must be writable: its parent
-	// directory is created during fixture setup.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -120,9 +112,7 @@ func TestRunTestNestedOutputFile(t *testing.T) {
 }
 
 func TestRunTestEmptyFileCheckIsImplicitExists(t *testing.T) {
-	// An empty FileCheck ({} or null) used to assert nothing and pass
-	// vacuously. It is now an implicit existence assertion: under files the
-	// file must exist.
+	// An empty FileCheck ({} or null) used to assert nothing and pass vacuously.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 
@@ -184,9 +174,6 @@ func TestRunTestEmptyNotFileCheckIsImplicitNotExists(t *testing.T) {
 }
 
 func TestRunTestEnvVarVisibleToCommand(t *testing.T) {
-	// inputs.env entries are added to the inherited environment, so the
-	// command sees both the new variable and the ambient ones (PATH etc.,
-	// without which bash could not even find echo).
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -205,8 +192,6 @@ func TestRunTestEnvVarVisibleToCommand(t *testing.T) {
 }
 
 func TestRunTestEnvValueExpandsPlaceholders(t *testing.T) {
-	// Env values go through the same {inputs.X}/{outputs.X} expansion as the
-	// command, so a variable can carry a fixture's absolute path.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -226,8 +211,6 @@ func TestRunTestEnvValueExpandsPlaceholders(t *testing.T) {
 }
 
 func TestRunTestEnvCombinesWithCoverDir(t *testing.T) {
-	// inputs.env and --coverdir compose: the test's variables and GOCOVERDIR
-	// are both present (GOCOVERDIR is appended last, so --coverdir wins).
 	var buf bytes.Buffer
 	coverDir := t.TempDir()
 	r := NewRunner(&buf, false, false, coverDir)
@@ -247,8 +230,7 @@ func TestRunTestEnvCombinesWithCoverDir(t *testing.T) {
 }
 
 func TestRunTestFileFailuresSortedByName(t *testing.T) {
-	// Failing file checks report in sorted-by-name order, not random map
-	// iteration order.
+	// Failing file checks report in sorted-by-name order, not random map iteration order.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()

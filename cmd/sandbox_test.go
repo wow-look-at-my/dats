@@ -1,9 +1,5 @@
 package cmd
 
-// Tests for the sandbox flags: the default is a sandbox, opting out is
-// explicit, and contradicting yourself is an error rather than a silent
-// precedence rule.
-
 import (
 	"bytes"
 	"context"
@@ -15,10 +11,6 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-// newSandboxProbe returns a fresh command with the sandbox flags registered
-// exactly as the root command registers them, whose RunE records the resolved
-// configuration. A fresh instance per case keeps pflag's Changed state from
-// bleeding between tests.
 func newSandboxProbe(cfg **runner.SandboxConfig) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "probe",
@@ -47,9 +39,6 @@ func TestSandboxFlagResolution(t *testing.T) {
 		wantErr   string
 	}{
 		{
-			// An untyped --sandbox-image travels empty, not as its default
-			// value: the runner reads "" as "nobody chose", which is what
-			// leaves a file's own image: free to pick one.
 			name:     "absent means auto -- sandboxing is the default",
 			args:     nil,
 			wantMode: runner.SandboxAuto,
@@ -105,8 +94,6 @@ func TestSandboxFlagResolution(t *testing.T) {
 }
 
 func TestRunTestsWithoutSandboxRunsOnHost(t *testing.T) {
-	// The nil configuration every library caller (and every opted-out run)
-	// gets must not require a backend or change the output.
 	datsFile := writeDats(t, "host.dats", `
 tests:
 	- desc: runs
@@ -116,6 +103,6 @@ tests:
 			- hi
 `)
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil, ""))
 	assert.NotContains(t, out.String(), "# sandbox:")
 }

@@ -306,10 +306,6 @@ func TestRunTestOutputFileExists(t *testing.T) {
 }
 
 func TestRunTestPlaceholderInInputContents(t *testing.T) {
-	// An input file's contents can reference {outputs.X}; the command reads
-	// the expanded path from the file and writes there, and the files check
-	// sees the result. Mirrors script-driven consumers (e.g. interpreters
-	// running a fixture program that writes an output file).
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -333,9 +329,6 @@ func TestRunTestPlaceholderInInputContents(t *testing.T) {
 }
 
 func TestRunTestOutputPlaceholderWithoutFilesCheck(t *testing.T) {
-	// {outputs.X} resolves to a real path in the outputs directory even when
-	// no files check references X, so commands never write stray files named
-	// after the literal placeholder.
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
 	tmp := t.TempDir()
@@ -563,8 +556,7 @@ outputs:
 	assert.Contains(t, result3.Failures[0], "stdout is not valid JSON")
 }
 
-// parseTestYAML unmarshals a single test definition, exercising the same
-// schema path as a real .dats file.
+// parseTestYAML unmarshals a single test definition, exercising the same schema path as a real .dats file.
 func parseTestYAML(t *testing.T, text string) *schema.Test {
 	t.Helper()
 	var test schema.Test

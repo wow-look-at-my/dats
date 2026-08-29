@@ -116,8 +116,6 @@ tests:
 }
 
 func TestParseFile_InputEnvAccepted(t *testing.T) {
-	// inputs.env parses under KnownFields (unknown keys under inputs are still
-	// rejected -- see TestParseFile_UnknownKeysRejected).
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo "$MY_VAR"
@@ -158,8 +156,6 @@ tests:
 }
 
 func TestParseFile_TraversalFileNamesRejected(t *testing.T) {
-	// Non-local fixture names are rejected at parse time so `dats syntax`
-	// catches them, not just the runner at fixture-setup time.
 	cases := map[string]string{
 		"inputs.files": `
 tests:
@@ -256,8 +252,7 @@ tests:
 }
 
 func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
-	// Backwards compatibility: files without setup/teardown/shared parse with
-	// all three absent.
+	// Backwards compatibility: files without setup/teardown/shared parse with all three absent.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo hi
@@ -391,9 +386,6 @@ tests:
 }
 
 func TestParseFile_SnapshotForms(t *testing.T) {
-	// Both accepted shapes parse through the full file path: the boolean
-	// shorthand (stdout only) and the per-stream mapping. `snapshot: false`
-	// is the documented toggle-off, identical to omitting the key.
 	path := writeTempDats(t, `
 tests:
 	- desc: shorthand
@@ -419,8 +411,6 @@ tests:
 }
 
 func TestParseFile_SnapshotRejected(t *testing.T) {
-	// The unmarshaler's errors surface through ParseFile, so `dats syntax`
-	// catches a malformed snapshot key without running anything.
 	cases := map[string]struct {
 		content string
 		wantErr string
@@ -600,8 +590,6 @@ tests:
 }
 
 func TestParseFile_HerestringRejected(t *testing.T) {
-	// "<<<" (a herestring) is banned too, distinctly from a heredoc: it
-	// redirects stdin from the end of the line rather than embedding a file.
 	cases := map[string]struct {
 		content string
 		wantErr string
@@ -633,7 +621,6 @@ tests:
 
 func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
 	// A bare "<<" with a third "<" is a herestring; without one, a heredoc.
-	// Each gets its own, distinct error message.
 	heredocPath := writeTempDats(t, "tests:\n\t- cmd: \"cat <<EOF\\nhi\\nEOF\\n\"\n")
 	_, err := ParseFile(heredocPath)
 	require.NotNil(t, err)

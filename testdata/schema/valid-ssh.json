@@ -1,0 +1,17 @@
+{
+  "ssh": "build@box",
+  "tests": [
+    {
+      "desc": "runs on the host the file named, once the pair is approved",
+      "cmd": "echo produced > {outputs.out.txt}"
+    },
+    {
+      "desc": "this one moves to {matrix.host} instead",
+      "cmd": "echo produced > {outputs.out.txt}",
+      "ssh": "{matrix.host}",
+      "matrix": {
+        "host": ["alpha", "beta"]
+      }
+    }
+  ]
+}

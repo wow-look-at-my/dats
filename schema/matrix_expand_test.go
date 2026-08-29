@@ -1,9 +1,5 @@
 package schema
 
-// Tests for ExpandMatrix: cartesian instance expansion in declaration order
-// (last variable fastest), the substitution scope, single-pass substitution,
-// labels, and deep-copy isolation between instances and the source test.
-
 import (
 	"testing"
 
@@ -113,8 +109,6 @@ tests:
 }
 
 func TestExpandMatrix_SubstitutionScope(t *testing.T) {
-	// One reference in every location of the substitution scope; expansion
-	// must reach them all -- and leave fixture file names literal.
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
 	- desc: desc {matrix.a}
@@ -200,8 +194,6 @@ tests:
 }
 
 func TestExpandMatrix_SubstitutedTextNotRescanned(t *testing.T) {
-	// Substitution is a single pass: a matrix value containing a literal
-	// {matrix.b} lands in the command verbatim, even though b is declared.
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
 	- cmd: echo "{matrix.a} {matrix.b}"
@@ -265,10 +257,6 @@ tests:
 }
 
 func TestExpandMatrix_SnapshotIntactOnEveryInstance(t *testing.T) {
-	// The snapshot block holds no strings, so it is outside the matrix
-	// substitution scope; expansion must carry it verbatim onto every
-	// instance (copyTest copies OutputBlock by value, SnapshotCheck
-	// included).
 	tf, err := ParseFile(writeTempDats(t, `
 tests:
 	- desc: snap {matrix.who}
