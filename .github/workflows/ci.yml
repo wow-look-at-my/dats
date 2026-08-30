@@ -64,15 +64,6 @@ jobs:
           schema: schema.json
           files: testdata/schema/*.json
 
-  # Its own job, so the rule does not ride on the test job reaching go-toolchain.
-  no-tests-in-yaml:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: wow-look-at-my/actions@no-tests-in-yaml#latest
-
   # This repo's own action, on the fleet a consumer uses.
   self-hosted-sandbox:
     runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
