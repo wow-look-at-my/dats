@@ -93,6 +93,28 @@ jobs:
           ./build/dats.exe --version
           ./build/dats.exe --no-sandbox test examples/example.dats
 
+  # The docker backend on an NT host: the daemon lives in WSL, so a bind needs ITS spelling -- docs/sandbox-internals.md.
+  windows-sandbox:
+    runs-on: windows-latest
+    needs: test
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build
+      # The script the action runs, so this job proves the provisioning too.
+      - name: Install the sandbox backend
+        shell: bash
+        run: .github/scripts/install-sandbox-backend.sh
+      - name: Run the sandbox suite on an NT host
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/dats build/dats.exe
+          ./build/dats.exe test examples/sandbox.dats
+
   # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:
     runs-on: ubuntu-latest

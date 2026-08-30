@@ -29,6 +29,22 @@ docker: `--rm -i --init --name <n>` + `--user` + rw bind of the work dir (target
 wins) + ro bind of the cwd + `-e` for the inherited run environment (`inheritedEnv`, minus
 `imageOwnedEnv`) then dats-added env, ending in `image bash -c cmd`.
 
+### The spelling a bind source is written in (`dockerpath.go`)
+
+A bind source is read by the DAEMON, not by dats, so it has to be written the way the daemon spells
+it. That is the host's own spelling everywhere the daemon shares the host's filesystem, and on
+Docker Desktop too, whose CLI translates a drive path on the way through. It is NOT the host's
+spelling when the daemon runs in WSL or on another machine: `docker run -v D:\a\x:D:\a\x` hands a
+Linux daemon a source with no leading slash, which docker reads as a VOLUME NAME. Nothing errors —
+the container comes up with an EMPTY directory at that path, and the command fails on its own
+fixtures being absent, which is what a Windows runner reported before this existed.
+
+So on an NT host, `daemonPath` puts the drive under `/mnt` (`D:\a\x` → `/mnt/d/a/x`, the WSL
+convention) unless `docker info` names Docker Desktop, and the same map is applied to `-w` and to
+the bind targets. The paths a COMMAND carries are rewritten to match (`mapCommandPaths`): every one
+of them sits under a bound root, so replacing each root's host spelling with the daemon's is enough,
+and the assertions keep reading the local path the fixtures were written to.
+
 **The two backends expose the SAME host paths** (cwd ro + declared writable), pinned by
 `TestBwrapAndDockerExposeTheSameHostPaths`; seatbelt still does not restrict reads (known gap).
 The ONLY writable paths are the file's temp dir and `--coverdir` (`writablePaths`) -- there is

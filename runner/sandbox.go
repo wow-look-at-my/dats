@@ -408,13 +408,15 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 		if !seen.Add(dir) {
 			continue
 		}
-		argv = append(argv, "-v", dir+":"+dir)
+		mapped := daemonPath(dir)
+		argv = append(argv, "-v", mapped+":"+mapped)
 	}
 	if p.workdir != "" {
+		mapped := daemonPath(p.workdir)
 		if !seen.Contains(p.workdir) {
-			argv = append(argv, "-v", p.workdir+":"+p.workdir+":ro")
+			argv = append(argv, "-v", mapped+":"+mapped+":ro")
 		}
-		argv = append(argv, "-w", p.workdir)
+		argv = append(argv, "-w", mapped)
 	}
 	// The run's environment, then dats' own additions on top.
 	for _, entry := range inheritedEnv() {
@@ -423,7 +425,7 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 	for _, entry := range extraEnv {
 		argv = append(argv, "-e", entry)
 	}
-	return append(argv, p.image, "bash", "-c", cmd)
+	return append(argv, p.image, "bash", "-c", p.mapCommandPaths(cmd))
 }
 
 // imageOwnedEnv are the variables a container defines for itself.
