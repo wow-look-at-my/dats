@@ -236,14 +236,19 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with four jobs
 
 `action.yml` at repo root makes this a composite GitHub Action:
 `uses: wow-look-at-my/dats@master` downloads the newest build from buildhost
-(never pinned) and runs it via one `args:` input — see the README's
+(never pinned) and runs it via a typed `tests:` input (files and directories,
+expanded to their top-level `*.dats` files) — see the README's
 "GitHub Actions" section. It wraps
 `wow-look-at-my/buildhost/.github/actions/buildhost-download` (`project:
 dats`), the same download every consumer used to hand-roll with curl/chmod.
 On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
 24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
 way this repo's own CI does (see "CI/CD" above) — so a caller gets real
-sandboxing without needing `--no-sandbox` to work around the runner.
+sandboxing without needing `--no-sandbox` to work around the runner. The
+action's surface is deliberately just `tests`/`working-directory`/`version`:
+there is no `args` passthrough and no way to disable the sandbox; the argv is
+built and sanitized in `.github/scripts/run-dats.ts` (a
+`wow-look-at-my/actions@typescript` script).
 
 ## JSON Schema
 

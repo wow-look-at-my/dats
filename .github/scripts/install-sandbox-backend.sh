@@ -31,7 +31,7 @@ SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
 	if ! command -v sudo >/dev/null 2>&1; then
 		echo "sandbox: bubblewrap is missing and this job is neither root nor able to sudo" >&2
-		echo "sandbox: install bubblewrap in the runner image, or pass --no-sandbox in args" >&2
+		echo "sandbox: install bubblewrap in the runner image, or use a runner with a docker daemon (dats falls back to docker)" >&2
 		exit 1
 	fi
 	SUDO="sudo"

@@ -79,3 +79,22 @@ dats is the authority on whether dats can sandbox. It probes its own backends,
 in its own order, and fails closed with an actionable message naming the
 opt-out. A pre-flight guess can only agree with that answer or be wrong about
 it.
+
+## The input surface is typed, not a raw argv
+
+The action's only inputs are `tests`, `working-directory`, and `version`.
+There is deliberately no `args` passthrough: a caller cannot hand dats a raw
+command line, so nothing a caller types can become a flag, a subcommand, or a
+`--no-sandbox`. The argv is built and sanitized in `.github/scripts/run-dats.ts`
+(a `wow-look-at-my/actions@typescript` script), which:
+
+- splits `tests` on whitespace and rejects any entry that starts with `-`, is
+  an absolute path, or contains a `..` segment;
+- expands a directory entry to its top-level `*.dats` files (never recursive,
+  never a hidden file);
+- runs `dats test <files...>` from `working-directory` with the downloaded
+  binary, passing each file as its own argument.
+
+Because the sandbox is the point of the action, there is no way to turn it off
+through the action. A caller that genuinely needs host execution runs the
+downloaded binary itself (the `path` output) rather than through this action.

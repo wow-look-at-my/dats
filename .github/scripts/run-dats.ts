@@ -1,0 +1,40 @@
+// Builds a sanitized dats argv from the action's typed inputs and runs it.
+// The action's only surface is `tests` (files and directories), so nothing a
+// caller types can become a flag or a --no-sandbox: every entry is validated
+// to be a relative path, and a directory is expanded to its top-level *.dats
+// files before anything reaches the binary.
+
+const bin = process.env.DATS_BIN;
+if (!bin) throw new Error('DATS_BIN is not set');
+
+const workdir = inputs['working-directory'] || '.';
+process.chdir(workdir);
+
+const raw = (inputs.tests ?? '').split(/\s+/).filter(Boolean);
+if (raw.length === 0) throw new Error('tests is required: list .dats files and/or directories');
+
+const tests: string[] = [];
+for (const entry of raw) {
+	if (entry.startsWith('-')) {
+		throw new Error(`tests entry "${entry}" looks like a flag; only .dats files and directories are allowed`);
+	}
+	if (path.isAbsolute(entry)) {
+		throw new Error(`tests entry "${entry}" must be relative to working-directory`);
+	}
+	if (entry.split(/[\\/]/).includes('..')) {
+		throw new Error(`tests entry "${entry}" must not contain ".."`);
+	}
+	if (entry.endsWith('.dats')) {
+		tests.push(entry);
+		continue;
+	}
+	const files = fs
+		.readdirSync(entry)
+		.filter((f) => f.endsWith('.dats'))
+		.map((f) => path.join(entry, f));
+	if (files.length === 0) throw new Error(`no .dats files in directory "${entry}"`);
+	tests.push(...files);
+}
+
+const res = await $`${bin} test ${tests}`.nothrow();
+if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);

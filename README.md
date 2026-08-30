@@ -28,16 +28,18 @@ namespaces if it's blocking bwrap) -- a caller should never have to reach for
 ```yaml
 - uses: wow-look-at-my/dats@master
   with:
-    args: test tests/
+    tests: tests/
 ```
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `args` | Yes | — | Arguments passed to `dats` |
+| `tests` | Yes | — | Space- or newline-separated `.dats` files and directories to run. A directory runs its top-level `*.dats` files. Paths are relative to `working-directory`. |
 | `working-directory` | No | `.` | Directory to run `dats` from |
 | `version` | No | Newest on the default branch | `dats` release version to download |
 
-Outputs `path`, the full path to the downloaded binary.
+The action's surface is deliberately just those inputs: there is no way to
+pass arbitrary flags or to disable the sandbox. Outputs `path`, the full path
+to the downloaded binary.
 
 ## Usage
 

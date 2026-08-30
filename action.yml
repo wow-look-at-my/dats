@@ -2,8 +2,8 @@ name: Run dats
 description: Download the dats binary from buildhost and run it, without a caller having to hand-roll the download
 
 inputs:
-  args:
-    description: 'Arguments to pass to dats (e.g. "test tests/", "--no-sandbox test tests/")'
+  tests:
+    description: 'Space- or newline-separated .dats files and directories to run. A directory runs its top-level *.dats files. Paths are relative to working-directory.'
     required: true
   working-directory:
     description: 'Directory to run dats from'
@@ -41,8 +41,14 @@ runs:
       shell: bash
       run: "${{ github.action_path }}/.github/scripts/allow-unprivileged-userns.sh"
 
+    # The action's only surface is the typed inputs above: tests (files and
+    # directories, expanded to their top-level *.dats files), working-directory,
+    # and version. There is deliberately no way to pass arbitrary flags or to
+    # disable the sandbox -- the argv is built and sanitized in run-dats.ts.
     - name: Run dats
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
-      run: |
-        "${{ steps.download.outputs.path }}" ${{ inputs.args }}
+      uses: wow-look-at-my/actions@typescript#latest
+      with:
+        file: ${{ github.action_path }}/.github/scripts/run-dats.ts
+        inputs: ${{ toJSON(inputs) }}
+      env:
+        DATS_BIN: ${{ steps.download.outputs.path }}
