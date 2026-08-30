@@ -98,18 +98,16 @@ func TestAssertJSONOutputTrailingData(t *testing.T) {
 
 func TestAssertJSONOutputDiffCap(t *testing.T) {
 	expected := make(map[string]any)
-	actual := "{"
+	differing := make(map[string]any)
 	for i := 0; i < 15; i++ {
 		key := string(rune('a'+i)) + "key"
 		expected[key] = 1
-		if i > 0 {
-			actual += ","
-		}
-		actual += `"` + key + `": 2`
+		differing[key] = 2
 	}
-	actual += "}"
+	actual, err := json.Marshal(differing)
+	require.NoError(t, err)
 
-	errs := AssertJSONOutput(actual, expected)
+	errs := AssertJSONOutput(string(actual), expected)
 	// 10 shown + 1 summary line for the remaining 5
 	require.Equal(t, maxJSONDiffs+1, len(errs))
 	assert.Contains(t, errs[maxJSONDiffs].Error(), "(5 more differences)")
