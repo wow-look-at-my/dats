@@ -11,6 +11,20 @@ time.
 `os`/`arch` default to the runner's own platform: `buildhost-download` reads
 `RUNNER_OS`/`RUNNER_ARCH` when neither is given.
 
+## Paths on an NT runner
+
+Every step here is `shell: bash`, and on a Windows runner that bash reads a
+backslash as an escape and drops it. A path interpolated straight into the
+script — `${{ github.action_path }}` is `D:\a\_actions\...` — therefore arrives
+as `D:a_actions...`, and the step dies with `No such file or directory` and exit
+127. So the action passes each such path through the step's `env:` and expands
+it as `${VAR//\\//}`, which converts the separators before bash sees the word.
+The two script steps and the binary's own path all take that route.
+
+The runner half of the same problem is `runner/hostpath.go`: dats converts every
+path it substitutes into a command. The `windows` CI job runs this commit's own
+binary on `windows-latest` so that conversion has a gate.
+
 ## Installing the sandbox backend
 
 dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on

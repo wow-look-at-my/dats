@@ -73,6 +73,26 @@ jobs:
         with:
           args: test examples/sandbox.dats
 
+  # An NT host runs every command through a bash that eats a backslash, so the paths a command sees are converted -- runner/hostpath.go.
+  windows:
+    runs-on: windows-latest
+    needs: test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # THIS commit's binary: the APE the test job handed off runs on an NT host too.
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build
+      - name: Run this commit's binary on an NT host
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/dats build/dats.exe
+          ./build/dats.exe --version
+          ./build/dats.exe --no-sandbox test examples/example.dats
+
   # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:
     runs-on: ubuntu-latest
