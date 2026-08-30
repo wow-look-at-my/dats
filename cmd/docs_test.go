@@ -32,7 +32,7 @@ func TestDocsPrintsThePageBare(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, runDocs(&buf, []string{"file-format.md"}))
 
-	// One topic prints the page and nothing else, so it redirects into a file.
+	// A single topic prints the page and nothing else, so it redirects into a file.
 	assert.Equal(t, want, buf.String())
 }
 
@@ -64,7 +64,7 @@ func TestDocsRejectsUnknownTopic(t *testing.T) {
 	var buf bytes.Buffer
 	err := runDocs(&buf, []string{"format", "nonsense"})
 
-	// The whole call fails; a partial answer would look like a complete one.
+	// The whole call fails; a partial answer would look complete.
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `unknown docs topic "nonsense"`)
 	assert.Contains(t, err.Error(), "format")

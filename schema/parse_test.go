@@ -142,7 +142,7 @@ func TestParseFile_EmptyFile(t *testing.T) {
 }
 
 func TestParseFile_MultiDocumentRejected(t *testing.T) {
-	// A second "---" document used to be silently ignored, dropping its tests.
+	// A later "---" document used to be silently ignored, dropping its tests.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo doc1
@@ -236,7 +236,7 @@ tests:
 }
 
 func TestParseFile_SetupStringForm(t *testing.T) {
-	// A single scalar string is the one-command form of setup/teardown.
+	// A single scalar string is the single-command form of setup/teardown.
 	path := writeTempDats(t, `
 setup: echo one command
 teardown:
@@ -252,7 +252,7 @@ tests:
 }
 
 func TestParseFile_WithoutNewKeysUnchanged(t *testing.T) {
-	// Backwards compatibility: files without setup/teardown/shared parse with all three absent.
+	// Backwards compatibility: files without setup/teardown/shared parse with every key absent.
 	path := writeTempDats(t, `
 tests:
 	- cmd: echo hi
@@ -620,7 +620,7 @@ tests:
 }
 
 func TestParseFile_HeredocVsHerestringDistinguished(t *testing.T) {
-	// A bare "<<" with a third "<" is a herestring; without one, a heredoc.
+	// A bare "<<" with a trailing "<" is a herestring; without it, a heredoc.
 	heredocPath := writeTempDats(t, "tests:\n\t- cmd: \"cat <<EOF\\nhi\\nEOF\\n\"\n")
 	_, err := ParseFile(heredocPath)
 	require.NotNil(t, err)

@@ -108,7 +108,7 @@ func maskedProcChild(t *testing.T) {
 		"a process outside the container is visible from inside the sandbox (pid %s): the "+
 			"read-only /proc bind must never reach past the container's own PID namespace", outside)
 
-	// Every pid it CAN see has to be one of the container's own.
+	// Every pid it CAN see has to belong to the container itself.
 	highest, err := run("ls -d /proc/[0-9]* | sed 's@/proc/@@' | sort -n | tail -1")
 	assert.Nil(t, err)
 	got, err := strconv.Atoi(strings.TrimSpace(highest))

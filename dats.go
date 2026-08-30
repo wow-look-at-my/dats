@@ -14,7 +14,7 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// Options configures one Run.
+// Options configures a single Run.
 type Options struct {
 	// Paths are the .dats files and directories to run.
 	Paths []string
@@ -97,7 +97,7 @@ func (s Sandbox) config() (*runner.SandboxConfig, error) {
 }
 
 type Result struct {
-	// Files holds one entry per executed file, in the order they ran.
+	// Files holds an entry per executed file, in the order they ran.
 	Files []*runner.FileResult
 
 	// Passed and Failed count test instances across every file.
@@ -181,7 +181,7 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		jobs = runtime.NumCPU()
 	}
 	if jobs < 1 {
-		// Only the ZERO value means "choose for me".
+		// Only the UNSET value means "choose for me".
 		return nil, fmt.Errorf("Jobs must be at least 1 (0 means one per CPU), got %d", opts.Jobs)
 	}
 	results, err := r.RunFiles(ctx, files, jobs)

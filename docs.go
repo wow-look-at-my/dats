@@ -11,13 +11,13 @@ import (
 // executable and nothing else -- no checkout, no network -- can read the
 // complete reference with `dats docs <topic>`.
 //
-// The pages are embedded verbatim from docs/, so there is no second copy of
-// the reference to keep in sync with the first one.
+// The pages are embedded verbatim from docs/, so no extra copy of the
+// reference exists to keep in sync with the source.
 //
 //go:embed docs/*.md
 var docsFS embed.FS
 
-// DocPage is one embedded documentation page.
+// DocPage is a single embedded documentation page.
 type DocPage struct {
 	// Name is the canonical topic name, as `dats docs <name>` takes it.
 	Name string
@@ -25,7 +25,7 @@ type DocPage struct {
 	// Aliases are the other spellings that resolve to this page.
 	Aliases []string
 
-	// Summary is the one-line description the topic list prints.
+	// Summary is the single-line description the topic list prints.
 	Summary string
 
 	// File is the page's path inside the embedded filesystem.
@@ -42,7 +42,7 @@ func (p DocPage) Text() (string, error) {
 }
 
 // docPages is the topic table, in the order the topic list prints it:
-// overview first, then the two references an author reaches for most.
+// overview at the top, then the references an author reaches for most.
 //
 // TestDocPagesCoverEmbeddedFiles pins this table to the embedded directory in
 // both directions, so a new docs/*.md file fails the build until it has a

@@ -1,6 +1,6 @@
 package cmd
 
-// The -j/--jobs flag: how many test commands run at once.
+// The -j/--jobs flag: how many test commands run concurrently.
 
 import (
 	"fmt"

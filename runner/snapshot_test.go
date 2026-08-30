@@ -68,7 +68,7 @@ func TestNormalizeSnapshotText(t *testing.T) {
 	assert.Equal(t, "plain\n\n", NormalizeSnapshotText("plain\n\n", ctx))
 }
 
-// runSnapshotFile runs one .dats file and returns the file result plus the printed output.
+// runSnapshotFile runs a single .dats file and returns the file result plus the printed output.
 func runSnapshotFile(t *testing.T, path string, update bool) (*FileResult, string) {
 	t.Helper()
 	var buf bytes.Buffer
@@ -205,7 +205,7 @@ tests:
 	require.Nil(t, err)
 	assert.Equal(t, "err\n", string(content))
 
-	// A second update run is a complete no-op: identical output, nothing rewritten, nothing listed.
+	// A repeat update run is a complete no-op: identical output, nothing rewritten, nothing listed.
 	result2, out2 := runSnapshotFile(t, path, true)
 	assert.Equal(t, 2, result2.Passed)
 	for i := range result2.Results {
@@ -483,7 +483,7 @@ func TestSnapshotParallelOutputMatchesSerial(t *testing.T) {
 	assert.Equal(t, serial.String(), parallel.String(),
 		"jobs-mode snapshot output must be byte-identical to a serial run")
 
-	// Remove one golden: both modes report the identical missing-golden failure bytes.
+	// Remove a golden: both modes report the identical missing-golden failure bytes.
 	require.Nil(t, os.Remove(filepath.Join(SnapshotDir(path), "002-greet-who-alice.stdout.golden")))
 	var serialFail, parallelFail bytes.Buffer
 	rsf := NewRunner(&serialFail, false, false, "")

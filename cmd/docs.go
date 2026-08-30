@@ -103,7 +103,7 @@ func printDocTopics(out io.Writer) {
 }
 
 // canonicalDocTopics lists the topics an error message offers. Aliases stay
-// out of it: they catch a first guess, they are not a menu.
+// out of it: they catch a guess, they are not a menu.
 func canonicalDocTopics() string {
 	names := make([]string, 0, len(dats.Docs()))
 	for _, page := range dats.Docs() {

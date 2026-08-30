@@ -22,7 +22,7 @@ import (
 type SandboxMode string
 
 const (
-	// SandboxAuto picks the first usable backend: bwrap, then seatbelt, then docker.
+	// SandboxAuto picks the earliest usable backend: bwrap, then seatbelt, then docker.
 	SandboxAuto SandboxMode = "auto"
 	// SandboxBwrap requires bubblewrap; an unusable bwrap is an error rather than a silent fallback.
 	SandboxBwrap SandboxMode = "bwrap"
@@ -143,7 +143,7 @@ func probeBwrap() (procMode, error) {
 	return procFresh, freshErr
 }
 
-// runBwrapProbe exercises one /proc shape.
+// runBwrapProbe exercises a single /proc shape.
 func runBwrapProbe(path string, proc procMode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
@@ -182,7 +182,7 @@ type sandboxPlan struct {
 	// proc is the /proc shape the bwrap probe settled on (bwrap only).
 	proc  procMode
 	image string // docker only
-	// refusedImage is the file's own `image:` when the operator pinned a different one on the command line.
+	// refusedImage is the file's own `image:` when the operator pinned a different image on the command line.
 	refusedImage string
 	network      bool
 	work         string
@@ -190,7 +190,7 @@ type sandboxPlan struct {
 	workdir      string
 	// ssh runs this file's commands on another machine, with no sandbox there.
 	ssh *SSHConfig
-	// refusedSSH is the file's own target when a typed one outranked it.
+	// refusedSSH is the file's own target when a typed target outranked it.
 	refusedSSH string
 	// remoteBase is the file's temp directory ON the target, mirroring work.
 	remoteBase string
@@ -393,7 +393,7 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 	argv := []string{
 		"docker", "run",
 		"--rm",   // no container corpses after the run
-		"-i",     // stdin is a first-class input for a test command
+		"-i",     // stdin is an ordinary input for a test command
 		"--init", // reap whatever the command forks and abandons
 		"--name", name,
 	}

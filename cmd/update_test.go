@@ -49,7 +49,7 @@ func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
 	assert.Contains(t, out.String(), "\nUpdated 1 golden file(s)\n")
 	assert.NotContains(t, out.String(), "pruned")
 
-	// A second update run changes nothing and stays silent about goldens.
+	// A repeat update run changes nothing and stays silent about goldens.
 	var out2 bytes.Buffer
 	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out2, 0, nil, ""))
 	assert.NotContains(t, out2.String(), "Updated")

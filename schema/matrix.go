@@ -18,7 +18,7 @@ var (
 	matrixPlaceholderRe = regexp.MustCompile(`\{matrix\.([^}]*)\}`)
 )
 
-// MatrixVariable is one declared matrix variable: its name and its ordered list of values.
+// MatrixVariable is a single declared matrix variable: its name and its ordered list of values.
 type MatrixVariable struct {
 	Name   string
 	Values []string
@@ -103,13 +103,13 @@ func (m Matrix) Names() []string {
 	return names
 }
 
-// MatrixAssignment is one variable=value binding of an expanded instance.
+// MatrixAssignment is a single variable=value binding of an expanded instance.
 type MatrixAssignment struct {
 	Name  string
 	Value string
 }
 
-// TestInstance is one concrete, runnable instance of a test after matrix expansion.
+// TestInstance is a single concrete, runnable instance of a test after matrix expansion.
 type TestInstance struct {
 	Test  Test
 	Label string
@@ -170,7 +170,7 @@ func substituteMatrix(s string, assignments []MatrixAssignment) string {
 func applyToMatrixScope(test *Test, f func(string) string) {
 	test.Desc = f(test.Desc)
 	test.Cmd = f(test.Cmd)
-	// A per-test ssh target IS in scope: it resolves per instance, so one test fans across a fleet.
+	// A per-test ssh target IS in scope: it resolves per instance, so a test fans across a fleet.
 	if test.SSH != nil {
 		test.SSH.Target = f(test.SSH.Target)
 	}
@@ -268,7 +268,7 @@ func scanMatrixScope(test *Test, visit func(s string)) {
 	})
 }
 
-// findMatrixPlaceholder returns the name of the first {matrix.X} reference in s, if any.
+// findMatrixPlaceholder returns the name of the earliest {matrix.X} reference in s, if any.
 func findMatrixPlaceholder(s string) (string, bool) {
 	match := matrixPlaceholderRe.FindStringSubmatch(s)
 	if match == nil {
@@ -280,7 +280,7 @@ func findMatrixPlaceholder(s string) (string, bool) {
 func copyTest(t *Test) Test {
 	c := *t
 	c.Matrix = nil
-	// SSH is a POINTER: a shallow copy would let one instance corrupt its siblings.
+	// SSH is a POINTER: a shallow copy would let an instance corrupt its siblings.
 	if t.SSH != nil {
 		spec := *t.SSH
 		c.SSH = &spec

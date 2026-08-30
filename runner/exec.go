@@ -23,7 +23,7 @@ type ExecResult struct {
 
 const waitDelay = 1 * time.Second
 
-// execRequest is one command to run: the command text plus everything that shapes how it runs.
+// execRequest is a single command to run: the command text plus everything that shapes how it runs.
 type execRequest struct {
 	Cmd   string
 	Stdin string
@@ -40,7 +40,7 @@ func Execute(ctx context.Context, cmd string, stdin string, env []string, timeou
 	return execute(ctx, execRequest{Cmd: cmd, Stdin: stdin, Env: env, Timeout: timeout})
 }
 
-// execute runs one execRequest.
+// execute runs a single execRequest.
 func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 	if req.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -97,7 +97,7 @@ func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 	}
 
 	result := &ExecResult{
-		ExitCode:    state.ExitCode(), // -1 when terminated by a signal
+		ExitCode:    state.ExitCode(), // negative when terminated by a signal
 		Stdout:      stdoutBuf.String(),
 		Stderr:      stderrBuf.String(),
 		StdoutLines: splitLines(stdoutBuf.String()),

@@ -84,7 +84,7 @@ tests:
 }
 
 func TestRunTeardownFailureFailsTheRunEvenWithEveryTestPassing(t *testing.T) {
-	// Ok() is not "Failed == 0": a broken teardown is a failed run.
+	// Ok() is not a check of the Failed count alone: a broken teardown is a failed run.
 	suite := writeSuite(t, `
 teardown:
 	- exit 3
@@ -240,7 +240,7 @@ func TestRunHardErrors(t *testing.T) {
 	t.Run("invalid jobs", func(t *testing.T) {
 		opts := hostOpts(&out, writeSuite(t, minimalSuite))
 		opts.Jobs = -1
-		// Only the ZERO value means "choose for me" (one per CPU).
+		// Only the UNSET value means "choose for me" (a worker per CPU).
 		_, err := Run(context.Background(), opts)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "at least 1")
@@ -264,15 +264,15 @@ func TestRunHardErrors(t *testing.T) {
 }
 
 func TestZeroSandboxIsAuto(t *testing.T) {
-	// The safe default lives here: a caller that says nothing about the sandbox gets one, not a host-level run.
+	// The safe default lives here: a caller that says nothing about the sandbox gets a sandbox, not a host-level run.
 	cfg, err := Sandbox{}.config()
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	assert.Equal(t, runner.SandboxAuto, cfg.Mode)
-	// No image named: the file may pick one, and the runner falls back to DefaultSandboxImage when it does not.
+	// No image named: the file may pick an image, and the runner falls back to DefaultSandboxImage when it does not.
 	assert.Equal(t, "", cfg.Image)
 
-	// And the zero Options value carries that same default.
+	// And the unset Options value carries that same default.
 	cfg, err = (Options{}).Sandbox.config()
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
@@ -403,7 +403,7 @@ tests:
 }
 
 func TestRunNilOutputDoesNotPanic(t *testing.T) {
-	// Output defaults to os.Stdout; the point is that the zero value is usable, not where the bytes land.
+	// Output defaults to os.Stdout; the point is that the unset value is usable, not where the bytes land.
 	suite := writeSuite(t, minimalSuite)
 	res, err := Run(context.Background(), Options{
 		Paths:   []string{suite},

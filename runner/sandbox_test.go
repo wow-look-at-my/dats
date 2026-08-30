@@ -179,7 +179,7 @@ func TestToolTreeCoversAddOnToolchains(t *testing.T) {
 	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/home/user/project"}
 	assert.Contains(t, strings.Join(plan.bwrapArgv("true"), " "), "--ro-bind-try /opt /opt")
 
-	// It stays a tool tree, not a second host: read-only, and never a bind of anything holding user data.
+	// It stays a tool tree, not a separate host: read-only, and never a bind of anything holding user data.
 	assert.True(t, underToolTree("/opt/hostedtoolcache/go/1.25.0/x64/bin/go"))
 	assert.False(t, underToolTree("/home/runner/work"))
 }
@@ -252,7 +252,7 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
 }
 
-// The fallback /proc shape swaps ONE argument and keeps everything that contains the command.
+// The fallback /proc shape swaps a single argument and keeps everything that contains the command.
 func TestBwrapSharedProcKeepsTheContainment(t *testing.T) {
 	fresh := bwrapIsolationArgs(procFresh)
 	shared := bwrapIsolationArgs(procShared)
@@ -277,7 +277,7 @@ func TestBwrapSharedProcKeepsTheContainment(t *testing.T) {
 		"the two shapes must differ ONLY in how /proc is provided")
 }
 
-// drop returns argv without the first run of the given consecutive arguments.
+// drop returns argv without the earliest run of the given consecutive arguments.
 func drop(argv []string, run ...string) []string {
 	for i := range argv {
 		if i+len(run) <= len(argv) && slices.Equal(argv[i:i+len(run)], run) {
@@ -303,7 +303,7 @@ func TestProbeBwrapPrefersThePrivateProcfs(t *testing.T) {
 	}
 }
 
-// A reduced sandbox is announced on every file it applies to, and explained once.
+// A reduced sandbox is announced on every file it applies to, and explained a single time.
 func TestSharedProcIsAnnouncedAndExplainedOnce(t *testing.T) {
 	assert.Equal(t, "bwrap", (&sandboxPlan{backend: SandboxBwrap, network: true}).describe(),
 		"the strong sandbox says nothing extra")
@@ -459,7 +459,7 @@ func TestNewSandboxPlanImagePrecedence(t *testing.T) {
 		return r
 	}
 
-	// Operator pinned one, file wants another: the operator's wins, out loud.
+	// Operator pinned an image, file wants another: the operator's wins, out loud.
 	plan, err := newRunner("pinned:tag").newSandboxPlan(&schema.SandboxSpec{Image: "file:tag"}, "/tmp/w")
 	require.Nil(t, err)
 	assert.Equal(t, "pinned:tag", plan.image)
@@ -473,7 +473,7 @@ func TestNewSandboxPlanImagePrecedence(t *testing.T) {
 	assert.Equal(t, "", plan.refusedImage)
 	assert.Equal(t, "docker same:tag", plan.describe())
 
-	// Neither named one: the default, and nothing to announce.
+	// Neither named an image: the default, and nothing to announce.
 	plan, err = newRunner("").newSandboxPlan(nil, "/tmp/w")
 	require.Nil(t, err)
 	assert.Equal(t, DefaultSandboxImage, plan.image)
@@ -579,7 +579,7 @@ func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
 	assert.Contains(t, joined, "--ro-bind-try "+stub+" "+stub,
 		"without it a sandboxed command has no DNS at all on a systemd-resolved host")
 
-	// ...and it is the one allowance: everything else still matches docker.
+	// ...and it is the only allowance: everything else still matches docker.
 	hostBinds := set.New[string]()
 	argv := plan.bwrapArgv("true")
 	for i, arg := range argv {

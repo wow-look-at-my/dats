@@ -17,7 +17,7 @@ var (
 	coverDir string
 )
 
-// errTestsFailed signals that at least one test failed.
+// errTestsFailed signals that a test failed.
 var errTestsFailed = errors.New("tests failed")
 
 var testCmd = &cobra.Command{

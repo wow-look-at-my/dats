@@ -9,7 +9,7 @@ import (
 var updateGoldens bool
 
 // registerUpdateFlag registers --update. No backtick in the usage string:
-// pflag reads one as the flag's value placeholder.
+// pflag reads it as the flag's value placeholder.
 func registerUpdateFlag(flags *pflag.FlagSet) {
 	flags.BoolVar(&updateGoldens, "update", false,
 		"rewrite snapshot golden files from actual output instead of failing (see: dats docs format)")

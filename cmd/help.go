@@ -29,8 +29,8 @@ this binary.
 	},
 }
 
-// runHelp resolves the argument as a command first and as a documentation
-// topic second, so a subcommand name never loses to a topic alias.
+// runHelp resolves the argument as a command before it resolves the argument
+// as a documentation topic, so a subcommand name never loses to a topic alias.
 func runHelp(cmd *cobra.Command, args []string) error {
 	root := cmd.Root()
 	if len(args) == 0 {

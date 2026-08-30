@@ -85,7 +85,7 @@ tests:
 }
 
 func TestRunFileSetupRunsBeforeTests(t *testing.T) {
-	// Setup output is observable from the tests, proving it ran first.
+	// Setup output is observable from the tests, proving it ran before them.
 	path := writeRunnerDats(t, `
 setup:
 	- echo generated-by-setup > {shared.marker.txt}
@@ -145,7 +145,7 @@ tests:
 	assert.Contains(t, out, "file setup failed")
 	assert.NotContains(t, out, "skip")
 
-	// Setup stopped at the first failure...
+	// Setup stopped at the earliest failure...
 	_, statErr := os.Stat(neverMarker)
 	assert.True(t, os.IsNotExist(statErr), "setup must stop at the first failing command")
 	// ...but teardown still ran.
@@ -245,7 +245,7 @@ tests:
 	require.Len(t, result.TeardownFailures, 1)
 	assert.Contains(t, result.TeardownFailures[0].Detail, "exit code 7")
 
-	// Teardown ran after the test failure, and one failing teardown command did not stop the rest.
+	// Teardown ran after the test failure, and a failing teardown command did not stop the rest.
 	_, err1 := os.Stat(first)
 	assert.Nil(t, err1, "first teardown command must run after test failures")
 	_, err2 := os.Stat(last)

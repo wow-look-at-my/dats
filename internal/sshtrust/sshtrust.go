@@ -11,7 +11,7 @@ import (
 // formatVersion is bumped only for a breaking change to the file's shape.
 const formatVersion = 1
 
-// Entry is one approved pair.
+// Entry is a single approved pair.
 type Entry struct {
 	// File is the absolute, symlink-resolved path of the .dats file.
 	File string `json:"file"`
@@ -87,7 +87,7 @@ func (s *Store) Approved(datsPath, target string) (bool, error) {
 	return false, nil
 }
 
-// Approve records a pair and writes the store. Approving twice is a no-op.
+// Approve records a pair and writes the store. Approving the same pair again is a no-op.
 func (s *Store) Approve(datsPath, target string) error {
 	key, err := Key(datsPath)
 	if err != nil {

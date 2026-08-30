@@ -43,7 +43,7 @@ tests:
 	assert.Contains(t, err.Error(), "cannot move a command onto the machine running dats")
 }
 
-// TestMatrixSubstitutesThePerTestTarget is the feature's best demo: one test fanned across a fleet.
+// TestMatrixSubstitutesThePerTestTarget is the feature's best demo: a test fanned across a fleet.
 func TestMatrixSubstitutesThePerTestTarget(t *testing.T) {
 	tf, err := ParseFile(writeTempDats(t, `ssh: home@box
 tests:
