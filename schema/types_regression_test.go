@@ -17,7 +17,7 @@ func TestOutputCheck_UnmarshalYAML_DuplicateLineKeys(t *testing.T) {
 }
 
 func TestOutputCheck_UnmarshalYAML_DuplicateLineKeysDifferentSpelling(t *testing.T) {
-	// "0" and "00" are the same line number.
+	// A line number keeps its value through leading zeros.
 	var o OutputCheck
 	err := yaml.Unmarshal([]byte("\"0\": a\n00: b\n"), &o)
 	require.NotNil(t, err)
@@ -39,7 +39,7 @@ func TestExitCode_UnmarshalYAML_QuotedInt(t *testing.T) {
 		{`"0"`, 0},
 		{`"3"`, 3},
 		{`"255"`, 255},
-		// Atoi treats a leading zero as decimal, not octal.
+		// Atoi reads a padded value as decimal, not octal.
 		{`"012"`, 12},
 	}
 	for _, tt := range cases {
@@ -144,7 +144,7 @@ func TestDuration_UnmarshalYAML_FloatRejected(t *testing.T) {
 }
 
 func TestExitCode_UnmarshalYAML_FloatRejected(t *testing.T) {
-	// Same truncation hazard as Duration: exit: 1.5 silently became exit: 1.
+	// Same truncation hazard as Duration: a fractional exit code silently lost its fraction.
 	cases := []struct{ input, wantFloat string }{
 		{"1.5", "1.5"},
 		{"2.0", "2"},

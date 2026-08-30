@@ -155,7 +155,7 @@ func TestWatchLoopBatchesBurstIntoOneCycle(t *testing.T) {
 	cycles, _ := startWatchLoop(ctx, events, 20*time.Millisecond, nil)
 	waitCycle(t, cycles, "initial cycle")
 
-	// A burst of events, duplicate included: exactly one re-cycle, carrying the deduplicated batch.
+	// A burst of events, duplicate included: exactly a single re-cycle, carrying the deduplicated batch.
 	events <- watchEvent{path: "/w/a.dats"}
 	events <- watchEvent{path: "/w/b.dats"}
 	events <- watchEvent{path: "/w/a.dats"}

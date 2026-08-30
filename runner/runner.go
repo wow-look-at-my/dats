@@ -36,7 +36,7 @@ type Runner struct {
 	// ssh is the current file's connection, resolved by runFile beside plan.
 	ssh *SSHConfig
 
-	// refusedSSH is the file's own target when a typed one outranked it.
+	// refusedSSH is the file's own target when a typed target outranked it.
 	refusedSSH string
 
 	// remoteBase mirrors the current file's temp directory on the target.
@@ -74,7 +74,7 @@ func (r *Runner) RunFile(ctx context.Context, path string) (*FileResult, error) 
 	return r.runFile(ctx, path, testFile, newSlots(runtime.NumCPU()))
 }
 
-// runFile runs one already-parsed file against a caller-provided pool.
+// runFile runs a single already-parsed file against a caller-provided pool.
 func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.TestFile, pool slots) (*FileResult, error) {
 	// Create temp directory for fixtures
 	tempDir, err := os.MkdirTemp("", "dats-*")
@@ -142,7 +142,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		return nil, fmt.Errorf("creating shared dir: %w", err)
 	}
 
-	// Write shared fixture files, then run setup commands in declared order, stopping at the first failure.
+	// Write shared fixture files, then run setup commands in declared order, stopping at the earliest failure.
 	if testFile.Shared != nil {
 		if err := SetupSharedFixtures(sharedDir, testFile.Shared.Files, testFile.Shared.Copy, r.sourceDir); err != nil {
 			result.SetupFailure = &CommandFailure{Detail: fmt.Sprintf("shared fixtures: %v", err)}
@@ -187,7 +187,7 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		if r.Verbose && len(testFile.Setup) > 0 {
 			fmt.Fprintln(r.Formatter.Writer)
 		}
-		// Launch every instance; the pool bounds how many run at once.
+		// Launch every instance; the pool bounds how many run concurrently.
 		instanceResults := make([]TestResult, len(instances))
 		var wg sync.WaitGroup
 		for i := range instances {

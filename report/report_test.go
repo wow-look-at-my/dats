@@ -101,8 +101,8 @@ func TestWriteJUnitShape(t *testing.T) {
 
 	mixed := root.Suites[0]
 	assert.Equal(t, "mixed.dats", mixed.Name)
-	assert.Equal(t, 4, mixed.Tests)    // 2 instances + 2 synthetic teardowns
-	assert.Equal(t, 3, mixed.Failures) // 1 failed instance + 2 teardowns
+	assert.Equal(t, 4, mixed.Tests)    // instances plus their synthetic teardowns
+	assert.Equal(t, 3, mixed.Failures) // the failed instance plus its teardowns
 	assert.Equal(t, "0.300", mixed.Time)
 	require.Len(t, mixed.Cases, 4)
 
@@ -135,10 +135,10 @@ func TestWriteJUnitShape(t *testing.T) {
 	assert.Equal(t, "t-out\n", *mixed.Cases[2].SystemOut)
 
 	setup := root.Suites[1]
-	assert.Equal(t, 3, setup.Tests)    // 2 instances + 1 synthetic setup
+	assert.Equal(t, 3, setup.Tests)    // instances plus the synthetic setup
 	assert.Equal(t, 3, setup.Failures) // both instances + the synthetic
 	require.Len(t, setup.Cases, 3)
-	// The synthetic [setup] case comes FIRST, before the instance cases.
+	// The synthetic [setup] case comes before the instance cases.
 	assert.Equal(t, "[setup]", setup.Cases[0].Name)
 	require.NotNil(t, setup.Cases[0].Failure)
 	assert.Equal(t, "exit code 7", setup.Cases[0].Failure.Message)

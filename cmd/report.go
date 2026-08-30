@@ -44,7 +44,7 @@ func writeReports(results []*runner.FileResult, wall time.Duration) error {
 	return errors.Join(errs...)
 }
 
-// writeReportFile creates path -- parent directories included -- and renders one report into it via write.
+// writeReportFile creates path -- parent directories included -- and renders a single report into it via write.
 func writeReportFile(path string, write func(io.Writer) error) error {
 	fail := func(err error) error {
 		return fmt.Errorf("writing report %s: %w", path, err)

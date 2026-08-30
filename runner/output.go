@@ -43,7 +43,7 @@ func (fr *FileResult) Ok() bool {
 // CommandFailure describes a failed file-level setup or teardown step.
 type CommandFailure struct {
 	Command string
-	// Detail says why it failed, e.g. "exit code 3" or "exit code -1 (killed by signal: killed)".
+	// Detail says why it failed, naming the exit code, or the signal that killed the command.
 	Detail string
 	Stdout string // captured stdout of the failed command
 	Stderr string // captured stderr of the failed command
@@ -90,7 +90,7 @@ func (f *Formatter) PrintResult(r *TestResult) {
 	}
 }
 
-// PrintPrunedGoldens prints one line per stale snapshot golden file removed under --update.
+// PrintPrunedGoldens prints a line per stale snapshot golden file removed under --update.
 func (f *Formatter) PrintPrunedGoldens(fr *FileResult) {
 	for _, path := range fr.PrunedGoldens {
 		fmt.Fprintf(f.Writer, "# pruned stale golden: %s\n", path)

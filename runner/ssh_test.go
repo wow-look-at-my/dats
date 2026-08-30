@@ -145,7 +145,7 @@ func TestSSHArgvShape(t *testing.T) {
 	assert.Contains(t, argv, "LogLevel=ERROR", "the known-hosts warning would pollute captured stderr")
 	assert.Contains(t, argv, "ControlPath=/tmp/dats-ssh-x/abcd1234")
 
-	// The target is followed by exactly one element: the whole remote script.
+	// The target is followed by exactly a single element: the whole remote script.
 	require.Len(t, argv, len(argv))
 	assert.Equal(t, "build@box", argv[len(argv)-2])
 	assert.Equal(t, "exec 'printf' 'hi'", argv[len(argv)-1])

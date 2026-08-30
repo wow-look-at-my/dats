@@ -9,7 +9,7 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// slots is the global workload pool: one token per concurrently-running command.
+// slots is the global workload pool: a token per concurrently-running command.
 type slots chan struct{}
 
 func newSlots(n int) slots {

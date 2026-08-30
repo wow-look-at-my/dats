@@ -12,8 +12,8 @@ import (
 
 // exitCodeNames are the symbolic exit code names the runner can resolve.
 var exitCodeNames = set.Of(
-	"EXIT_SUCCESS", // 0
-	"EXIT_FAILURE", // 1
+	"EXIT_SUCCESS",
+	"EXIT_FAILURE",
 )
 
 // TestFile represents the root of a .dats file
@@ -32,7 +32,7 @@ type TestFile struct {
 // DefaultHookTimeout bounds a setup/teardown command when its entry does not state its own timeout.
 const DefaultHookTimeout = 30 * time.Second
 
-// HookCommand is one setup/teardown list entry: a command plus the settings that shape how it runs.
+// HookCommand is a single setup/teardown list entry: a command plus the settings that shape how it runs.
 type HookCommand struct {
 	Cmd       string
 	Env       map[string]string
@@ -50,7 +50,7 @@ func (h HookCommand) EffectiveTimeout() time.Duration {
 
 type CommandList []HookCommand
 
-// SetupCommands is the file-level setup key: commands run once, in order, before any of the file's tests.
+// SetupCommands is the file-level setup key: commands run a single time, in order, before any of the file's tests.
 type SetupCommands CommandList
 
 func (s *SetupCommands) UnmarshalYAML(value any) error {
@@ -192,7 +192,7 @@ func bannedRedirect(s string) string {
 	return heredocBanMessage
 }
 
-// Shared declares file-level fixture files, written once into the file's shared directory before setup runs.
+// Shared declares file-level fixture files, written a single time into the file's shared directory before setup runs.
 type Shared struct {
 	// Files maps file name to content.
 	Files map[string]string `yaml:"files,omitempty"`
@@ -270,7 +270,7 @@ func (d *Duration) UnmarshalYAML(value any) error {
 	case float64:
 		return fmt.Errorf("timeout must be an integer number of seconds or a duration string (e.g. \"900ms\", \"1.5s\"), got float %s", formatFloatForError(v))
 	case string:
-		// A quoted bare integer (e.g. "5") means seconds, matching the unquoted form.
+		// A quoted bare integer means seconds, matching the unquoted form.
 		if intVal, err := strconv.Atoi(v); err == nil {
 			if intVal < 0 {
 				return fmt.Errorf("timeout %d must not be negative", intVal)
@@ -331,10 +331,10 @@ func (o *OutputBlock) JSONOutputValue() (any, error) {
 
 type OutputCheck struct {
 	Patterns   []string       // patterns to match anywhere
-	LineChecks map[int]string // line-specific patterns (0-indexed)
+	LineChecks map[int]string // line-specific patterns, keyed by the line's offset from the top
 }
 
-// UnmarshalYAML decodes the two accepted OutputCheck shapes.
+// UnmarshalYAML decodes every accepted OutputCheck shape.
 func (o *OutputCheck) UnmarshalYAML(value any) error {
 	if value == nil {
 		return nil

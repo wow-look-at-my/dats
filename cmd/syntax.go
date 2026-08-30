@@ -12,7 +12,7 @@ import (
 	dats "github.com/wow-look-at-my/dats"
 )
 
-// errSyntaxFailed signals that at least one file failed validation.
+// errSyntaxFailed signals that a file failed validation.
 var errSyntaxFailed = errors.New("syntax validation failed")
 
 var syntaxCmd = &cobra.Command{

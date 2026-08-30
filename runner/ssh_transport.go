@@ -101,7 +101,7 @@ func (c *SSHConfig) startMaster(ctx context.Context) error {
 	return fmt.Errorf("ssh: cannot connect to %s: %s", c.Target, detail)
 }
 
-// probe proves the remote shell returns a quoted argument unchanged and has the two tools a run needs.
+// probe proves the remote shell returns a quoted argument unchanged and has the tools a run needs.
 func (c *SSHConfig) probe(ctx context.Context) error {
 	script := "command -v bash >/dev/null 2>&1 || { echo 'no bash on the remote host' >&2; exit 90; }; " +
 		"command -v tar >/dev/null 2>&1 || { echo 'no tar on the remote host' >&2; exit 91; }; " +
@@ -209,7 +209,7 @@ func (c *SSHConfig) Push(ctx context.Context, localDir, remoteDir string) error 
 	return nil
 }
 
-// Pull copies one directory back from the target into localParent.
+// Pull copies a single directory back from the target into localParent.
 func (c *SSHConfig) Pull(ctx context.Context, remoteParent, name, localParent string) error {
 	script := "exec tar -cf - -C " + sshQuote(remoteParent) + " " + sshQuote(name)
 	cmd := c.command(ctx, script)
@@ -238,7 +238,7 @@ func writeTarDir(dir string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		// A symlink's target travels as-is; nothing dats writes creates one.
+		// A symlink's target travels as-is; nothing dats writes creates a symlink.
 		link := ""
 		if info.Mode()&os.ModeSymlink != 0 {
 			if link, err = os.Readlink(p); err != nil {

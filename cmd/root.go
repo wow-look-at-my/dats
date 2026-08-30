@@ -54,7 +54,7 @@ This binary carries its own complete documentation:
 	SilenceErrors: true,
 }
 
-// Execute runs the root command and exits non-zero on failure.
+// Execute runs the root command and exits with a failure status when it fails.
 func Execute() {
 	// Make-style -jN needs rewriting to --jobs=N before cobra parses the args; see normalizeJobsShorthand.
 	rootCmd.SetArgs(normalizeJobsShorthand(os.Args[1:]))

@@ -8,13 +8,13 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// remoteScope is one host this file reaches: its connection and the temp directory allocated on it.
+// remoteScope is a single host this file reaches: its connection and the temp directory allocated on it.
 type remoteScope struct {
 	cfg  *SSHConfig
 	base string
 }
 
-// scopeFor returns the connection and remote base one instance runs against.
+// scopeFor returns the connection and remote base a single instance runs against.
 func (r *Runner) scopeFor(ctx context.Context, spec *schema.SSHSpec, sharedDir string) (*SSHConfig, string, error) {
 	if r.ssh == nil {
 		return nil, "", nil
@@ -30,7 +30,7 @@ func (r *Runner) scopeFor(ctx context.Context, spec *schema.SSHSpec, sharedDir s
 	return scope.cfg, scope.base, nil
 }
 
-// altScope builds (once) the scope for a host this file's tests overrode to.
+// altScope builds and caches the scope for a host this file's tests overrode to.
 func (r *Runner) altScope(ctx context.Context, spec *schema.SSHSpec, sharedDir string) (*remoteScope, error) {
 	r.altMu.Lock()
 	defer r.altMu.Unlock()

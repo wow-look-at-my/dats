@@ -12,7 +12,7 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// Placeholder patterns are compiled once and reused across expansions.
+// Placeholder patterns are compiled at startup and reused across expansions.
 var (
 	inputPlaceholderRe  = regexp.MustCompile(`\{inputs\.([^}]+)\}`)
 	outputPlaceholderRe = regexp.MustCompile(`\{outputs\.([^}]+)\}`)

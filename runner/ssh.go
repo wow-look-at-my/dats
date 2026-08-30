@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// sshQuote makes s one literal word for a POSIX shell.
+// sshQuote makes s a single literal word for a POSIX shell.
 func sshQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
@@ -44,10 +44,10 @@ func remoteJoin(base string, elem ...string) string {
 	return path.Join(append([]string{base}, elem...)...)
 }
 
-// sshControlPathMax bounds the socket path: macOS stops at 104 bytes.
+// sshControlPathMax bounds the socket path, because macOS caps its length.
 const sshControlPathMax = 100
 
-// sshControlPath names one target's socket inside dir.
+// sshControlPath names a single target's socket inside dir.
 func sshControlPath(dir, target string) string {
 	sum := sha256.Sum256([]byte(target))
 	return path.Join(dir, hex.EncodeToString(sum[:])[:8])
@@ -71,7 +71,7 @@ func sshArgv(target, controlPath, script string) []string {
 	return append(argv, target, script)
 }
 
-// sshRemoteCommand builds the script for one command.
+// sshRemoteCommand builds the script for a single command.
 func sshRemoteCommand(pidDir, id string, env, argv []string) string {
 	var b strings.Builder
 	if pidDir != "" && id != "" {

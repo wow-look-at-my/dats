@@ -158,7 +158,7 @@ func TestFindFilesDedupe(t *testing.T) {
 	datsFile := filepath.Join(tmp, "test.dats")
 	require.Nil(t, os.WriteFile(datsFile, []byte(""), 0644))
 
-	// The same file named twice explicitly, plus covered by a directory arg, must run exactly once.
+	// The same file named repeatedly and explicitly, plus covered by a directory arg, must still run a single time.
 	files, err := FindFiles([]string{datsFile, tmp, datsFile})
 	require.Nil(t, err)
 	assert.Equal(t, []string{datsFile}, files)
