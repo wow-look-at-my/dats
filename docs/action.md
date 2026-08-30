@@ -36,16 +36,10 @@ that one file.
 macOS needs nothing installed: seatbelt is `/usr/bin/sandbox-exec`, shipped
 with the OS, so the script asserts it is there and exits.
 
-Windows has no native backend, so its sandbox is docker — and it has to be a
-daemon serving LINUX containers, which a Windows runner's own daemon is not
-(`docker info` there reports `OSType: windows`). When one is already reachable
-the script says so and exits; otherwise it installs WSL, `docker.io` inside it,
-and starts `dockerd` on `tcp://127.0.0.1:2375`, exporting `DOCKER_HOST` through
-`$GITHUB_ENV` for the later steps. The daemon is started with `setsid nohup ...
-& disown`: a process the step merely backgrounds dies with that step. A daemon
-that never answers within the wait is a failure here, not a confusing "no usable
-sandbox backend" from dats afterwards. That daemon sees the drives under `/mnt`,
-which is what `runner/dockerpath.go` spells the binds in.
+Windows has no native backend and the script says so, leaving dats to probe for
+docker. A Windows runner's own daemon serves WINDOWS containers, and WSL1 cannot
+host a Linux one — see [sandbox-internals.md](sandbox-internals.md) for the
+measurement. A suite on an NT runner needs `--no-sandbox` until that changes.
 
 On Linux the script installs bubblewrap when `bwrap` is not already on PATH.
 Two things it does that the inline `sudo apt-get` it replaced did not:
