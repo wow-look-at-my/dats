@@ -108,12 +108,21 @@ jobs:
       - name: Install the sandbox backend
         shell: bash
         run: .github/scripts/install-sandbox-backend.sh
+      # What the daemon can reach, before a suite failure has to be read backwards from an exit code.
+      - name: What the WSL daemon sees
+        shell: bash
+        run: |
+          cp build/dats build/dats.exe
+          docker run --rm debian:stable-slim true
+          docker run --rm -v /mnt/d/a/dats/dats:/probe debian:stable-slim ls /probe
+          docker run --rm -v /mnt/d/a/_temp:/probe debian:stable-slim ls /probe
+          ./build/dats.exe version
       - name: Run the sandbox suite on an NT host
         shell: bash
         run: |
           set -euo pipefail
           cp build/dats build/dats.exe
-          ./build/dats.exe test examples/sandbox.dats
+          ./build/dats.exe -v test examples/sandbox.dats
 
   # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:
