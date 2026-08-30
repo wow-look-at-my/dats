@@ -11,13 +11,32 @@ time.
 `os`/`arch` default to the runner's own platform: `buildhost-download` reads
 `RUNNER_OS`/`RUNNER_ARCH` when neither is given.
 
-## Installing bubblewrap
+## Installing the sandbox backend
 
 dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on
 macOS, docker otherwise) — real isolation, not a formality, so a caller should
-never have to reach for `--no-sandbox` just to work around infrastructure. The
-install step skips on non-Linux; macOS's seatbelt backend needs nothing
-installed.
+never have to reach for `--no-sandbox` just to work around infrastructure.
+`.github/scripts/install-sandbox-backend.sh` owns this, and the action calls
+that one file.
+
+macOS needs nothing installed: seatbelt is `/usr/bin/sandbox-exec`, shipped
+with the OS, so the script asserts it is there and exits. Windows has no native
+backend and the script says so, leaving dats to probe for docker.
+
+On Linux the script installs bubblewrap when `bwrap` is not already on PATH.
+Two things it does that the inline `sudo apt-get` it replaced did not:
+
+- **It only reaches for `sudo` when it is not already root.** A container job
+  usually runs as root with no `sudo` binary present at all, so an
+  unconditional `sudo` failed an install that plain `apt-get` completes. When
+  the job is neither root nor able to sudo, it says so and names `--no-sandbox`
+  rather than dying on `sudo: command not found`.
+- **It tries `apt-get`, then `dnf`, then `apk`,** and names all three when it
+  finds none, instead of assuming every Linux runner is Debian-shaped.
+
+It then re-checks that `bwrap` is on PATH and fails there if it is not. Getting
+that wrong is otherwise reported much later, by dats, as "no usable sandbox
+backend" — a message about the wrong step.
 
 ## Clearing the user-namespace restriction, and why the action no longer judges the result
 
