@@ -65,7 +65,13 @@ if (distro) {
 	};
 	const cwd = toWsl(process.cwd());
 	const linuxBin = toWsl(bin);
-	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- timeout ${String(seconds)} ${linuxBin} ${argv}`
+	// PATH is set rather than inherited. wsl.exe resolves the command it is given
+	// through its own launcher, but the process it starts inherits a PATH without
+	// /usr/bin, so dats looked for bwrap and found nothing while bwrap sat
+	// installed. Dropping the Windows entries also stops the probe reaching
+	// docker.exe on the host, whose daemon serves windows containers.
+	const linuxPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- env ${`PATH=${linuxPath}`} timeout ${String(seconds)} ${linuxBin} ${argv}`
 		.input('')
 		.nothrow();
 	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);
