@@ -77,7 +77,10 @@ if (distro) {
 	// interop off wholesale costs WSL the channel it runs commands over.
 	const unregisterPE =
 		'for f in /proc/sys/fs/binfmt_misc/WSLInterop*; do [ -e "$f" ] && echo 0 >"$f"; done; exec "$@"';
-	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh -c ${unregisterPE} sh env ${`PATH=${linuxPath}`} timeout ${String(seconds)} ${linuxBin} ${argv}`
+	// bash starts the APE for the same reason it does on Darwin: with the PE
+	// handler gone, execve reads the header and refuses it, which timeout
+	// reports as 126. A shell takes the ENOEXEC fallback instead.
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh -c ${unregisterPE} sh env ${`PATH=${linuxPath}`} timeout ${String(seconds)} bash -c ${'"$0" "$@"'} ${linuxBin} ${argv}`
 		.input('')
 		.nothrow();
 	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);
