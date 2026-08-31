@@ -55,10 +55,16 @@ if (distro) {
 	// timeout kills it. The run is bounded inside Linux, where a timeout can
 	// still name what it stopped.
 	const seconds = Number(process.env.DATS_WSL_TIMEOUT_SECONDS ?? '900');
-	const wslPath = async (p: string) =>
-		String((await $`wsl.exe -d ${distro} -u root -- wslpath -a ${p}`.input('')).stdout).trim();
-	const cwd = await wslPath(process.cwd());
-	const linuxBin = await wslPath(bin);
+	// Mapped here rather than by wslpath inside the distribution. wsl.exe joins
+	// its arguments into one command line that the Linux side parses again, and
+	// that parse eats the backslashes, so `D:\a\dats` arrives as `D:adats`.
+	const toWsl = (p: string) => {
+		const drive = /^([A-Za-z]):[\\/](.*)$/.exec(p);
+		if (!drive) throw new Error(`cannot map "${p}" into WSL: expected a drive-letter path`);
+		return `/mnt/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}`;
+	};
+	const cwd = toWsl(process.cwd());
+	const linuxBin = toWsl(bin);
 	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- timeout ${String(seconds)} ${linuxBin} ${argv}`
 		.input('')
 		.nothrow();
