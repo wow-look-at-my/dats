@@ -111,8 +111,13 @@ command line, so nothing a caller types can become a flag, a subcommand, or a
   an absolute path, or contains a `..` segment;
 - expands a directory entry to its top-level `*.dats` files (never recursive,
   never a hidden file);
-- runs `dats test <files...>` from `working-directory` with the downloaded
+- runs `dats -v test <files...>` from `working-directory` with the downloaded
   binary, passing each file as its own argument.
+
+`-v` is always on, and there is no input to turn it off. Without it a failing
+leg reports only that a test failed; with it the leg names the test and prints
+its output. An input would make that a thing a caller remembers to set after the
+run that needed it, which is the run where the output is already gone.
 
 ## NT gets its backend from WSL
 

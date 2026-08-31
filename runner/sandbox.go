@@ -292,8 +292,7 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 		plan.image = DefaultSandboxImage
 	}
 	if backend == SandboxSeatbelt {
-		// bwrap mounts a private writable /tmp; seatbelt mounts nothing and denies
-		// every write outside work, so scratch space goes inside work.
+		// bwrap mounts a private writable /tmp; seatbelt mounts nothing.
 		tmp := filepath.Join(workDir, sandboxTmpDirName)
 		if err := os.MkdirAll(tmp, 0o755); err != nil {
 			return nil, fmt.Errorf("sandbox: creating the scratch directory %q: %w", tmp, err)

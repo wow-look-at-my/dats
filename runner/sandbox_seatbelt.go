@@ -32,8 +32,7 @@ const sandboxTmpDirName = ".dats-tmp"
 func (p *sandboxPlan) seatbeltArgv(cmd string) []string {
 	argv := []string{"sandbox-exec", "-p", seatbeltProfile(p.seatbeltWritablePaths(), p.network)}
 	if p.tmp != "" {
-		// The host's TMPDIR is outside the writable set, so a command that inherits
-		// it writes nowhere. Every spelling, because tools disagree on which to read.
+		// The host's TMPDIR is outside the writable set, so a command inheriting it writes nowhere.
 		argv = append(argv, "env", "TMPDIR="+p.tmp, "TMP="+p.tmp, "TEMP="+p.tmp)
 	}
 	return append(argv, "bash", "-c", cmd)
