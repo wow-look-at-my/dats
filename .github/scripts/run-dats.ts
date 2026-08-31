@@ -71,7 +71,13 @@ if (distro) {
 	// installed. Dropping the Windows entries also stops the probe reaching
 	// docker.exe on the host, whose daemon serves windows containers.
 	const linuxPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
-	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- env ${`PATH=${linuxPath}`} timeout ${String(seconds)} ${linuxBin} ${argv}`
+	// WSL registers a binfmt handler for the MZ header, and the download is a fat
+	// APE, so the kernel hands the file to Windows and dats probes the host
+	// instead of the distribution. Only that one handler is turned off: turning
+	// interop off wholesale costs WSL the channel it runs commands over.
+	const unregisterPE =
+		'for f in /proc/sys/fs/binfmt_misc/WSLInterop*; do [ -e "$f" ] && echo 0 >"$f"; done; exec "$@"';
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh -c ${unregisterPE} sh env ${`PATH=${linuxPath}`} timeout ${String(seconds)} ${linuxBin} ${argv}`
 		.input('')
 		.nothrow();
 	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);

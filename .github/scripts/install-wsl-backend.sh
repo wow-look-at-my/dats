@@ -57,14 +57,6 @@ if ! timeout 60 wsl.exe --list --quiet </dev/null | tr -d '\r' | grep -qi "^${DI
 		"$(cygpath -w "$work/root")" "$(cygpath -w "$work/rootfs.tar.gz")" --version 2
 fi
 
-# WSL hands a file carrying the MZ header to Windows to execute, and the
-# download is a fat APE, so the Linux payload never runs and dats probes the
-# Windows host instead. Interop off makes the distribution run it itself.
-echo "sandbox: turning Windows interop off inside ${DISTRO}"
-wsl_step 60 "writing /etc/wsl.conf" --distribution "$DISTRO" --user root -- \
-	sh -c 'echo "[interop]" >/etc/wsl.conf; echo "enabled=false" >>/etc/wsl.conf; echo "appendWindowsPath=false" >>/etc/wsl.conf'
-wsl_step 60 "terminating ${DISTRO}" --terminate "$DISTRO"
-
 echo "sandbox: installing bubblewrap inside ${DISTRO}"
 wsl_step 600 "installing bubblewrap" --distribution "$DISTRO" --user root -- \
 	env DEBIAN_FRONTEND=noninteractive sh -c 'apt-get update && apt-get install -y bubblewrap'
