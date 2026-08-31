@@ -41,7 +41,11 @@ for (const entry of raw) {
 // the file on execve, so a shell must read the header and exec the payload.
 // Linux starts the file as it stands. Every form passes argv, never a string a
 // shell splits again.
-const argv = ['test', ...tests];
+// -v always. It makes a red leg name the test that failed and print its output,
+// instead of only reporting that something failed, and a caller who has to ask
+// for that asks after the run they needed it on. A root flag, so it precedes
+// the subcommand.
+const argv = ['-v', 'test', ...tests];
 const windows = process.platform === 'win32';
 
 // NT can host no sandbox backend, so install-wsl-backend.sh puts bubblewrap in

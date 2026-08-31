@@ -25,12 +25,18 @@ func probeSeatbelt() error {
 	return nil
 }
 
+// sandboxTmpDirName is the scratch directory seatbelt points TMPDIR at, inside work.
+const sandboxTmpDirName = ".dats-tmp"
+
 // seatbeltArgv builds the macOS sandbox-exec invocation for cmd.
 func (p *sandboxPlan) seatbeltArgv(cmd string) []string {
-	return []string{
-		"sandbox-exec", "-p", seatbeltProfile(p.seatbeltWritablePaths(), p.network),
-		"bash", "-c", cmd,
+	argv := []string{"sandbox-exec", "-p", seatbeltProfile(p.seatbeltWritablePaths(), p.network)}
+	if p.tmp != "" {
+		// The host's TMPDIR is outside the writable set, so a command that inherits
+		// it writes nowhere. Every spelling, because tools disagree on which to read.
+		argv = append(argv, "env", "TMPDIR="+p.tmp, "TMP="+p.tmp, "TEMP="+p.tmp)
 	}
+	return append(argv, "bash", "-c", cmd)
 }
 
 // seatbeltWritablePaths returns the writable set with symlinks resolved.

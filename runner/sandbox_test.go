@@ -525,6 +525,35 @@ func TestSeatbeltArgv(t *testing.T) {
 	assert.Equal(t, []string{"bash", "-c", "echo hi"}, argv[3:])
 }
 
+func TestSeatbeltArgvPointsTmpdirInsideTheWritableSet(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: "/tmp/dats-1", tmp: "/tmp/dats-1/" + sandboxTmpDirName}
+	argv := plan.seatbeltArgv("echo hi")
+
+	assert.Equal(t, []string{
+		"env",
+		"TMPDIR=/tmp/dats-1/" + sandboxTmpDirName,
+		"TMP=/tmp/dats-1/" + sandboxTmpDirName,
+		"TEMP=/tmp/dats-1/" + sandboxTmpDirName,
+		"bash", "-c", "echo hi",
+	}, argv[3:], "the host TMPDIR is outside the writable set, so a command that inherits it writes nowhere")
+	assert.Contains(t, argv[2], `(subpath "/tmp/dats-1")`,
+		"the scratch directory needs no rule of its own: work already covers it")
+}
+
+func TestNewSandboxPlanGivesSeatbeltAWritableTmpdir(t *testing.T) {
+	work := t.TempDir()
+	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxSeatbelt, probeAlways(nil))}
+
+	plan, err := r.newSandboxPlan(nil, work)
+	require.Nil(t, err)
+	require.NotNil(t, plan)
+
+	assert.Equal(t, filepath.Join(work, sandboxTmpDirName), plan.tmp)
+	info, err := os.Stat(plan.tmp)
+	require.Nil(t, err, "the directory exists before any command runs")
+	assert.True(t, info.IsDir())
+}
+
 func TestSeatbeltProfileShape(t *testing.T) {
 	profile := seatbeltProfile([]string{"/tmp/dats-1", "/var/data"}, true)
 
