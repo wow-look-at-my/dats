@@ -161,9 +161,33 @@ func probeDocker() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}}").CombinedOutput()
+	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}} {{.Server.Os}}").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker: %s", probeFailure(out, err))
+	}
+	return dockerServerUsable(firstLine(out))
+}
+
+// firstLine is probeFailure's success-path twin: no error to fall back on.
+func firstLine(out []byte) string {
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// dockerServerUsable reads the probe's "<api version> <server os>" line. A
+// windows daemon answers `docker version` and then fails every run, because a
+// sandbox image is a linux image. Saying so here lets auto keep looking.
+func dockerServerUsable(versionLine string) error {
+	fields := strings.Fields(versionLine)
+	if len(fields) < 2 {
+		return nil // an older client prints no server OS; the run is the test
+	}
+	if serverOS := fields[len(fields)-1]; serverOS == "windows" {
+		return fmt.Errorf("docker: the daemon serves windows containers, and a sandbox image is a linux image")
 	}
 	return nil
 }

@@ -40,8 +40,15 @@ argument`). A daemon that does not share the host's filesystem would also need e
 written in ITS spelling, since `-v D:\a\x:D:\a\x` gives a Linux daemon a source with no leading
 slash, which docker reads as a VOLUME NAME and silently mounts as an empty directory.
 
-So on an NT host a suite needs `--no-sandbox` today. WSL2 is the untested candidate: it runs a real
-kernel, and what it would then need is the bind-spelling map above.
+So the docker PROBE asks the daemon which OS it serves (`docker version --format '{{.Server.APIVersion}}
+{{.Server.Os}}'`, `dockerServerUsable`). A windows daemon answers that command and then fails every run,
+so reporting it usable turned an unusable backend into a runc error per test rather than a line saying
+auto found no backend. A client too old to print the server OS decides nothing, and the run is the test.
+
+So on an NT host a suite needs `--no-sandbox` today. WSL2 runs a real kernel and is the candidate that
+could change that, but not on a GitHub-hosted Windows runner: those VMs are already nested, and GitHub
+states nested virtualization cannot be enabled on them, which is what WSL2 needs. Reaching it takes a
+host that owns its own hypervisor, and what it would then need is the bind-spelling map above.
 
 **The two backends expose the SAME host paths** (cwd ro + declared writable), pinned by
 `TestBwrapAndDockerExposeTheSameHostPaths`; seatbelt still does not restrict reads (known gap).

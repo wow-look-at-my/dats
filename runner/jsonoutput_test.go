@@ -114,8 +114,7 @@ func TestAssertJSONOutputDiffCap(t *testing.T) {
 }
 
 func TestAssertJSONOutputUnrepresentableExpected(t *testing.T) {
-	// A channel cannot be marshaled as JSON. An interface-keyed map can: the
-	// toolchain resolves such a key to its dynamic type.
+	// A channel cannot be marshaled as JSON; an interface-keyed map can.
 	errs := AssertJSONOutput("{}", map[string]any{"x": make(chan int)})
 	require.Equal(t, 1, len(errs))
 	assert.Contains(t, errs[0].Error(), "cannot be represented as JSON")
