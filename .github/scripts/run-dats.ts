@@ -50,10 +50,20 @@ const windows = process.platform === 'win32';
 // backend. wslpath translates the two paths WSL cannot guess.
 const distro = windows ? (process.env.DATS_WSL_DISTRO ?? '') : '';
 if (distro) {
+	// Every wsl.exe call reads empty stdin. An open one attaches an interactive
+	// session and waits, and the step then prints nothing until the job's own
+	// timeout kills it. The run is bounded inside Linux, where a timeout can
+	// still name what it stopped.
+	const seconds = Number(process.env.DATS_WSL_TIMEOUT_SECONDS ?? '900');
 	const wslPath = async (p: string) =>
-		String((await $`wsl.exe -d ${distro} -u root -- wslpath -a ${p}`).stdout).trim();
-	const res = await $`wsl.exe -d ${distro} -u root --cd ${await wslPath(process.cwd())} -- ${await wslPath(bin)} ${argv}`.nothrow();
-	if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+		String((await $`wsl.exe -d ${distro} -u root -- wslpath -a ${p}`.input('')).stdout).trim();
+	const cwd = await wslPath(process.cwd());
+	const linuxBin = await wslPath(bin);
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- timeout ${String(seconds)} ${linuxBin} ${argv}`
+		.input('')
+		.nothrow();
+	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);
+	else if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
 } else {
 	// NT finds an executable by its extension. Darwin refuses the APE on execve,
 	// so a shell must read the header and exec the payload. Linux starts the file
