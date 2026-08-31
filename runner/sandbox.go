@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -95,6 +96,9 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 				failures = append(failures, err.Error())
 			}
 			c.err = fmt.Errorf("no usable sandbox backend: %s\n%s", strings.Join(failures, "; "), sandboxOptOutHint)
+			if hostGOOS == "windows" {
+				c.err = fmt.Errorf("%w: %w", ErrNoBackendOnHost, c.err)
+			}
 		}
 	})
 	return c.backend, c.err
@@ -110,6 +114,9 @@ func (c *SandboxConfig) TakeProcNotice() string {
 }
 
 const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox"
+
+// ErrNoBackendOnHost marks the auto failure no install cures.
+var ErrNoBackendOnHost = errors.New("this host has no sandbox backend dats can build on")
 
 // probeBackend reports whether backend is usable on this host.
 func probeBackend(backend SandboxMode) (procMode, error) {

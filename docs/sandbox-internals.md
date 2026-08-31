@@ -45,6 +45,12 @@ So the docker PROBE asks the daemon which OS it serves (`docker version --format
 so reporting it usable turned an unusable backend into a runc error per test rather than a line saying
 auto found no backend. A client too old to print the server OS decides nothing, and the run is the test.
 
+That failure is also MARKED. `runner.ErrNoBackendOnHost` wraps the auto error on an NT host, so a library
+caller can tell "this host can never sandbox" from "bubblewrap is not installed", which an install cures and
+which must stay fatal. The marker only classifies the error: it grants no suite anything, and a file still
+cannot turn its own sandbox off. What a caller does with it -- fail, or say so loudly and run on the host --
+is the run-starter's decision, the same decision `--no-sandbox` is.
+
 So on an NT host a suite needs `--no-sandbox` today. WSL2 runs a real kernel and is the candidate that
 could change that, but not on a GitHub-hosted Windows runner: those VMs are already nested, and GitHub
 states nested virtualization cannot be enabled on them, which is what WSL2 needs. Reaching it takes a
