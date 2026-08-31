@@ -35,6 +35,20 @@ tests:
 		stdout:
 			- generated
 
+	# Scratch space through TMPDIR, which the backends reach differently: bwrap
+	# mounts a private writable /tmp, and seatbelt mounts nothing and denies
+	# every write outside this file's temp tree. A command that scratches
+	# through TMPDIR must work on both, so this is one of the tests every host
+	# runs (.github/workflows/ci.yml, action-every-host).
+	- desc: TMPDIR is writable inside the sandbox
+	  cmd: |
+		tmp="${TMPDIR:-/tmp}"
+		printf 'scratch\n' > "$tmp/dats-tmpdir-probe"
+		cat "$tmp/dats-tmpdir-probe"
+	  outputs:
+		stdout:
+			- scratch
+
 	# The working directory is bind-mounted read-only, so a plain read still
 	# works but a write to it would fail. inputs.copy is the read-write way in:
 	# it copies an existing host file into the sandbox's writable temp

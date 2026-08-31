@@ -64,6 +64,19 @@ a command that needs the host needs a `--no-sandbox` run (that includes a self-r
 such as an APE -- copy it into the temp dir and run it there); the returned `Kill` hook `docker
 kill`s the container, since killing the client would leave the workload running.
 
+**Scratch space is where the backends had to be made to agree.** bwrap mounts a private writable
+`/tmp` (`--tmpfs /tmp`), so a command that writes through `TMPDIR` just works. Seatbelt mounts
+nothing and its profile denies every write outside `writablePaths`, so the host's `TMPDIR` -- which
+is outside that set -- left a command with nowhere to write at all. A seatbelt plan therefore
+creates `<work>/.dats-tmp` (`sandboxTmpDirName`) and runs the command under `env TMPDIR=... TMP=...
+TEMP=...`; it needs no profile rule of its own, because `work` already covers it. The symptom this
+removes is the worst kind: a suite that passes on linux and fails on darwin for a reason that is in
+neither the suite nor the command. `examples/sandbox.dats` asserts the property, and the
+`native-backends` job runs that file under bwrap and under seatbelt, so the assertion is checked
+where the backends actually differ. That job runs THIS commit's binary, not the published one:
+`action-every-host` downloads what buildhost already serves, so a runner-side sandbox change cannot
+be proven by it in the pull request that makes the change.
+
 Auto order is bwrap -> seatbelt -> docker: the two native backends are platform-exclusive, so this
 reads as "the native sandbox for this OS, else docker".
 
