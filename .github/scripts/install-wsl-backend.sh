@@ -4,6 +4,7 @@
 set -euo pipefail
 
 DISTRO="${DATS_WSL_DISTRO:-Ubuntu}"
+ROOTFS_URL="${DATS_WSL_ROOTFS_URL:-https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz}"
 
 # wsl.exe writes UTF-16LE by default, which reaches bash as text split by NUL
 # bytes. WSL_UTF8 makes it write UTF-8, so its own errors stay readable here.
@@ -44,10 +45,16 @@ echo "sandbox: registered distributions"
 wsl_step 60 "wsl --list" --list --quiet || true
 
 if ! timeout 60 wsl.exe --list --quiet </dev/null | tr -d '\r' | grep -qi "^${DISTRO}$"; then
-	echo "sandbox: installing the ${DISTRO} distribution"
-	# --no-launch registers the distribution without the interactive first-run
-	# account setup, which no runner can answer.
-	wsl_step 420 "installing ${DISTRO}" --install --no-launch --distribution "$DISTRO"
+	# A pinned rootfs, imported directly. `wsl --install` fetches through the
+	# Microsoft Store, which hangs unpredictably on a hosted runner, and a gate
+	# that flakes is one a reader learns to ignore.
+	work="$(cygpath -u "${RUNNER_TEMP:-/tmp}")/dats-wsl"
+	mkdir -p "$work/root"
+	echo "sandbox: downloading the ${DISTRO} rootfs"
+	curl -fsSL --max-time 420 -o "$work/rootfs.tar.gz" "$ROOTFS_URL"
+	echo "sandbox: importing the ${DISTRO} distribution"
+	wsl_step 420 "importing ${DISTRO}" --import "$DISTRO" \
+		"$(cygpath -w "$work/root")" "$(cygpath -w "$work/rootfs.tar.gz")" --version 2
 fi
 
 echo "sandbox: installing bubblewrap inside ${DISTRO}"

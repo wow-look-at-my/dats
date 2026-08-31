@@ -128,7 +128,14 @@ distribution: dats then sees an ordinary Linux host with a working backend, and
 nothing has to relax. `run-dats.ts` translates the working directory and the
 binary path with `wslpath` and starts the run with `wsl --cd`.
 
-Set `DATS_WSL_DISTRO` to use a distribution other than `Ubuntu`.
+The distribution arrives as a pinned rootfs that the script downloads and
+`wsl --import`s. `wsl --install` goes through the Microsoft Store, which hangs
+unpredictably on a hosted runner, and a gate that flakes is one a reader learns
+to ignore. Every `wsl.exe` call is bounded and reads empty stdin, so a stall
+names the step it stopped instead of running the job out of time in silence.
+
+`DATS_WSL_DISTRO` names the distribution, `DATS_WSL_ROOTFS_URL` the rootfs it is
+imported from, and `DATS_WSL_TIMEOUT_SECONDS` how long the suite itself may run.
 
 ## Starting the binary differs per host
 
