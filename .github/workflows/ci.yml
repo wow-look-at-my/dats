@@ -73,9 +73,7 @@ jobs:
         with:
           args: test examples/sandbox.dats
 
-  # One binary, one command, every host. An NT host runs it through a bash that eats a backslash, so the paths a command
-  # sees are converted (runner/hostpath.go) -- and the posix legs are what make that a comparison rather than a claim.
-  # fail-fast is off: which hosts disagree is the finding, so a red leg must never cancel its siblings.
+  # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:
     strategy:
       fail-fast: false
