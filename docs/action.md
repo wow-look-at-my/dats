@@ -11,6 +11,21 @@ time.
 `os`/`arch` default to the runner's own platform: `buildhost-download` reads
 `RUNNER_OS`/`RUNNER_ARCH` when neither is given.
 
+## Paths on an NT runner
+
+Every step here is `shell: bash`, and on a Windows runner that bash reads a
+backslash as an escape and drops it. A path interpolated straight into the
+script — `${{ github.action_path }}` is `D:\a\_actions\...` — therefore arrives
+as `D:a_actions...`, and the step dies with `No such file or directory` and exit
+127. So the action passes each such path through the step's `env:` and expands
+it as `${VAR//\\//}`, which converts the separators before bash sees the word.
+The two script steps and the binary's own path all take that route.
+
+The runner half of the same problem is `runner/hostpath.go`: dats converts every
+path it substitutes into a command. The `every-host` CI job runs this commit's
+own binary under one script on ubuntu, macos and windows, so that conversion has
+a gate on the host it is for and a comparison against the hosts it is not.
+
 ## Installing the sandbox backend
 
 dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on
@@ -20,8 +35,12 @@ never have to reach for `--no-sandbox` just to work around infrastructure.
 that one file.
 
 macOS needs nothing installed: seatbelt is `/usr/bin/sandbox-exec`, shipped
-with the OS, so the script asserts it is there and exits. Windows has no native
-backend and the script says so, leaving dats to probe for docker.
+with the OS, so the script asserts it is there and exits.
+
+Windows has no native backend and the script says so, leaving dats to probe for
+docker. A Windows runner's own daemon serves WINDOWS containers, and WSL1 cannot
+host a Linux one — see [sandbox-internals.md](sandbox-internals.md) for the
+measurement. A suite on an NT runner needs `--no-sandbox` until that changes.
 
 On Linux the script installs bubblewrap when `bwrap` is not already on PATH.
 Two things it does that the inline `sudo apt-get` it replaced did not:

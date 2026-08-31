@@ -93,11 +93,12 @@ go test -cover ./...
 - `runner/` - Native test runner (public, importable by external modules). RunFile/RunFiles/RunTest/Execute take a context: cancellation kills in-flight process groups (surfacing as signal deaths, never as timeouts); teardown runs under context.WithoutCancel so it always executes
   - `runner.go` - Orchestrates test execution; `Runner.Env` holds run-wide extra `KEY=VALUE` entries applied to every command (a test's own `inputs.env` is applied after, so a file wins; an empty value clears an inherited variable) and `RunFiles` copies it into each per-file Runner (RunFile, RunTest — both context-first; setup and instances use the live ctx, teardown a context.WithoutCancel derivative); `RunFile` parses and hands `runFile` its own NumCPU-sized pool, while `RunFiles` hands every file ONE shared pool — that is the only difference between a single-file and a multi-file run. runFile also writes shared fixtures, runs setup (stops at first failure; then every test is reported failed with reason "file setup failed"), and always runs all teardown commands (`runHookCommand` executes one `schema.HookCommand` via the same bash path and env construction as test commands — including `GOCOVERDIR` under `--coverdir`, plus the entry's own `env` (sorted, `{shared.X}`-expanded) and `stdin_file` content, bounded by `HookCommand.EffectiveTimeout()` — with `{shared.X}`-only expansion of `cmd`/`env`)
   - `files.go` - Multi-file orchestration (`RunFiles`; each per-file Runner inherits the shared `Sandbox` config, whose memoized detection means one probe for the whole run): parses ALL files up front (fail fast; nothing runs on a parse error), then runs files concurrently under ONE global pool of N slots bounding every spawned command (test instances AND hook commands). Also home to `slots`, the pool type. Per-file barriers are the same ones `runFile` enforces (setup before any instance, hooks sequential, teardown after the last instance, setup failure fails every instance without running them); output is buffered per file and flushed in canonical order, so the bytes depend only on outcomes. There is NO second per-file implementation to keep in sync — `RunFile` and `RunFiles` both drive `runFile`, which differs only in which pool it is handed
-  - `sandbox.go` / `sandbox_seatbelt.go` - Sandboxing: `SandboxMode`/`SandboxConfig` (a memoized `Backend()` probes the host at most once, and every probe EXERCISES its backend rather than looking for a binary), `newSandboxPlan` (the CLI choice is the outer bound; a file's spec can only narrow it), and the argv builders for bwrap, docker and seatbelt. bwrap and docker expose the SAME host paths (cwd read-only + declared writable), pinned by `TestBwrapAndDockerExposeTheSameHostPaths`; seatbelt does not restrict reads (known gap). The ONLY writable paths are the file's temp dir and `--coverdir` -- there is deliberately no `sandbox.writable` key and no `--writable` flag, so a command that needs the host needs a `--no-sandbox` run. Auto order is bwrap -> seatbelt -> docker. Depth -- the argv order that is load-bearing, why each bind exists, the seatbelt profile: `docs/sandbox-internals.md`
+  - `sandbox.go` / `sandbox_seatbelt.go` - Sandboxing: `SandboxMode`/`SandboxConfig` (a memoized `Backend()` probes the host at most once, and every probe EXERCISES its backend rather than looking for a binary), `newSandboxPlan` (the CLI choice is the outer bound; a file's spec can only narrow it), and the argv builders for bwrap, docker and seatbelt. bwrap and docker expose the SAME host paths (cwd read-only + declared writable), pinned by `TestBwrapAndDockerExposeTheSameHostPaths`; seatbelt does not restrict reads (known gap). The ONLY writable paths are the file's temp dir and `--coverdir` -- there is deliberately no `sandbox.writable` key and no `--writable` flag, so a command that needs the host needs a `--no-sandbox` run. Auto order is bwrap -> seatbelt -> docker. The docker probe reads the daemon's `Server.Os`, since a windows daemon answers `docker version` and then fails every run on a linux image. When auto finds nothing on an NT host the error carries `ErrNoBackendOnHost`, the marker separating "no install cures this" from a missing bwrap; it classifies the error only, and a file still cannot turn its own sandbox off. Depth -- the argv order that is load-bearing, why each bind exists, the seatbelt profile: `docs/sandbox-internals.md`
   - `exec.go` - Command execution via bash, driven by an `execRequest` (cmd, stdin, env + the dats-added `EnvExtra`, timeout, low-priority, sandbox plan). Execute takes the caller's context as the base (canceling it group-kills the command and reports a signal death; TimedOut keys on the derived per-command context, so parent cancellation — context.Canceled — never counts as a timeout); per-test timeouts layer WithTimeout on top and kill the whole process group, pipes are force-closed ~1s after exit (WaitDelay) so orphans can't block, signal deaths are surfaced (NOTE: bwrap reports its child's signal death as exit 128+N, so a sandboxed signal death shows as an exit code, not a signal; timeouts still report as timeouts). A sandboxed request also gets the backend's `Kill` hook fired (async) from Cancel. A multi-file run (`RunFiles`) additionally renices each spawned command's process group to nice 19 right after start (`setLowPriority`; best-effort, platform-split: unix real / windows no-op); a direct `RunFile` call makes zero priority syscalls
   - `fixtures.go` - Creates input files, validates fixture-name locality, creates parent dirs for nested declared outputs, expands `{inputs.X}`/`{outputs.X}`/`{shared.X}` placeholders; SetupSharedFixtures writes file-level shared files ({shared.X}-only expansion via ExpandSharedPlaceholders). `SetupFixtures`/`SetupSharedFixtures` both take a `sourceDir` (the `.dats` file's own directory, from `Runner.sourceDir`/`sourceDirOf` in runner.go -- resolved once per file, alongside `plan`) and, after writing `files`, copy in every `copy` entry via `copyHostFile` (`resolveSource` joins a relative source against `sourceDir`; preserves the source's permission bits, e.g. a script's executable bit) into the SAME input/shared directory and `{inputs.X}`/`{shared.X}` namespace `files` uses -- a destination collision between the two maps is re-checked here too, for a library caller bypassing ParseFile
   - `snapshot.go` - Snapshot (golden-file) assertions: SnapshotDir (`<file>.snapshots` next to the .dats), GoldenFileName (`NNN-<slug>.<stream>.golden`, NNN = canonical 1-based instance number, slug from the instance display name), NormalizeSnapshotText ({testdir}/{shareddir}/{tmproot} tokens, longest-path-first), applySnapshot (called by RunFile AND runFileParallel after the instance name is set; compares — or under `Runner.Update` rewrites — goldens, only for commands that ran to completion, never updating from an instance with other failures), and pruneStaleGoldens (update mode after a clean setup: removes unexpected `*.golden` files, removes an emptied dir, touches nothing else)
   - `ssh.go` / `ssh_transport.go` - Remote execution: `sshQuote`/`sshRemoteScript` (the SINGLE producer of the string an ssh login shell re-parses -- ssh passes no argv to the far side, so quoting is the whole interface), `ValidateSSHTarget` (a security control, not tidiness), and `SSHConfig` (one ControlMaster per target per run, started as a child we own; the probe EXERCISES the target -- a quoting round-trip plus `bash`/`tar` -- because reachability proves neither). Fixtures travel as a tar stream (mode bits preserved), outputs are pulled back before any assertion, and `KillRemote` kills the recorded remote process group since ssh forwards no signal. An ssh target REPLACES the sandbox: `describe` announces it per file, and a typed `--sandbox` alongside it is an error. Depth: `docs/cli.md#remote-execution---ssh`
+  - `hostpath.go` / `hostos_default.go` / `hostos_cosmo.go` - the spelling a command sees. Commands run through bash, which reads a backslash as an escape and drops it, so on an NT host every substituted path is converted to forward slashes (`commandPath` and `joinFixturePath` are the two chokepoints). The host is DETECTED, not compiled in: `filepath.ToSlash` answers the separator the binary was built for, and go-toolchain links dats into a fat APE that reports `runtime.GOOS == "cosmo"` on every host, so the cosmo build asks `runtime.CosmoHostOS()` instead. The `windows` CI job is the gate
   - `assert.go` - Assertion functions (AssertContains, AssertLineRegex, AssertExitCode, etc.)
   - `output.go` - Result types + TAP-like formatting, including `PrintSandbox` (the `# sandbox: <backend>` line before each file's header; silent when the file ran on the host, so unsandboxed output is byte-identical to before). Result types (TestResult with UpdatedGoldens, FileResult with SetupFailure/TeardownFailures/PrunedGoldens + Ok(), CommandFailure) and TAP-like formatting (PrintHookFailure diagnostics, `# updated golden:`/`# pruned stale golden:` lines, `teardown failed` summary annotation)
 - `report/` - Machine-readable report rendering (public, importable by external modules)
@@ -139,96 +140,22 @@ Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`,
 
 ## DATS File Format
 
-```yaml
-sandbox:                    # Optional: narrow this file's sandbox (never turn it off)
-	network: false            # (or image: alpine:3.20)
-shared:                     # Optional file-level fixtures (once per file)
-	files:
-		config.json: content    # written into shared/, addressed as {shared.config.json}
-	copy:
-		real.bin: fixtures/real.bin   # copied into shared/, writable (path relative to this .dats file)
-setup: single command       # Optional; or a list of command strings
-teardown:                   # Optional; ALWAYS runs (even after setup failure)
-	- first cleanup command
-	- second cleanup command
-tests:
-	- desc: optional description
-	  cmd: command to run       # Required, supports {inputs.X} and {outputs.X}
-	  exit: 0                   # Optional, default 0 (or EXIT_SUCCESS/EXIT_FAILURE)
-	  timeout: 2s               # Optional, int seconds or Go duration string; 0/omitted = no timeout
-	  matrix:                   # Optional; expands the test into one instance per combination
-		greeting: [hello, howdy]  # values referenced as {matrix.greeting}
-	  inputs:
-		stdin: "input text"     # Optional, piped to cmd
-		files:                  # Optional, creates fixture files
-			file.txt: content
-		copy:                   # Optional, copies a host file in, writable
-			real.bin: fixtures/real.bin   # (path is relative to this .dats file)
-		env:                    # Optional, env vars added to the inherited environment
-			MY_VAR: value         # (values support {inputs.X}/{outputs.X} placeholders)
-	  outputs:                  # Optional
-		stdout:                 # Pattern list (substring match)...
-			- "pattern"
-		# ...or a line-number map instead (0-indexed regex), not both:
-		# stdout:
-		#   0: "^first line$"
-		#   2: "^third line$"
-		!stdout:              # Patterns that must NOT appear (also accepts the line-number map form)
-			- "error"
-		stderr:
-			- "warning"
-		files:                  # Output file validation
-			result.txt:
-				exists: true
-				match:
-					- "expected content"
-				notMatch:
-					- "error"
-		!files:               # Negated output file validation (each check inverted)
-			unexpected.txt:
-				exists: true        # must NOT exist
-		snapshot: true          # Golden-file assertion: stdout must byte-match
-			# <file>.snapshots/NNN-<slug>.stdout.golden
-			# (or {stdout: bool, stderr: bool}; --update rewrites)
-```
+`docs/file-format.md` is the reference — every key, its accepted forms, its default, and the parse error it raises — ending in a complete field
+map under "Complete Field Reference". `schema.json` is the machine-readable copy, and `docs/examples.md` holds worked files. The properties an
+agent needs before opening any of them:
 
-### File-Level Properties
-
-| Property | Required | Description |
-|----------|----------|-------------|
-| `shared.files` | No | Map of filename → content, written once per file into `shared/` before setup; contents expand `{shared.X}` only; names must be local relative paths |
-| `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`), run once in order before the file's tests; `cmd`/`env` expand `{shared.X}` only, bounded by `timeout` (default 30s, must be > 0). A failure skips remaining setup commands and reports EVERY test as failed (reason `file setup failed`, never "skipped"); teardown still runs |
-| `sandbox` | No | A mapping (`network`, `image`) that narrows the sandbox for this file's commands (tests AND setup/teardown). File-level only -- one file's commands share one temp dir and one hook lifecycle. The CLI is the outer bound: under `--no-sandbox` the block is inert, and nothing in a file can turn its own sandbox off (`sandbox: false` is a parse error pointing at `--no-sandbox`) |
-| `ssh` | No | `[user@]host` this file's commands run on (tests AND setup/teardown). A REQUEST, not a decision: the (file, host) pair is approved once and stored in `~/.config/dats/ssh-trust.json` (`dats trust`), and a typed `--ssh` outranks it (announced, never swapped silently). `ssh: false` is a parse error -- local is the MORE privileged side, so a file pulling a command here is the same harm `sandbox: false` prevents. A remote run has NO sandbox and the working directory does not travel |
-| `teardown` | No | Same hook command or list form as `setup`, always run once in order after the file's tests (after failures, even after setup failure; one failure does not stop the rest). Any failure marks the file failed (exit 1) even when all tests passed |
-
-### Test Properties
-
-| Property | Required | Description |
-|----------|----------|-------------|
-| `cmd` | Yes | Command to run. Use `{inputs.X}`, `{outputs.X}`, and `{shared.X}` for file paths |
-| `desc` | No | Description for the test (used in output) |
-| `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats rejected at parse time |
-| `timeout` | No | Per-test timeout: int seconds (bare or quoted, e.g. `"5"`) or Go duration string (e.g. `500ms`, `2s`). 0/omitted = no timeout; floats rejected (write `1.5s`, not `1.5`) |
-| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). `{matrix.X}` substitutes in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs, reported as `desc [k=v, ...]` |
-| `ssh` | No | `[user@]host` this ONE test runs on instead of the file's target. Legal only in a file that declares its own `ssh:` -- a per-test target may only move a command between remote hosts, never back onto the reader's machine. Approved separately (a file naming two hosts needs two approvals), gets its own temp dir plus a push-only mirror of `shared/`, and takes `{matrix.X}` so one test fans across a fleet. `setup`/`teardown`/`shared/` still only run on the FILE's target, so a setup that prepares a service prepares only that host |
-| `inputs.stdin` | No | Content piped to command's stdin |
-| `inputs.files` | No | Map of filename → content (creates fixture files) |
-| `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
-| `outputs.stdout` | No | Patterns to match in stdout |
-| `outputs.stderr` | No | Patterns to match in stderr |
-| `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
-| `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
-| `outputs.files` | No | Map of filename → FileCheck for output file validation; empty check (`{}`/null) = must exist |
-| `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist; empty check = must NOT exist) |
-| `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or map of stream booleans (`stdout`/`stderr`, at least one true). Captured output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp-path normalization; `--update` rewrites goldens (skipping instances with other failures) and prunes stale ones |
-| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive, numbers by value) |
+- Indentation is TABS (`docs/file-format.md#yaml-dialect`); a sequence item's sibling keys align with two spaces AFTER the tab.
+- A file may only NARROW its sandbox. `sandbox: false` and `ssh: false` are parse errors naming `--no-sandbox`: turning isolation off, or pulling
+  a remote command back onto the reader's machine, is the run-starter's decision.
+- A setup failure reports every test in the file as FAILED, never skipped; teardown runs regardless, and its own failure fails the file.
+- Every expanded instance always runs. There is no filtering, selection, or skip mechanism at any layer, by design.
 
 ## CI/CD
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push with four jobs.
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push, with a job per thing it proves.
 - `test` - installs bubblewrap, clears ubuntu-24.04's `kernel.apparmor_restrict_unprivileged_userns` (which otherwise denies bwrap the user namespace it needs, silently turning every bwrap test into a skip) and runs the bwrap probe as its own step so an unusable backend fails with its own error; then builds the Go binary (multi-platform), runs tests via `wow-look-at-my/go-toolchain`, and creates releases on master pushes. The sandbox integration tests skip themselves when no backend is usable, so that probe step -- not any env knob -- is what stops a skip from passing for isolation coverage in CI; the docker tests use the runner's own daemon and skip if the image cannot be fetched (a registry outage says nothing about the code). `artifact-metadata: write` is required by the publish step (job-level permissions REPLACE workflow-level ones). The go-toolchain action carries the org guards this repo relies on, `no-tests-in-yaml` among them, so a test written into a `run:` script fails here without a separate job
 - `schema` - validates `testdata/schema/*.json` fixtures against `schema.json` using the `wow-look-at-my/json-validator` action, guarding against schema drift
+- `every-host` - one matrix job over ubuntu/macos/windows, not a bespoke NT job: each leg runs THIS commit's APE (the `test` job's `go-build` hand-off) over `examples/example.dats` with `--no-sandbox`, under the identical script. The NT leg is what catches a missed call site in `runner/hostpath.go`'s backslash conversion, which unit tests can only reach by forcing `hostGOOS`; the posix legs are what make a red NT leg a DIFFERENCE between hosts rather than an unverified claim about one. `fail-fast: false`, because which hosts disagree is the finding
 - `self-hosted-sandbox` - the CONSUMER path: this repo's own `action.yml` on the org's dind pool, running the PUBLISHED binary a caller would get. Privileged, so it says nothing about the unprivileged case
 - `sandbox-unprivileged-masked` - the sandbox itself, in a container this job BUILDS: unprivileged, `/proc` masked by docker, running the binary THIS commit built (the `test` job's `go-build` hand-off). It deliberately does not borrow the org's slim fleet -- a merge gate that depends on another repo's deployed state can be frozen by that repo, and was. dats proves the mechanism; webhooks' gha-runner smoke test proves the image
 
