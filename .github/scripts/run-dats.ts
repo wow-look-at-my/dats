@@ -36,5 +36,59 @@ for (const entry of raw) {
 	tests.push(...files);
 }
 
-const res = await $`${bin} test ${tests}`.nothrow();
-if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+// The download is a fat APE, and each host starts one differently. NT finds an
+// executable by its extension, so the file needs an .exe name. Darwin refuses
+// the file on execve, so a shell must read the header and exec the payload.
+// Linux starts the file as it stands. Every form passes argv, never a string a
+// shell splits again.
+const argv = ['test', ...tests];
+const windows = process.platform === 'win32';
+
+// NT can host no sandbox backend, so install-wsl-backend.sh puts bubblewrap in
+// WSL and names the distro here. The download is a fat APE, so the same file
+// runs its Linux payload in there and dats sees an ordinary Linux host with a
+// backend. wslpath translates the two paths WSL cannot guess.
+const distro = windows ? (process.env.DATS_WSL_DISTRO ?? '') : '';
+if (distro) {
+	// Every wsl.exe call reads empty stdin. An open one attaches an interactive
+	// session and waits, and the step then prints nothing until the job's own
+	// timeout kills it. The run is bounded inside Linux, where a timeout can
+	// still name what it stopped.
+	const seconds = Number(process.env.DATS_WSL_TIMEOUT_SECONDS ?? '900');
+	// Mapped here rather than by wslpath inside the distribution. wsl.exe joins
+	// its arguments into one command line that the Linux side parses again, and
+	// that parse eats the backslashes, so `D:\a\dats` arrives as `D:adats`.
+	const toWsl = (p: string) => {
+		const drive = /^([A-Za-z]):[\\/](.*)$/.exec(p);
+		if (!drive) throw new Error(`cannot map "${p}" into WSL: expected a drive-letter path`);
+		return `/mnt/${drive[1].toLowerCase()}/${drive[2].replace(/\\/g, '/')}`;
+	};
+	const cwd = toWsl(process.cwd());
+	const linuxBin = toWsl(bin);
+	// PATH is set rather than inherited. wsl.exe resolves the command it is given
+	// through its own launcher, but the process it starts inherits a PATH without
+	// /usr/bin, so dats looked for bwrap and found nothing while bwrap sat
+	// installed. Dropping the Windows entries also stops the probe reaching
+	// docker.exe on the host, whose daemon serves windows containers.
+	// wsl-run.sh does the Linux-side work: it clears the PE binfmt handler, sets
+	// PATH, and lets a shell start the APE. It is a checked-in file rather than a
+	// script passed inline, because wsl.exe joins its argv into one command line
+	// the Linux side parses again, which strips the quoting an inline script
+	// needs. Only plain arguments cross this boundary.
+	const actionPath = process.env.DATS_ACTION_PATH;
+	if (!actionPath) throw new Error('DATS_ACTION_PATH is not set');
+	const runner = toWsl(path.join(actionPath, '.github', 'scripts', 'wsl-run.sh'));
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh ${runner} ${String(seconds)} ${linuxBin} ${argv}`
+		.input('')
+		.nothrow();
+	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);
+	else if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+} else {
+	// NT finds an executable by its extension. Darwin refuses the APE on execve,
+	// so a shell must read the header and exec the payload. Linux starts the file
+	// as it stands. Every form passes argv, never a string a shell splits again.
+	const exe = windows && !bin.endsWith('.exe') ? `${bin}.exe` : bin;
+	if (exe !== bin) fs.copyFileSync(bin, exe);
+	const res = await (windows ? $`${exe} ${argv}` : $`bash -c ${'"$0" "$@"'} ${exe} ${argv}`).nothrow();
+	if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+}

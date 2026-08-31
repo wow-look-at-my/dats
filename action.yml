@@ -46,10 +46,7 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: bash "${ACTION_PATH//\\//}/.github/scripts/allow-unprivileged-userns.sh"
 
-    # The action's only surface is the typed inputs above: tests (files and
-    # directories, expanded to their top-level *.dats files), working-directory,
-    # and version. There is deliberately no way to pass arbitrary flags or to
-    # disable the sandbox -- the argv is built and sanitized in run-dats.ts.
+    # run-dats.ts builds and sanitizes the argv, and starts the APE the way this host needs -- docs/action.md.
     - name: Run dats
       uses: wow-look-at-my/actions@typescript#latest
       with:
@@ -59,3 +56,4 @@ runs:
         # The downloaded binary's own path, passed via env: run-dats.ts consumes it in
         # Node, so an NT runner's backslash path arrives intact -- docs/action.md.
         DATS_BIN: ${{ steps.download.outputs.path }}
+        DATS_ACTION_PATH: ${{ github.action_path }}
