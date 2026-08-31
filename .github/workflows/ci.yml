@@ -113,8 +113,7 @@ jobs:
           ./build/dats.exe --version
           ./build/dats.exe --no-sandbox test examples/example.dats
 
-  # The two native backends, on THIS commit's binary. action-every-host runs the PUBLISHED
-  # one, so a runner-side sandbox fix cannot be proven there in the PR that makes it -- CLAUDE.md.
+  # The two native backends, on THIS commit's binary -- action-every-host runs the published one, see CLAUDE.md.
   native-backends:
     strategy:
       fail-fast: false
