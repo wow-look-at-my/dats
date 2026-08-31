@@ -70,17 +70,15 @@ if (distro) {
 	// /usr/bin, so dats looked for bwrap and found nothing while bwrap sat
 	// installed. Dropping the Windows entries also stops the probe reaching
 	// docker.exe on the host, whose daemon serves windows containers.
-	const linuxPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
-	// WSL registers a binfmt handler for the MZ header, and the download is a fat
-	// APE, so the kernel hands the file to Windows and dats probes the host
-	// instead of the distribution. Only that one handler is turned off: turning
-	// interop off wholesale costs WSL the channel it runs commands over.
-	const unregisterPE =
-		'for f in /proc/sys/fs/binfmt_misc/WSLInterop*; do [ -e "$f" ] && echo 0 >"$f"; done; exec "$@"';
-	// bash starts the APE for the same reason it does on Darwin: with the PE
-	// handler gone, execve reads the header and refuses it, which timeout
-	// reports as 126. A shell takes the ENOEXEC fallback instead.
-	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh -c ${unregisterPE} sh env ${`PATH=${linuxPath}`} timeout ${String(seconds)} bash -c ${'"$0" "$@"'} ${linuxBin} ${argv}`
+	// wsl-run.sh does the Linux-side work: it clears the PE binfmt handler, sets
+	// PATH, and lets a shell start the APE. It is a checked-in file rather than a
+	// script passed inline, because wsl.exe joins its argv into one command line
+	// the Linux side parses again, which strips the quoting an inline script
+	// needs. Only plain arguments cross this boundary.
+	const actionPath = process.env.DATS_ACTION_PATH;
+	if (!actionPath) throw new Error('DATS_ACTION_PATH is not set');
+	const runner = toWsl(path.join(actionPath, '.github', 'scripts', 'wsl-run.sh'));
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${cwd} -- sh ${runner} ${String(seconds)} ${linuxBin} ${argv}`
 		.input('')
 		.nothrow();
 	if (res.exitCode === 124) core.setFailed(`dats did not finish within ${seconds}s inside ${distro}`);

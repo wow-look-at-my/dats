@@ -54,3 +54,4 @@ runs:
         inputs: ${{ toJSON(inputs) }}
       env:
         DATS_BIN: ${{ steps.download.outputs.path }}
+        DATS_ACTION_PATH: ${{ github.action_path }}
