@@ -3,6 +3,7 @@ package runner
 // Sandbox tests.
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,28 @@ func sandboxConfigWithProbe(mode SandboxMode, probe func(SandboxMode) (procMode,
 
 func probeAlways(err error) func(SandboxMode) (procMode, error) {
 	return func(SandboxMode) (procMode, error) { return procFresh, err }
+}
+
+// An NT host has no backend to install: the marker is what lets a library
+// caller say so and run on the host, while a missing bwrap on linux stays the
+// ordinary error a caller must not paper over.
+func TestSandboxBackendMarksAHostThatCanNeverSandbox(t *testing.T) {
+	t.Run("an NT host carries the marker", func(t *testing.T) {
+		forceHostGOOS(t, "windows")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("docker: the daemon serves windows containers")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.True(t, errors.Is(err, ErrNoBackendOnHost))
+		assert.Contains(t, err.Error(), "windows containers", "the probe's own reason must survive the wrap")
+	})
+
+	t.Run("a linux host missing bwrap does not", func(t *testing.T) {
+		forceHostGOOS(t, "linux")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("bwrap: not found in $PATH")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.False(t, errors.Is(err, ErrNoBackendOnHost), "installing bubblewrap fixes this, so it must stay fatal")
+	})
 }
 
 func TestParseSandboxMode(t *testing.T) {

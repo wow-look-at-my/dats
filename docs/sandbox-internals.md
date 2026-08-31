@@ -29,6 +29,33 @@ docker: `--rm -i --init --name <n>` + `--user` + rw bind of the work dir (target
 wins) + ro bind of the cwd + `-e` for the inherited run environment (`inheritedEnv`, minus
 `imageOwnedEnv`) then dats-added env, ending in `image bash -c cmd`.
 
+### An NT host has no working backend yet
+
+bwrap is Linux and seatbelt is macOS, so Windows falls to docker — and a Windows runner's own daemon
+serves WINDOWS containers (`docker info` reports `OSType: windows`). A Linux daemon under WSL1 is not
+the answer: it installs, starts, and answers `docker info`, but WSL1's emulated kernel cannot create
+a container at all (MEASURED on windows-latest: `docker run --rm debian:stable-slim true` fails in
+runc with `error during container init: fetch packet length from socket: recvfrom: invalid
+argument`). A daemon that does not share the host's filesystem would also need every bind source
+written in ITS spelling, since `-v D:\a\x:D:\a\x` gives a Linux daemon a source with no leading
+slash, which docker reads as a VOLUME NAME and silently mounts as an empty directory.
+
+So the docker PROBE asks the daemon which OS it serves (`docker version --format '{{.Server.APIVersion}}
+{{.Server.Os}}'`, `dockerServerUsable`). A windows daemon answers that command and then fails every run,
+so reporting it usable turned an unusable backend into a runc error per test rather than a line saying
+auto found no backend. A client too old to print the server OS decides nothing, and the run is the test.
+
+That failure is also MARKED. `runner.ErrNoBackendOnHost` wraps the auto error on an NT host, so a library
+caller can tell "this host can never sandbox" from "bubblewrap is not installed", which an install cures and
+which must stay fatal. The marker only classifies the error: it grants no suite anything, and a file still
+cannot turn its own sandbox off. What a caller does with it -- fail, or say so loudly and run on the host --
+is the run-starter's decision, the same decision `--no-sandbox` is.
+
+So on an NT host a suite needs `--no-sandbox` today. WSL2 runs a real kernel and is the candidate that
+could change that, but not on a GitHub-hosted Windows runner: those VMs are already nested, and GitHub
+states nested virtualization cannot be enabled on them, which is what WSL2 needs. Reaching it takes a
+host that owns its own hypervisor, and what it would then need is the bind-spelling map above.
+
 **The two backends expose the SAME host paths** (cwd ro + declared writable), pinned by
 `TestBwrapAndDockerExposeTheSameHostPaths`; seatbelt still does not restrict reads (known gap).
 The ONLY writable paths are the file's temp dir and `--coverdir` (`writablePaths`) -- there is
