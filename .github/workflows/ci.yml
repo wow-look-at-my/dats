@@ -85,8 +85,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./
         with:
-          # sandbox.dats rides along because the backends differ per host: what one mounts, another denies -- examples/sandbox.dats.
-          tests: examples/example.dats examples/sandbox.dats
+          tests: examples/example.dats
 
   # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:
@@ -113,6 +112,40 @@ jobs:
           chmod +x build/dats.exe
           ./build/dats.exe --version
           ./build/dats.exe --no-sandbox test examples/example.dats
+
+  # The two native backends, on THIS commit's binary. action-every-host runs the PUBLISHED
+  # one, so a runner-side sandbox fix cannot be proven there in the PR that makes it -- CLAUDE.md.
+  native-backends:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    needs: test
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@cache-download#latest
+        with:
+          name: go-build
+          path: build
+      # The same script the action installs a backend with, so a consumer's host and this one agree.
+      - name: Provision the sandbox backend
+        shell: bash
+        run: bash .github/scripts/install-sandbox-backend.sh
+      # Same pair of scripts, in the same order, as action.yml: a kernel that gates the user namespace denies bwrap one.
+      - name: Allow an unprivileged user namespace where the kernel gates one (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash .github/scripts/allow-unprivileged-userns.sh
+      # No --no-sandbox: what this job exists to run is the sandboxed path.
+      - name: The backends agree about what a command may write
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/dats build/dats.exe
+          chmod +x build/dats.exe
+          ./build/dats.exe -v test examples/sandbox.dats
 
   # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:

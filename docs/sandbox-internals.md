@@ -71,9 +71,11 @@ is outside that set -- left a command with nowhere to write at all. A seatbelt p
 creates `<work>/.dats-tmp` (`sandboxTmpDirName`) and runs the command under `env TMPDIR=... TMP=...
 TEMP=...`; it needs no profile rule of its own, because `work` already covers it. The symptom this
 removes is the worst kind: a suite that passes on linux and fails on darwin for a reason that is in
-neither the suite nor the command. `examples/sandbox.dats` asserts the property, and
-`action-every-host` runs that file on all three hosts, so the assertion is checked where the
-backends actually differ.
+neither the suite nor the command. `examples/sandbox.dats` asserts the property, and the
+`native-backends` job runs that file under bwrap and under seatbelt, so the assertion is checked
+where the backends actually differ. That job runs THIS commit's binary, not the published one:
+`action-every-host` downloads what buildhost already serves, so a runner-side sandbox change cannot
+be proven by it in the pull request that makes the change.
 
 Auto order is bwrap -> seatbelt -> docker: the two native backends are platform-exclusive, so this
 reads as "the native sandbox for this OS, else docker".
