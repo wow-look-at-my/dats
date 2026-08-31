@@ -9,6 +9,12 @@ DISTRO="${DATS_WSL_DISTRO:-Ubuntu}"
 # bytes. WSL_UTF8 makes it write UTF-8, so its own errors stay readable here.
 export WSL_UTF8=1
 
+# Git Bash rewrites an argument that looks like a posix path into a Windows one
+# before a non-MSYS program sees it, which turns the sandbox's own `/` into
+# C:/Program Files/Git/. Every path below belongs to Linux, so none convert.
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL='*'
+
 # Every wsl.exe call is bounded and reads no input. An unbounded one waits on a
 # prompt no runner can answer, and the job then dies on its own timeout with no
 # line naming the step that hung.
