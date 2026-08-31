@@ -219,6 +219,8 @@ type sandboxPlan struct {
 	work         string
 	coverDir     string
 	workdir      string
+	// tmp is the command's scratch directory, inside work (seatbelt only).
+	tmp string
 	// ssh runs this file's commands on another machine, with no sandbox there.
 	ssh *SSHConfig
 	// refusedSSH is the file's own target when a typed target outranked it.
@@ -288,6 +290,14 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	}
 	if plan.image == "" {
 		plan.image = DefaultSandboxImage
+	}
+	if backend == SandboxSeatbelt {
+		// bwrap mounts a private writable /tmp; seatbelt mounts nothing.
+		tmp := filepath.Join(workDir, sandboxTmpDirName)
+		if err := os.MkdirAll(tmp, 0o755); err != nil {
+			return nil, fmt.Errorf("sandbox: creating the scratch directory %q: %w", tmp, err)
+		}
+		plan.tmp = tmp
 	}
 	if r.CoverDir != "" {
 		abs, err := filepath.Abs(r.CoverDir)
