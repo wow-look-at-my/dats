@@ -36,5 +36,15 @@ for (const entry of raw) {
 	tests.push(...files);
 }
 
-const res = await $`${bin} test ${tests}`.nothrow();
+// The download is a fat APE, and each host starts one differently. NT finds an
+// executable by its extension, so the file needs an .exe name. Darwin refuses
+// the file on execve, so a shell must read the header and exec the payload.
+// Linux starts the file as it stands. Every form passes argv, never a string a
+// shell splits again.
+const argv = ['test', ...tests];
+const windows = process.platform === 'win32';
+const exe = windows && !bin.endsWith('.exe') ? `${bin}.exe` : bin;
+if (exe !== bin) fs.copyFileSync(bin, exe);
+
+const res = await (windows ? $`${exe} ${argv}` : $`bash -c ${'"$0" "$@"'} ${exe} ${argv}`).nothrow();
 if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
