@@ -14,9 +14,11 @@ case "${RUNNER_OS:-Linux}" in
 		exit 1
 		;;
 	Windows)
-		# dats has no native Windows backend; it falls back to docker.
-		echo "sandbox: no native Windows backend, dats will probe for docker"
-		exit 0
+		# NT has no backend of its own: bwrap is Linux, seatbelt is macOS, and the
+		# runner's docker daemon serves windows containers. WSL is the Linux this
+		# host does have, so the backend goes there and the APE runs its Linux
+		# payload inside it. run-dats.ts reads the distro name this writes.
+		exec bash "$(dirname "$0")/install-wsl-backend.sh"
 		;;
 esac
 

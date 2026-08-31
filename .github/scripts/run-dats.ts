@@ -43,8 +43,23 @@ for (const entry of raw) {
 // shell splits again.
 const argv = ['test', ...tests];
 const windows = process.platform === 'win32';
-const exe = windows && !bin.endsWith('.exe') ? `${bin}.exe` : bin;
-if (exe !== bin) fs.copyFileSync(bin, exe);
 
-const res = await (windows ? $`${exe} ${argv}` : $`bash -c ${'"$0" "$@"'} ${exe} ${argv}`).nothrow();
-if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+// NT can host no sandbox backend, so install-wsl-backend.sh puts bubblewrap in
+// WSL and names the distro here. The download is a fat APE, so the same file
+// runs its Linux payload in there and dats sees an ordinary Linux host with a
+// backend. wslpath translates the two paths WSL cannot guess.
+const distro = windows ? (process.env.DATS_WSL_DISTRO ?? '') : '';
+if (distro) {
+	const wslPath = async (p: string) =>
+		String((await $`wsl.exe -d ${distro} -u root -- wslpath -a ${p}`).stdout).trim();
+	const res = await $`wsl.exe -d ${distro} -u root --cd ${await wslPath(process.cwd())} -- ${await wslPath(bin)} ${argv}`.nothrow();
+	if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+} else {
+	// NT finds an executable by its extension. Darwin refuses the APE on execve,
+	// so a shell must read the header and exec the payload. Linux starts the file
+	// as it stands. Every form passes argv, never a string a shell splits again.
+	const exe = windows && !bin.endsWith('.exe') ? `${bin}.exe` : bin;
+	if (exe !== bin) fs.copyFileSync(bin, exe);
+	const res = await (windows ? $`${exe} ${argv}` : $`bash -c ${'"$0" "$@"'} ${exe} ${argv}`).nothrow();
+	if (res.exitCode !== 0) core.setFailed(`dats exited ${res.exitCode}`);
+}

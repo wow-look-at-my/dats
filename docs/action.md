@@ -114,6 +114,22 @@ command line, so nothing a caller types can become a flag, a subcommand, or a
 - runs `dats test <files...>` from `working-directory` with the downloaded
   binary, passing each file as its own argument.
 
+## NT gets its backend from WSL
+
+Windows hosts no sandbox backend of its own. bwrap is Linux, seatbelt is macOS,
+and the runner's docker daemon serves windows containers, which cannot run a
+linux sandbox image. dats therefore refuses to run there, and that refusal is
+correct: a file cannot turn its own sandbox off, and neither can this action.
+
+WSL is the Linux an NT runner does have. `install-wsl-backend.sh` registers a
+distribution, installs bubblewrap into it, and exercises bwrap before the run.
+The download is a fat APE, so the same file runs its Linux payload inside that
+distribution: dats then sees an ordinary Linux host with a working backend, and
+nothing has to relax. `run-dats.ts` translates the working directory and the
+binary path with `wslpath` and starts the run with `wsl --cd`.
+
+Set `DATS_WSL_DISTRO` to use a distribution other than `Ubuntu`.
+
 ## Starting the binary differs per host
 
 The download is a fat APE, so a raw `execve` of it succeeds only on Linux.
