@@ -33,16 +33,24 @@ runs:
     # A caller must never need --no-sandbox to work around us -- docs/action.md.
     - name: Install the sandbox backend
       shell: bash
-      run: "${{ github.action_path }}/.github/scripts/install-sandbox-backend.sh"
+      env:
+        # An NT runner hands out a backslash path, and bash eats each backslash as an escape -- docs/action.md.
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH//\\//}/.github/scripts/install-sandbox-backend.sh"
 
     # Clears what a step can clear, and deliberately does NOT judge the result -- docs/action.md.
     - name: Allow an unprivileged user namespace where the kernel gates one (Linux)
       if: runner.os == 'Linux'
       shell: bash
-      run: "${{ github.action_path }}/.github/scripts/allow-unprivileged-userns.sh"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH//\\//}/.github/scripts/allow-unprivileged-userns.sh"
 
     - name: Run dats
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        # Same backslash rule as above: this one is the downloaded binary's own path.
+        DATS_BIN: ${{ steps.download.outputs.path }}
       run: |
-        "${{ steps.download.outputs.path }}" ${{ inputs.args }}
+        "${DATS_BIN//\\//}" ${{ inputs.args }}

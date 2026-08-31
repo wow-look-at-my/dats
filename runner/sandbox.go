@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -95,6 +96,9 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 				failures = append(failures, err.Error())
 			}
 			c.err = fmt.Errorf("no usable sandbox backend: %s\n%s", strings.Join(failures, "; "), sandboxOptOutHint)
+			if hostGOOS == "windows" {
+				c.err = fmt.Errorf("%w: %w", ErrNoBackendOnHost, c.err)
+			}
 		}
 	})
 	return c.backend, c.err
@@ -110,6 +114,9 @@ func (c *SandboxConfig) TakeProcNotice() string {
 }
 
 const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox"
+
+// ErrNoBackendOnHost marks the auto failure no install cures.
+var ErrNoBackendOnHost = errors.New("this host has no sandbox backend dats can build on")
 
 // probeBackend reports whether backend is usable on this host.
 func probeBackend(backend SandboxMode) (procMode, error) {
@@ -161,9 +168,33 @@ func probeDocker() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}}").CombinedOutput()
+	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}} {{.Server.Os}}").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker: %s", probeFailure(out, err))
+	}
+	return dockerServerUsable(firstLine(out))
+}
+
+// firstLine is probeFailure's success-path twin: no error to fall back on.
+func firstLine(out []byte) string {
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// dockerServerUsable reads the probe's "<api version> <server os>" line. A
+// windows daemon answers `docker version` and then fails every run, because a
+// sandbox image is a linux image. Saying so here lets auto keep looking.
+func dockerServerUsable(versionLine string) error {
+	fields := strings.Fields(versionLine)
+	if len(fields) < 2 {
+		return nil // an older client prints no server OS; the run is the test
+	}
+	if serverOS := fields[len(fields)-1]; serverOS == "windows" {
+		return fmt.Errorf("docker: the daemon serves windows containers, and a sandbox image is a linux image")
 	}
 	return nil
 }
