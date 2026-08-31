@@ -73,6 +73,20 @@ jobs:
         with:
           tests: examples/sandbox.dats
 
+  # The ACTION on every host a consumer runs it on. Starting the published APE differs per host, and only this job reads that -- CLAUDE.md.
+  action-every-host:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          tests: examples/example.dats
+
   # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:
     strategy:

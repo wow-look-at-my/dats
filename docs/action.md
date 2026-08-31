@@ -114,6 +114,39 @@ command line, so nothing a caller types can become a flag, a subcommand, or a
 - runs `dats test <files...>` from `working-directory` with the downloaded
   binary, passing each file as its own argument.
 
+## NT gets its backend from WSL
+
+Windows hosts no sandbox backend of its own. bwrap is Linux, seatbelt is macOS,
+and the runner's docker daemon serves windows containers, which cannot run a
+linux sandbox image. dats therefore refuses to run there, and that refusal is
+correct: a file cannot turn its own sandbox off, and neither can this action.
+
+WSL is the Linux an NT runner does have. `install-wsl-backend.sh` registers a
+distribution, installs bubblewrap into it, and exercises bwrap before the run.
+The download is a fat APE, so the same file runs its Linux payload inside that
+distribution: dats then sees an ordinary Linux host with a working backend, and
+nothing has to relax. `run-dats.ts` translates the working directory and the
+binary path with `wslpath` and starts the run with `wsl --cd`.
+
+The distribution arrives as a pinned rootfs that the script downloads and
+`wsl --import`s. `wsl --install` goes through the Microsoft Store, which hangs
+unpredictably on a hosted runner, and a gate that flakes is one a reader learns
+to ignore. Every `wsl.exe` call is bounded and reads empty stdin, so a stall
+names the step it stopped instead of running the job out of time in silence.
+
+`DATS_WSL_DISTRO` names the distribution, `DATS_WSL_ROOTFS_URL` the rootfs it is
+imported from, and `DATS_WSL_TIMEOUT_SECONDS` how long the suite itself may run.
+
+## Starting the binary differs per host
+
+The download is a fat APE, so a raw `execve` of it succeeds only on Linux.
+Darwin refuses the file with `ENOEXEC`: a shell must read the header and exec
+the payload, which `bash -c '"$0" "$@"'` does while still passing argv. NT finds
+an executable by its extension, so the action copies the download to an `.exe`
+name and starts that. `action-every-host` in this repo's CI is what proves each
+form, because the neighbouring `every-host` job starts the binary from bash and
+therefore hides both failures.
+
 Because the sandbox is the point of the action, there is no way to turn it off
 through the action. A caller that genuinely needs host execution runs the
 downloaded binary itself (the `path` output) rather than through this action.
