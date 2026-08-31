@@ -22,8 +22,9 @@ it as `${VAR//\\//}`, which converts the separators before bash sees the word.
 The two script steps and the binary's own path all take that route.
 
 The runner half of the same problem is `runner/hostpath.go`: dats converts every
-path it substitutes into a command. The `windows` CI job runs this commit's own
-binary on `windows-latest` so that conversion has a gate.
+path it substitutes into a command. The `every-host` CI job runs this commit's
+own binary under one script on ubuntu, macos and windows, so that conversion has
+a gate on the host it is for and a comparison against the hosts it is not.
 
 ## Installing the sandbox backend
 
