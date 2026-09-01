@@ -56,7 +56,7 @@ func TestRunTestsFailure(t *testing.T) {
 }
 
 func TestRunTestsTeardownFailure(t *testing.T) {
-	// A teardown failure fails the run (exit 1) even when every test passed.
+	// A teardown failure fails the run even when every test passed.
 	datsFile := writeDats(t, "teardown.dats", `teardown: exit 1
 tests:
 	- cmd: echo hi

@@ -1,0 +1,6 @@
+# A Windows checkout gives a shell script CRLF endings, and a POSIX shell reads
+# the carriage return as part of the last word on the line: `set -eu` becomes
+# `set: Illegal option -`. The NT job runs these scripts inside WSL, so they
+# must arrive with LF whatever the host does.
+*.sh text eol=lf
+*.dats text eol=lf

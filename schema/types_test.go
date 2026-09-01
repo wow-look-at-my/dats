@@ -372,7 +372,7 @@ func TestSnapshotCheck_UnmarshalYAML_Errors(t *testing.T) {
 }
 
 func TestOutputBlock_SnapshotAbsentAndNull(t *testing.T) {
-	// An omitted snapshot key stays the zero value...
+	// An omitted snapshot key stays the unset value...
 	var absent OutputBlock
 	require.Nil(t, yaml.Unmarshal([]byte("stdout:\n\t- hi\n"), &absent))
 	assert.Equal(t, SnapshotCheck{}, absent.Snapshot)

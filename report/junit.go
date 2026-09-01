@@ -124,7 +124,7 @@ func seconds(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds(), 'f', 3, 64)
 }
 
-// firstString returns the first element, or "" for an empty slice.
+// firstString returns the leading element, or "" for an empty slice.
 func firstString(s []string) string {
 	if len(s) == 0 {
 		return ""
@@ -132,7 +132,7 @@ func firstString(s []string) string {
 	return s[0]
 }
 
-// validXMLRune reports whether r is a legal XML 1.0 character.
+// validXMLRune reports whether r is a character the XML specification allows.
 func validXMLRune(r rune) bool {
 	return r == 0x9 || r == 0xA || r == 0xD ||
 		(r >= 0x20 && r <= 0xD7FF) ||

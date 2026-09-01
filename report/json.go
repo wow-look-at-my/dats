@@ -43,7 +43,7 @@ type jsonCommandFailure struct {
 	Stderr  string `json:"stderr"`
 }
 
-// jsonTest is one test instance.
+// jsonTest is a single test instance.
 type jsonTest struct {
 	Name            string   `json:"name"`
 	Index           int      `json:"index"`

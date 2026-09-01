@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// niceProbe prints the calling process's nice value, e.g. "19".
+// niceProbe prints the calling process's nice value.
 const niceProbe = `nice`
 
 // ownNice returns this test process's nice value.

@@ -146,7 +146,7 @@ func jsonNumbersEqual(a, b json.Number) bool {
 	if a.String() == b.String() {
 		return true
 	}
-	// big.Rat parses decimal and exponent forms (e.g. "2.0", "1e3") exactly.
+	// big.Rat parses decimal and exponent forms exactly.
 	ar, aok := new(big.Rat).SetString(a.String())
 	br, bok := new(big.Rat).SetString(b.String())
 	if aok && bok {

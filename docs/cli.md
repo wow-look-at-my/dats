@@ -6,6 +6,7 @@
 dats [test] [files-or-dirs...] [flags]
 dats watch [files-or-dirs...] [flags]
 dats syntax [files-or-dirs...] [flags]
+dats docs [topic...]
 dats version
 ```
 
@@ -20,6 +21,8 @@ the current directory tree.
 | `test` | Run tests from the given `.dats` files or directories. This is the default action, so `dats file.dats` and `dats test file.dats` are equivalent. |
 | `watch` | Run tests like `test`, then keep watching the resolved files and re-run the complete argument scope on every change (see [Watch Mode](#watch-mode-dats-watch)). |
 | `syntax` | Parse and validate `.dats` files without executing any tests. Accepts the same file/directory arguments. |
+| `docs` | Print this documentation, which ships inside the binary (see [Embedded Documentation](#embedded-documentation-dats-docs)). |
+| `help` | Help for a command (`dats help watch`), or a documentation topic (`dats help format`). |
 | `version` | Print a one-line `dats <version>` (also available as the `--version` flag). |
 
 ## File Arguments and Discovery
@@ -99,7 +102,43 @@ dats --version
 # Help
 dats -h
 dats <command> -h
+
+# The documentation, from the binary itself
+dats docs              # list the topics
+dats docs format       # the complete .dats file reference
+dats help format       # the same page
+dats docs all | less   # everything
 ```
+
+## Embedded Documentation (dats docs)
+
+Every page under `docs/` is compiled into the binary, so the complete reference is available
+wherever `dats` runs -- no checkout and no network. The pages are the markdown sources
+themselves, which is what makes a second, drifting copy of the reference impossible.
+
+```
+$ dats docs
+  overview     What dats is, a quick start, and the key concepts on one page
+  format       Complete .dats reference: every key, placeholder, assertion, and parse error
+  cli          Commands, flags, discovery, sandboxing, -j, watch mode, and output format
+  examples     Annotated .dats files, from a one-line check to a full CLI suite
+  library      Running suites in-process from Go: Options, Result, and the error contract
+  reports      --report-junit and --report-json formats, and their stability contract
+  action       Running dats from another repository's GitHub Actions workflow
+  masked-proc  Why a container refuses the sandbox a private /proc, and what the fallback keeps
+```
+
+- A topic also answers to its aliases and to its file's spelling: `format`, `file-format`,
+  `file-format.md`, and `docs/file-format.md` all print the same page.
+- One topic prints the page bare, so `dats docs format > format.md` writes the file itself.
+  Several topics (and `all`) print a `========== docs/<file>.md ==========` banner before
+  each page.
+- `dats help <topic>` prints the same pages. An argument that names a command wins:
+  `dats help test` is the subcommand's help, not a topic.
+- An unknown topic is an error (exit 1) that lists the topics, rather than a silently
+  shorter answer.
+- A subcommand name wins over a path, so a directory of suites actually named `docs` (or
+  `help`) is run as `dats test docs`.
 
 ## Sandboxing (--sandbox)
 

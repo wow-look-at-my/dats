@@ -11,13 +11,51 @@ time.
 `os`/`arch` default to the runner's own platform: `buildhost-download` reads
 `RUNNER_OS`/`RUNNER_ARCH` when neither is given.
 
-## Installing bubblewrap
+## Paths on an NT runner
+
+Every step here is `shell: bash`, and on a Windows runner that bash reads a
+backslash as an escape and drops it. A path interpolated straight into the
+script — `${{ github.action_path }}` is `D:\a\_actions\...` — therefore arrives
+as `D:a_actions...`, and the step dies with `No such file or directory` and exit
+127. So the action passes each such path through the step's `env:` and expands
+it as `${VAR//\\//}`, which converts the separators before bash sees the word.
+The two script steps and the binary's own path all take that route.
+
+The runner half of the same problem is `runner/hostpath.go`: dats converts every
+path it substitutes into a command. The `every-host` CI job runs this commit's
+own binary under one script on ubuntu, macos and windows, so that conversion has
+a gate on the host it is for and a comparison against the hosts it is not.
+
+## Installing the sandbox backend
 
 dats sandboxes test commands by default (bubblewrap on Linux, seatbelt on
 macOS, docker otherwise) — real isolation, not a formality, so a caller should
-never have to reach for `--no-sandbox` just to work around infrastructure. The
-install step skips on non-Linux; macOS's seatbelt backend needs nothing
-installed.
+never have to reach for `--no-sandbox` just to work around infrastructure.
+`.github/scripts/install-sandbox-backend.sh` owns this, and the action calls
+that one file.
+
+macOS needs nothing installed: seatbelt is `/usr/bin/sandbox-exec`, shipped
+with the OS, so the script asserts it is there and exits.
+
+Windows has no native backend and the script says so, leaving dats to probe for
+docker. A Windows runner's own daemon serves WINDOWS containers, and WSL1 cannot
+host a Linux one — see [sandbox-internals.md](sandbox-internals.md) for the
+measurement. A suite on an NT runner needs `--no-sandbox` until that changes.
+
+On Linux the script installs bubblewrap when `bwrap` is not already on PATH.
+Two things it does that the inline `sudo apt-get` it replaced did not:
+
+- **It only reaches for `sudo` when it is not already root.** A container job
+  usually runs as root with no `sudo` binary present at all, so an
+  unconditional `sudo` failed an install that plain `apt-get` completes. When
+  the job is neither root nor able to sudo, it says so and names `--no-sandbox`
+  rather than dying on `sudo: command not found`.
+- **It tries `apt-get`, then `dnf`, then `apk`,** and names all three when it
+  finds none, instead of assuming every Linux runner is Debian-shaped.
+
+It then re-checks that `bwrap` is on PATH and fails there if it is not. Getting
+that wrong is otherwise reported much later, by dats, as "no usable sandbox
+backend" — a message about the wrong step.
 
 ## Clearing the user-namespace restriction, and why the action no longer judges the result
 
@@ -60,3 +98,60 @@ dats is the authority on whether dats can sandbox. It probes its own backends,
 in its own order, and fails closed with an actionable message naming the
 opt-out. A pre-flight guess can only agree with that answer or be wrong about
 it.
+
+## The input surface is typed, not a raw argv
+
+The action's only inputs are `tests`, `working-directory`, and `version`.
+There is deliberately no `args` passthrough: a caller cannot hand dats a raw
+command line, so nothing a caller types can become a flag, a subcommand, or a
+`--no-sandbox`. The argv is built and sanitized in `.github/scripts/run-dats.ts`
+(a `wow-look-at-my/actions@typescript` script), which:
+
+- splits `tests` on whitespace and rejects any entry that starts with `-`, is
+  an absolute path, or contains a `..` segment;
+- expands a directory entry to its top-level `*.dats` files (never recursive,
+  never a hidden file);
+- runs `dats -v test <files...>` from `working-directory` with the downloaded
+  binary, passing each file as its own argument.
+
+`-v` is always on, and there is no input to turn it off. Without it a failing
+leg reports only that a test failed; with it the leg names the test and prints
+its output. An input would make that a thing a caller remembers to set after the
+run that needed it, which is the run where the output is already gone.
+
+## NT gets its backend from WSL
+
+Windows hosts no sandbox backend of its own. bwrap is Linux, seatbelt is macOS,
+and the runner's docker daemon serves windows containers, which cannot run a
+linux sandbox image. dats therefore refuses to run there, and that refusal is
+correct: a file cannot turn its own sandbox off, and neither can this action.
+
+WSL is the Linux an NT runner does have. `install-wsl-backend.sh` registers a
+distribution, installs bubblewrap into it, and exercises bwrap before the run.
+The download is a fat APE, so the same file runs its Linux payload inside that
+distribution: dats then sees an ordinary Linux host with a working backend, and
+nothing has to relax. `run-dats.ts` translates the working directory and the
+binary path with `wslpath` and starts the run with `wsl --cd`.
+
+The distribution arrives as a pinned rootfs that the script downloads and
+`wsl --import`s. `wsl --install` goes through the Microsoft Store, which hangs
+unpredictably on a hosted runner, and a gate that flakes is one a reader learns
+to ignore. Every `wsl.exe` call is bounded and reads empty stdin, so a stall
+names the step it stopped instead of running the job out of time in silence.
+
+`DATS_WSL_DISTRO` names the distribution, `DATS_WSL_ROOTFS_URL` the rootfs it is
+imported from, and `DATS_WSL_TIMEOUT_SECONDS` how long the suite itself may run.
+
+## Starting the binary differs per host
+
+The download is a fat APE, so a raw `execve` of it succeeds only on Linux.
+Darwin refuses the file with `ENOEXEC`: a shell must read the header and exec
+the payload, which `bash -c '"$0" "$@"'` does while still passing argv. NT finds
+an executable by its extension, so the action copies the download to an `.exe`
+name and starts that. `action-every-host` in this repo's CI is what proves each
+form, because the neighbouring `every-host` job starts the binary from bash and
+therefore hides both failures.
+
+Because the sandbox is the point of the action, there is no way to turn it off
+through the action. A caller that genuinely needs host execution runs the
+downloaded binary itself (the `path` output) rather than through this action.

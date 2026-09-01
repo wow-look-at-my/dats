@@ -27,6 +27,28 @@ func requireDocker(t *testing.T) {
 	}
 }
 
+// A windows daemon answers `docker version` and then fails every run, which
+// used to reach the operator as a runc error per test rather than as a line
+// saying the backend was never usable.
+func TestDockerServerUsable(t *testing.T) {
+	t.Run("a linux daemon is usable", func(t *testing.T) {
+		require.NoError(t, dockerServerUsable("1.51 linux"))
+	})
+
+	t.Run("a windows daemon is not, and says why", func(t *testing.T) {
+		err := dockerServerUsable("1.51 windows")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "windows containers")
+	})
+
+	// An older client prints the API version alone. Refusing on that would
+	// take the backend away from a host where it works.
+	t.Run("a server OS the client did not print decides nothing", func(t *testing.T) {
+		require.NoError(t, dockerServerUsable("1.51"))
+		require.NoError(t, dockerServerUsable(""))
+	})
+}
+
 func TestRunFileDockerSandbox(t *testing.T) {
 	requireDocker(t)
 	hostProbe := filepath.Join(t.TempDir(), "written.txt")

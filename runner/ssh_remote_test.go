@@ -216,7 +216,7 @@ func TestSSHSurfacesARemoteExitCode(t *testing.T) {
 	require.True(t, res.Ok(), "output:\n%s", out)
 }
 
-// TestSSHCopyFixtureKeepsItsExecutableBit pins end to end the one property a plain file copy would lose.
+// TestSSHCopyFixtureKeepsItsExecutableBit pins end to end the property a plain file copy would lose.
 func TestSSHCopyFixtureKeepsItsExecutableBit(t *testing.T) {
 	ssh := requireSSH(t)
 	dir := t.TempDir()

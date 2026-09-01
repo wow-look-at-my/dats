@@ -3,6 +3,7 @@ package runner
 // Sandbox tests.
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,54 @@ func sandboxConfigWithProbe(mode SandboxMode, probe func(SandboxMode) (procMode,
 
 func probeAlways(err error) func(SandboxMode) (procMode, error) {
 	return func(SandboxMode) (procMode, error) { return procFresh, err }
+}
+
+// An NT host has no backend to install: the marker is what lets a library
+// caller say so and run on the host, while a missing bwrap on linux stays the
+// ordinary error a caller must not paper over.
+func TestSandboxBackendMarksAHostThatCanNeverSandbox(t *testing.T) {
+	t.Run("an NT host carries the marker", func(t *testing.T) {
+		forceHostGOOS(t, "windows")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("docker: the daemon serves windows containers")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.True(t, errors.Is(err, ErrNoBackendOnHost))
+		assert.Contains(t, err.Error(), "windows containers", "the probe's own reason must survive the wrap")
+	})
+
+	t.Run("a linux host missing bwrap does not", func(t *testing.T) {
+		forceHostGOOS(t, "linux")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("bwrap: not found in $PATH")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.False(t, errors.Is(err, ErrNoBackendOnHost), "installing bubblewrap fixes this, so it must stay fatal")
+	})
+
+	// A nested seatbelt sandbox refuses to apply a new profile: seatbelt is
+	// FOUND, not missing, so no install fixes this -- the same shape as an NT
+	// host with no backend at all.
+	t.Run("a darwin host where seatbelt was found but refused carries the marker", func(t *testing.T) {
+		forceHostGOOS(t, "darwin")
+		cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) (procMode, error) {
+			if mode == SandboxSeatbelt {
+				return procFresh, assertError("sandbox-exec: sandbox_apply: Operation not permitted")
+			}
+			return procFresh, assertError(string(mode) + ": not found in $PATH")
+		})
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.True(t, errors.Is(err, ErrNoBackendOnHost))
+		assert.Contains(t, err.Error(), "Operation not permitted", "the probe's own reason must survive the wrap")
+	})
+
+	// A missing seatbelt binary IS the ordinary case an install fixes.
+	t.Run("a darwin host missing seatbelt does not", func(t *testing.T) {
+		forceHostGOOS(t, "darwin")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("sandbox-exec: not found in $PATH")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.False(t, errors.Is(err, ErrNoBackendOnHost), "a missing sandbox-exec binary stays fatal")
+	})
 }
 
 func TestParseSandboxMode(t *testing.T) {
@@ -179,7 +228,7 @@ func TestToolTreeCoversAddOnToolchains(t *testing.T) {
 	plan := &sandboxPlan{backend: SandboxBwrap, network: true, work: "/tmp/dats-1", workdir: "/home/user/project"}
 	assert.Contains(t, strings.Join(plan.bwrapArgv("true"), " "), "--ro-bind-try /opt /opt")
 
-	// It stays a tool tree, not a second host: read-only, and never a bind of anything holding user data.
+	// It stays a tool tree, not a separate host: read-only, and never a bind of anything holding user data.
 	assert.True(t, underToolTree("/opt/hostedtoolcache/go/1.25.0/x64/bin/go"))
 	assert.False(t, underToolTree("/home/runner/work"))
 }
@@ -252,7 +301,7 @@ func TestDockerArgvForwardsTheRunEnvironment(t *testing.T) {
 	assert.Less(t, strings.Index(joined, "-e DATS_TEST_HANDOFF_DIR"), strings.Index(joined, "-e FOO=bar"))
 }
 
-// The fallback /proc shape swaps ONE argument and keeps everything that contains the command.
+// The fallback /proc shape swaps a single argument and keeps everything that contains the command.
 func TestBwrapSharedProcKeepsTheContainment(t *testing.T) {
 	fresh := bwrapIsolationArgs(procFresh)
 	shared := bwrapIsolationArgs(procShared)
@@ -277,7 +326,7 @@ func TestBwrapSharedProcKeepsTheContainment(t *testing.T) {
 		"the two shapes must differ ONLY in how /proc is provided")
 }
 
-// drop returns argv without the first run of the given consecutive arguments.
+// drop returns argv without the earliest run of the given consecutive arguments.
 func drop(argv []string, run ...string) []string {
 	for i := range argv {
 		if i+len(run) <= len(argv) && slices.Equal(argv[i:i+len(run)], run) {
@@ -303,7 +352,7 @@ func TestProbeBwrapPrefersThePrivateProcfs(t *testing.T) {
 	}
 }
 
-// A reduced sandbox is announced on every file it applies to, and explained once.
+// A reduced sandbox is announced on every file it applies to, and explained a single time.
 func TestSharedProcIsAnnouncedAndExplainedOnce(t *testing.T) {
 	assert.Equal(t, "bwrap", (&sandboxPlan{backend: SandboxBwrap, network: true}).describe(),
 		"the strong sandbox says nothing extra")
@@ -459,7 +508,7 @@ func TestNewSandboxPlanImagePrecedence(t *testing.T) {
 		return r
 	}
 
-	// Operator pinned one, file wants another: the operator's wins, out loud.
+	// Operator pinned an image, file wants another: the operator's wins, out loud.
 	plan, err := newRunner("pinned:tag").newSandboxPlan(&schema.SandboxSpec{Image: "file:tag"}, "/tmp/w")
 	require.Nil(t, err)
 	assert.Equal(t, "pinned:tag", plan.image)
@@ -473,7 +522,7 @@ func TestNewSandboxPlanImagePrecedence(t *testing.T) {
 	assert.Equal(t, "", plan.refusedImage)
 	assert.Equal(t, "docker same:tag", plan.describe())
 
-	// Neither named one: the default, and nothing to announce.
+	// Neither named an image: the default, and nothing to announce.
 	plan, err = newRunner("").newSandboxPlan(nil, "/tmp/w")
 	require.Nil(t, err)
 	assert.Equal(t, DefaultSandboxImage, plan.image)
@@ -500,6 +549,35 @@ func TestSeatbeltArgv(t *testing.T) {
 	assert.Contains(t, argv[2], "(version 1)")
 	assert.Contains(t, argv[2], `(subpath "/tmp/dats-1")`)
 	assert.Equal(t, []string{"bash", "-c", "echo hi"}, argv[3:])
+}
+
+func TestSeatbeltArgvPointsTmpdirInsideTheWritableSet(t *testing.T) {
+	plan := &sandboxPlan{backend: SandboxSeatbelt, network: true, work: "/tmp/dats-1", tmp: "/tmp/dats-1/" + sandboxTmpDirName}
+	argv := plan.seatbeltArgv("echo hi")
+
+	assert.Equal(t, []string{
+		"env",
+		"TMPDIR=/tmp/dats-1/" + sandboxTmpDirName,
+		"TMP=/tmp/dats-1/" + sandboxTmpDirName,
+		"TEMP=/tmp/dats-1/" + sandboxTmpDirName,
+		"bash", "-c", "echo hi",
+	}, argv[3:], "the host TMPDIR is outside the writable set, so a command that inherits it writes nowhere")
+	assert.Contains(t, argv[2], `(subpath "/tmp/dats-1")`,
+		"the scratch directory needs no rule of its own: work already covers it")
+}
+
+func TestNewSandboxPlanGivesSeatbeltAWritableTmpdir(t *testing.T) {
+	work := t.TempDir()
+	r := &Runner{Sandbox: sandboxConfigWithProbe(SandboxSeatbelt, probeAlways(nil))}
+
+	plan, err := r.newSandboxPlan(nil, work)
+	require.Nil(t, err)
+	require.NotNil(t, plan)
+
+	assert.Equal(t, filepath.Join(work, sandboxTmpDirName), plan.tmp)
+	info, err := os.Stat(plan.tmp)
+	require.Nil(t, err, "the directory exists before any command runs")
+	assert.True(t, info.IsDir())
 }
 
 func TestSeatbeltProfileShape(t *testing.T) {
@@ -579,7 +657,7 @@ func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
 	assert.Contains(t, joined, "--ro-bind-try "+stub+" "+stub,
 		"without it a sandboxed command has no DNS at all on a systemd-resolved host")
 
-	// ...and it is the one allowance: everything else still matches docker.
+	// ...and it is the only allowance: everything else still matches docker.
 	hostBinds := set.New[string]()
 	argv := plan.bwrapArgv("true")
 	for i, arg := range argv {

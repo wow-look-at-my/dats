@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeParallelDats writes one generated .dats file into its own temp dir and returns its path.
+// writeParallelDats writes a single generated .dats file into its own temp dir and returns its path.
 func writeParallelDats(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name)

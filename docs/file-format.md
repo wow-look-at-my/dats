@@ -9,7 +9,7 @@ A `.dats` file contains a `tests` array, optionally preceded by the file-level `
 shared:      # optional file-level fixture files
 setup:       # optional command(s) run once before the tests
 teardown:    # optional command(s) always run once after the tests
-sandbox:     # optional: narrow the sandbox for this file
+sandbox:     # optional: narrow this file's sandbox (a file can never turn it off)
 ssh:         # optional: ask to run this file's commands on another machine
 tests:
 	- # test 1

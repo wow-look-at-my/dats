@@ -47,7 +47,7 @@ tests:
 		{Name: "name", Value: "alice"},
 	}, instances[2].Assignments)
 
-	// A 2x3 matrix expands to 6 instances, last variable fastest.
+	// A 2x3 matrix expands to the product of its value counts, last variable fastest.
 	tf, err = ParseFile(writeTempDats(t, `
 tests:
 	- cmd: echo "{matrix.a}{matrix.b}"
@@ -237,7 +237,7 @@ tests:
 	assert.Equal(t, "payload a", instances[0].Test.Inputs.Files["data.txt"])
 	assert.Equal(t, "payload b", instances[1].Test.Inputs.Files["data.txt"])
 
-	// Mutating one instance reaches neither the source test nor a sibling.
+	// Mutating an instance reaches neither the source test nor a sibling.
 	instances[0].Test.Inputs.Files["data.txt"] = "mutated"
 	instances[0].Test.Outputs.Stdout.Patterns[0] = "mutated"
 	check := instances[0].Test.Outputs.Files["out.txt"]

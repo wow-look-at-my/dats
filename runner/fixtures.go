@@ -12,7 +12,7 @@ import (
 	"github.com/wow-look-at-my/dats/schema"
 )
 
-// Placeholder patterns are compiled once and reused across expansions.
+// Placeholder patterns are compiled at startup and reused across expansions.
 var (
 	inputPlaceholderRe  = regexp.MustCompile(`\{inputs\.([^}]+)\}`)
 	outputPlaceholderRe = regexp.MustCompile(`\{outputs\.([^}]+)\}`)
@@ -42,19 +42,25 @@ type TestContext struct {
 	RemoteBase string
 }
 
-// commandPath maps a local path under BaseDir onto the ssh target.
+// commandPath maps a local path under BaseDir onto the ssh target, and spells
+// what stays here the way the command's shell reads it.
 func (c *TestContext) commandPath(local string) string {
 	if c.RemoteBase == "" || local == "" {
-		return local
+		return hostCommandPath(local)
 	}
 	rel, err := filepath.Rel(c.BaseDir, local)
 	if err != nil || !filepath.IsLocal(rel) {
-		return local
+		return hostCommandPath(local)
 	}
 	return path.Join(c.RemoteBase, filepath.ToSlash(rel))
 }
 
 func joinFixturePath(dir, name string) string {
+	// A hook expands {shared.X} against the raw directory, so the NT spelling
+	// is converted here as well as in commandPath.
+	if hostGOOS == "windows" {
+		return path.Join(hostCommandPath(dir), hostCommandPath(name))
+	}
 	if strings.HasPrefix(dir, "/") {
 		return path.Join(dir, filepath.ToSlash(name))
 	}

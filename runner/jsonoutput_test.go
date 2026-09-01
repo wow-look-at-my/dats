@@ -24,7 +24,7 @@ func TestAssertJSONOutputMatch(t *testing.T) {
 }
 
 func TestAssertJSONOutputNumbersByValue(t *testing.T) {
-	// 2 and 2.0 are the same JSON number
+	// An integer and its fractional spelling are the same JSON number
 	assert.Empty(t, AssertJSONOutput("2.0", 2))
 	assert.Empty(t, AssertJSONOutput("2", 2.0))
 	assert.NotEmpty(t, AssertJSONOutput("2.5", 2))
@@ -90,7 +90,7 @@ func TestAssertJSONOutputInvalidJSON(t *testing.T) {
 func TestAssertJSONOutputTrailingData(t *testing.T) {
 	// A trailing newline is fine
 	assert.Empty(t, AssertJSONOutput("{\"a\": 1}\n", map[string]any{"a": 1}))
-	// A second JSON value is not
+	// A trailing JSON value is not
 	errs := AssertJSONOutput(`{"a": 1} {"b": 2}`, map[string]any{"a": 1})
 	require.Equal(t, 1, len(errs))
 	assert.Contains(t, errs[0].Error(), "trailing data")
@@ -98,26 +98,24 @@ func TestAssertJSONOutputTrailingData(t *testing.T) {
 
 func TestAssertJSONOutputDiffCap(t *testing.T) {
 	expected := make(map[string]any)
-	actual := "{"
+	differing := make(map[string]any)
 	for i := 0; i < 15; i++ {
 		key := string(rune('a'+i)) + "key"
 		expected[key] = 1
-		if i > 0 {
-			actual += ","
-		}
-		actual += `"` + key + `": 2`
+		differing[key] = 2
 	}
-	actual += "}"
+	actual, err := json.Marshal(differing)
+	require.NoError(t, err)
 
-	errs := AssertJSONOutput(actual, expected)
-	// 10 shown + 1 summary line for the remaining 5
+	errs := AssertJSONOutput(string(actual), expected)
+	// the shown lines plus a summary line for the remainder
 	require.Equal(t, maxJSONDiffs+1, len(errs))
 	assert.Contains(t, errs[maxJSONDiffs].Error(), "(5 more differences)")
 }
 
 func TestAssertJSONOutputUnrepresentableExpected(t *testing.T) {
-	// A map with non-string keys cannot be marshaled as JSON
-	errs := AssertJSONOutput("{}", map[any]any{1: "x"})
+	// A channel cannot be marshaled as JSON; an interface-keyed map can.
+	errs := AssertJSONOutput("{}", map[string]any{"x": make(chan int)})
 	require.Equal(t, 1, len(errs))
 	assert.Contains(t, errs[0].Error(), "cannot be represented as JSON")
 }
@@ -137,7 +135,7 @@ func TestAssertJSONOutputBigIntegerPrecision(t *testing.T) {
 	require.Len(t, errs, 1, "big integers differing by 1 must be reported as a mismatch")
 	assert.Contains(t, errs[0].Error(), "expected 9007199254740993, got 9007199254740992")
 
-	// 2 vs 2.0 must still compare equal end-to-end.
+	// An integer against its fractional spelling must still compare equal end-to-end.
 	assert.Empty(t, AssertJSONOutput("2.0", 2))
 }
 

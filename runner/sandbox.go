@@ -4,6 +4,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,7 +23,7 @@ import (
 type SandboxMode string
 
 const (
-	// SandboxAuto picks the first usable backend: bwrap, then seatbelt, then docker.
+	// SandboxAuto picks the earliest usable backend: bwrap, then seatbelt, then docker.
 	SandboxAuto SandboxMode = "auto"
 	// SandboxBwrap requires bubblewrap; an unusable bwrap is an error rather than a silent fallback.
 	SandboxBwrap SandboxMode = "bwrap"
@@ -86,6 +87,7 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 			c.backend, c.proc = c.Mode, proc
 		default: // SandboxAuto
 			var failures []string
+			seatbeltFoundButUnusable := false
 			for _, backend := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
 				proc, err := probe(backend)
 				if err == nil {
@@ -93,8 +95,14 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 					return
 				}
 				failures = append(failures, err.Error())
+				if backend == SandboxSeatbelt && !strings.HasSuffix(err.Error(), "not found in $PATH") {
+					seatbeltFoundButUnusable = true
+				}
 			}
 			c.err = fmt.Errorf("no usable sandbox backend: %s\n%s", strings.Join(failures, "; "), sandboxOptOutHint)
+			if hostGOOS == "windows" || (hostGOOS == "darwin" && seatbeltFoundButUnusable) {
+				c.err = fmt.Errorf("%w: %w", ErrNoBackendOnHost, c.err)
+			}
 		}
 	})
 	return c.backend, c.err
@@ -110,6 +118,9 @@ func (c *SandboxConfig) TakeProcNotice() string {
 }
 
 const sandboxOptOutHint = "install bubblewrap (Linux), or start docker, or opt out with --no-sandbox"
+
+// ErrNoBackendOnHost marks the auto failure no install cures.
+var ErrNoBackendOnHost = errors.New("this host has no sandbox backend dats can build on")
 
 // probeBackend reports whether backend is usable on this host.
 func probeBackend(backend SandboxMode) (procMode, error) {
@@ -143,7 +154,7 @@ func probeBwrap() (procMode, error) {
 	return procFresh, freshErr
 }
 
-// runBwrapProbe exercises one /proc shape.
+// runBwrapProbe exercises a single /proc shape.
 func runBwrapProbe(path string, proc procMode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
@@ -161,9 +172,33 @@ func probeDocker() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}}").CombinedOutput()
+	out, err := exec.CommandContext(ctx, path, "version", "--format", "{{.Server.APIVersion}} {{.Server.Os}}").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker: %s", probeFailure(out, err))
+	}
+	return dockerServerUsable(firstLine(out))
+}
+
+// firstLine is probeFailure's success-path twin: no error to fall back on.
+func firstLine(out []byte) string {
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+// dockerServerUsable reads the probe's "<api version> <server os>" line. A
+// windows daemon answers `docker version` and then fails every run, because a
+// sandbox image is a linux image. Saying so here lets auto keep looking.
+func dockerServerUsable(versionLine string) error {
+	fields := strings.Fields(versionLine)
+	if len(fields) < 2 {
+		return nil // an older client prints no server OS; the run is the test
+	}
+	if serverOS := fields[len(fields)-1]; serverOS == "windows" {
+		return fmt.Errorf("docker: the daemon serves windows containers, and a sandbox image is a linux image")
 	}
 	return nil
 }
@@ -182,15 +217,17 @@ type sandboxPlan struct {
 	// proc is the /proc shape the bwrap probe settled on (bwrap only).
 	proc  procMode
 	image string // docker only
-	// refusedImage is the file's own `image:` when the operator pinned a different one on the command line.
+	// refusedImage is the file's own `image:` when the operator pinned a different image on the command line.
 	refusedImage string
 	network      bool
 	work         string
 	coverDir     string
 	workdir      string
+	// tmp is the command's scratch directory, inside work (seatbelt only).
+	tmp string
 	// ssh runs this file's commands on another machine, with no sandbox there.
 	ssh *SSHConfig
-	// refusedSSH is the file's own target when a typed one outranked it.
+	// refusedSSH is the file's own target when a typed target outranked it.
 	refusedSSH string
 	// remoteBase is the file's temp directory ON the target, mirroring work.
 	remoteBase string
@@ -257,6 +294,14 @@ func (r *Runner) newSandboxPlan(spec *schema.SandboxSpec, workDir string) (*sand
 	}
 	if plan.image == "" {
 		plan.image = DefaultSandboxImage
+	}
+	if backend == SandboxSeatbelt {
+		// bwrap mounts a private writable /tmp; seatbelt mounts nothing.
+		tmp := filepath.Join(workDir, sandboxTmpDirName)
+		if err := os.MkdirAll(tmp, 0o755); err != nil {
+			return nil, fmt.Errorf("sandbox: creating the scratch directory %q: %w", tmp, err)
+		}
+		plan.tmp = tmp
 	}
 	if r.CoverDir != "" {
 		abs, err := filepath.Abs(r.CoverDir)
@@ -393,7 +438,7 @@ func (p *sandboxPlan) dockerArgv(name, cmd string, extraEnv []string) []string {
 	argv := []string{
 		"docker", "run",
 		"--rm",   // no container corpses after the run
-		"-i",     // stdin is a first-class input for a test command
+		"-i",     // stdin is an ordinary input for a test command
 		"--init", // reap whatever the command forks and abandons
 		"--name", name,
 	}

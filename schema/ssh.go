@@ -49,7 +49,7 @@ func (s *SSHSpec) UnmarshalYAML(value any) error {
 	return fmt.Errorf("ssh: must be a target string like user@host")
 }
 
-// validateSSHTarget rejects an empty target and one ssh would read as an option.
+// validateSSHTarget rejects an empty target and a target ssh would read as an option.
 func validateSSHTarget(target string) error {
 	switch {
 	case target == "":
