@@ -53,5 +53,7 @@ runs:
         file: ${{ github.action_path }}/.github/scripts/run-dats.ts
         inputs: ${{ toJSON(inputs) }}
       env:
+        # The downloaded binary's own path, passed via env: run-dats.ts consumes it in
+        # Node, so an NT runner's backslash path arrives intact -- docs/action.md.
         DATS_BIN: ${{ steps.download.outputs.path }}
         DATS_ACTION_PATH: ${{ github.action_path }}
