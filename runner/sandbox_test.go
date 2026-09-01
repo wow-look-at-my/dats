@@ -55,6 +55,32 @@ func TestSandboxBackendMarksAHostThatCanNeverSandbox(t *testing.T) {
 		require.NotNil(t, err)
 		assert.False(t, errors.Is(err, ErrNoBackendOnHost), "installing bubblewrap fixes this, so it must stay fatal")
 	})
+
+	// A nested seatbelt sandbox refuses to apply a new profile: seatbelt is
+	// FOUND, not missing, so no install fixes this -- the same shape as an NT
+	// host with no backend at all.
+	t.Run("a darwin host where seatbelt was found but refused carries the marker", func(t *testing.T) {
+		forceHostGOOS(t, "darwin")
+		cfg := sandboxConfigWithProbe(SandboxAuto, func(mode SandboxMode) (procMode, error) {
+			if mode == SandboxSeatbelt {
+				return procFresh, assertError("sandbox-exec: sandbox_apply: Operation not permitted")
+			}
+			return procFresh, assertError(string(mode) + ": not found in $PATH")
+		})
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.True(t, errors.Is(err, ErrNoBackendOnHost))
+		assert.Contains(t, err.Error(), "Operation not permitted", "the probe's own reason must survive the wrap")
+	})
+
+	// A missing seatbelt binary IS the ordinary case an install fixes.
+	t.Run("a darwin host missing seatbelt does not", func(t *testing.T) {
+		forceHostGOOS(t, "darwin")
+		cfg := sandboxConfigWithProbe(SandboxAuto, probeAlways(assertError("sandbox-exec: not found in $PATH")))
+		_, err := cfg.Backend()
+		require.NotNil(t, err)
+		assert.False(t, errors.Is(err, ErrNoBackendOnHost), "a missing sandbox-exec binary stays fatal")
+	})
 }
 
 func TestParseSandboxMode(t *testing.T) {
