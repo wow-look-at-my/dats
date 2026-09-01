@@ -314,3 +314,28 @@ tests:
 	assert.NoFileExists(t, probe, "the sandboxed write must not reach the host")
 	assert.Contains(t, buf.String(), "# sandbox: seatbelt")
 }
+
+// A command that gives itself a terminal is doing its own plumbing, and real
+// tools do it unprompted: Homebrew runs every source build inside a pty so the
+// build cannot reach the parent terminal. Without a writable /dev/ptmx that
+// allocation fails with "can't get Master/Slave device" -- a message that
+// names no path and reads as a broken toolchain rather than a sandbox rule.
+func TestRunFileSeatbeltAllowsPTY(t *testing.T) {
+	requireSeatbelt(t)
+
+	path := writeRunnerDats(t, `
+tests:
+	- desc: a command can allocate its own pty
+	  cmd: 'script -q /dev/null echo pty-ok < /dev/null'
+	  outputs:
+		stdout:
+			- pty-ok
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	r.Sandbox = NewSandboxConfig(SandboxSeatbelt, "")
+
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.Equal(t, 1, result.Passed, "output:\n%s", buf.String())
+}

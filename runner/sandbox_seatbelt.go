@@ -67,11 +67,14 @@ func seatbeltProfile(writable []string, network bool) string {
 		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(path))
 	}
 	// Writable device nodes: the shell's own plumbing, not host state.
+	// Opening /dev/ptmx allocates a fresh terminal pair rather than reaching
+	// an existing one.
 	b.WriteString(`    (literal "/dev/null")
     (literal "/dev/zero")
     (literal "/dev/random")
     (literal "/dev/urandom")
     (literal "/dev/dtracehelper")
+    (literal "/dev/ptmx")
     (subpath "/dev/fd")
     (regex #"^/dev/tty")
 )
