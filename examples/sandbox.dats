@@ -78,3 +78,42 @@ tests:
 			- "the source lives on the host"
 		!stdout:
 			- "modified inside the sandbox"
+
+	# DIAGNOSTIC (temporary): this test itself already runs inside a seatbelt
+	# sandbox on darwin. Applying a second, nested profile from here reproduces
+	# go-toolchain#446's failure exactly. Captures the real exit code and stderr
+	# instead of a boolean pass/fail, to learn what macOS actually denies.
+	- desc: DIAGNOSTIC nested seatbelt attempt
+	  cmd: |
+		if command -v sandbox-exec >/dev/null 2>&1; then
+			echo "sandbox-exec found at: $(command -v sandbox-exec)"
+			sandbox-exec -p '(version 1)(allow default)' true
+			echo "exit code (identical profile): $?"
+			sandbox-exec -p '(version 1)(deny default)' true
+			echo "exit code (deny default): $?"
+			sandbox-exec -n no-network true
+			echo "exit code (named profile): $?"
+		else
+			echo "sandbox-exec not on PATH"
+		fi
+
+	# DIAGNOSTIC (temporary): a raw bash-invoked nested sandbox-exec (the test
+	# above) succeeds. This test instead nests dats' OWN native Go binary --
+	# the exact probeSeatbelt code go-toolchain's cosmopolitan APE links in,
+	# compiled natively instead. If THIS succeeds, the cosmopolitan APE's own
+	# process-spawning is the difference; if it also fails, it is not.
+	- desc: DIAGNOSTIC nested dats binary applying its own seatbelt sandbox
+	  inputs:
+		files:
+			trivial.dats: |
+				tests:
+					- desc: trivial
+					  cmd: echo nested-ok
+					  outputs:
+						stdout:
+							- nested-ok
+	  cmd: |
+		out=$(./build/dats.exe --sandbox=seatbelt test {inputs.trivial.dats} 2>&1)
+		code=$?
+		echo "nested dats.exe exit code: $code"
+		echo "nested dats.exe output: $out"
