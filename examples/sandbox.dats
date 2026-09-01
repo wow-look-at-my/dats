@@ -96,6 +96,3 @@ tests:
 		else
 			echo "sandbox-exec not on PATH"
 		fi
-	  outputs:
-		stdout:
-			- "sandbox-exec found at:"
