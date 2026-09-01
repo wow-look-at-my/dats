@@ -96,3 +96,24 @@ tests:
 		else
 			echo "sandbox-exec not on PATH"
 		fi
+
+	# DIAGNOSTIC (temporary): a raw bash-invoked nested sandbox-exec (the test
+	# above) succeeds. This test instead nests dats' OWN native Go binary --
+	# the exact probeSeatbelt code go-toolchain's cosmopolitan APE links in,
+	# compiled natively instead. If THIS succeeds, the cosmopolitan APE's own
+	# process-spawning is the difference; if it also fails, it is not.
+	- desc: DIAGNOSTIC nested dats binary applying its own seatbelt sandbox
+	  inputs:
+		files:
+			trivial.dats: |
+				tests:
+					- desc: trivial
+					  cmd: echo nested-ok
+					  outputs:
+						stdout:
+							- nested-ok
+	  cmd: |
+		out=$(./build/dats.exe --sandbox=seatbelt test {inputs.trivial.dats} 2>&1)
+		code=$?
+		echo "nested dats.exe exit code: $code"
+		echo "nested dats.exe output: $out"
