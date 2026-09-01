@@ -44,7 +44,7 @@ jobs:
           for t in localhost 127.0.0.1; do
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$t" 'echo ssh ok; command -v tar bash'
           done
-      - uses: wow-look-at-my/go-toolchain@v1
+      - uses: wow-look-at-my/go-toolchain@master
         env:
           # Job level, not step level: the tests run inside the action.
           DATS_TEST_SSH_TARGET: localhost
