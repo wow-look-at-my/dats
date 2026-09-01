@@ -87,7 +87,6 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 			c.backend, c.proc = c.Mode, proc
 		default: // SandboxAuto
 			var failures []string
-			seatbeltFoundButUnusable := false
 			for _, backend := range []SandboxMode{SandboxBwrap, SandboxSeatbelt, SandboxDocker} {
 				proc, err := probe(backend)
 				if err == nil {
@@ -95,12 +94,9 @@ func (c *SandboxConfig) Backend() (SandboxMode, error) {
 					return
 				}
 				failures = append(failures, err.Error())
-				if backend == SandboxSeatbelt && !strings.HasSuffix(err.Error(), "not found in $PATH") {
-					seatbeltFoundButUnusable = true
-				}
 			}
 			c.err = fmt.Errorf("no usable sandbox backend: %s\n%s", strings.Join(failures, "; "), sandboxOptOutHint)
-			if hostGOOS == "windows" || (hostGOOS == "darwin" && seatbeltFoundButUnusable) {
+			if hostGOOS == "windows" {
 				c.err = fmt.Errorf("%w: %w", ErrNoBackendOnHost, c.err)
 			}
 		}
