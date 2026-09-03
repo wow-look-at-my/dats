@@ -28,14 +28,14 @@ func TestRunTests(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, runConfig{})
 	assert.Nil(t, err)
 	assert.Contains(t, out.String(), "ok 1 - simple test")
 }
 
 func TestRunTestsInvalidFile(t *testing.T) {
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{"/nonexistent/test.dats"}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{"/nonexistent/test.dats"}, &out, runConfig{})
 	assert.NotNil(t, err)
 	assert.NotErrorIs(t, err, errTestsFailed)
 }
@@ -50,7 +50,7 @@ func TestRunTestsFailure(t *testing.T) {
 `)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, runConfig{})
 	assert.ErrorIs(t, err, errTestsFailed)
 	assert.Contains(t, out.String(), "not ok 1 - failing test")
 }
@@ -63,7 +63,7 @@ tests:
 `)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, runConfig{})
 	assert.ErrorIs(t, err, errTestsFailed)
 	assert.Contains(t, out.String(), "teardown failed")
 }
@@ -79,7 +79,7 @@ func TestRunTestsMultipleFiles(t *testing.T) {
 	require.Nil(t, os.WriteFile(f2, []byte(content), 0644))
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{f1, f2}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{f1, f2}, &out, runConfig{})
 	assert.Nil(t, err)
 	// The multi-file total goes through the runner's writer, not straight to the process stdout.
 	assert.Contains(t, out.String(), "Total: 2/2 passed")
@@ -93,7 +93,7 @@ func TestRunTestsMultipleFilesFailure(t *testing.T) {
 	require.Nil(t, os.WriteFile(fail, []byte("tests:\n\t- cmd: exit 3\n"), 0644))
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{pass, fail}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{pass, fail}, &out, runConfig{})
 	assert.ErrorIs(t, err, errTestsFailed)
 	assert.Contains(t, out.String(), "Total: 1/2 passed, 1 failed")
 }

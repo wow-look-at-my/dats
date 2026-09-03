@@ -102,8 +102,8 @@ func TestRunTestsJobsOutputMatchesSerial(t *testing.T) {
 	example := filepath.Join("..", "examples", "example.dats")
 
 	var serial, parallel bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{example}, &serial, 0, nil, ""))
-	require.Nil(t, runTests(context.Background(), []string{example}, &parallel, 4, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{example}, &serial, runConfig{}))
+	require.Nil(t, runTests(context.Background(), []string{example}, &parallel, runConfig{Jobs: 4}))
 
 	require.NotEmpty(t, serial.String())
 	assert.Contains(t, serial.String(), "(22 tests)")
@@ -170,8 +170,8 @@ tests:
 	}
 
 	var serial, parallel bytes.Buffer
-	errSerial := runTests(context.Background(), paths, &serial, 0, nil, "")
-	errParallel := runTests(context.Background(), paths, &parallel, 4, nil, "")
+	errSerial := runTests(context.Background(), paths, &serial, runConfig{})
+	errParallel := runTests(context.Background(), paths, &parallel, runConfig{Jobs: 4})
 
 	// Equal outcomes in both modes, including the failing exit...
 	assert.ErrorIs(t, errSerial, errTestsFailed)
