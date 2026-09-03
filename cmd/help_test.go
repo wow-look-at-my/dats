@@ -10,10 +10,11 @@ import (
 )
 
 // executeRoot runs the real command tree with the given argv and returns
-// everything it wrote. It restores the global rootCmd's writers and args, so
-// tests that share it stay independent.
+// everything it wrote. It holds the command tree and restores its writers and
+// args, so tests that share it stay independent.
 func executeRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	holdRootCmd(t)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)

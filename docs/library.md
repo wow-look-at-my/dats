@@ -56,7 +56,7 @@ even when every test passed, exactly as the CLI's exit code does.
 |---|---|---|
 | `Paths` | discover from the working directory | `.dats` files and directories to run |
 | `Output` | `os.Stdout` | where the human-readable report goes |
-| `Jobs` | `0` = one per logical CPU | run up to N commands concurrently, as `-jN` does; `1` runs one at a time. A negative is an error, not a synonym for serial |
+| `Jobs` | `0` = one per logical CPU | run up to N commands concurrently, as `-jN` does; `1` runs one at a time, and a file's instances start in declaration order, so it is a sequential run. A negative is an error, not a synonym for serial |
 | `Verbose` | off | print each command and its output |
 | `Update` | off | rewrite snapshot goldens instead of failing |
 | `KeepTemp` | off | keep (and print) each file's temp directory |

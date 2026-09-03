@@ -139,6 +139,39 @@ tests:
 	}
 }
 
+func TestOneJobRunsAFilesInstancesInDeclarationOrder(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "order.txt")
+	// The slow instance sits at the top, so a scheduler that picks the winner
+	// reorders it. Waiting for a free slot keeps the declared order.
+	path := writeParallelDats(t, "order.dats", fmt.Sprintf(`
+tests:
+	- desc: records its own position
+	  cmd: if [ {matrix.i} = 1 ]; then sleep 0.3; fi; echo {matrix.i} >> %s
+	  matrix:
+		i:
+			- 1
+			- 2
+			- 3
+			- 4
+			- 5
+			- 6
+			- 7
+			- 8
+`, log))
+
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	results, err := r.RunFiles(context.Background(), []string{path}, 1)
+	require.Nil(t, err)
+	require.Len(t, results, 1)
+	require.True(t, results[0].Ok(), "output:\n%s", buf.String())
+
+	recorded, readErr := os.ReadFile(log)
+	require.Nil(t, readErr)
+	assert.Equal(t, "1\n2\n3\n4\n5\n6\n7\n8\n", string(recorded),
+		"-j1 names a sequential run, so one file's instances must run in declaration order")
+}
+
 func TestRunFilesParseErrorFailsFast(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran.txt")
 	good := writeParallelDats(t, "good.dats", `

@@ -13,11 +13,9 @@ import (
 	"github.com/wow-look-at-my/dats/runner"
 )
 
-func setUpdateFlag(t *testing.T, value bool) {
-	t.Helper()
-	prev := updateGoldens
-	updateGoldens = value
-	t.Cleanup(func() { updateGoldens = prev })
+// updateConfig is a run with --update on or off.
+func updateConfig(value bool) runConfig {
+	return runConfig{Update: value}
 }
 
 const snapshotDats = `tests:
@@ -36,10 +34,10 @@ func TestUpdateFlagRegistration(t *testing.T) {
 
 func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
-	setUpdateFlag(t, true)
+	cfg := updateConfig(true)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, cfg))
 
 	goldenPath := filepath.Join(runner.SnapshotDir(datsFile), "001-snap.stdout.golden")
 	content, err := os.ReadFile(goldenPath)
@@ -51,7 +49,7 @@ func TestRunTestsUpdateWritesGoldensAndSummary(t *testing.T) {
 
 	// A repeat update run changes nothing and stays silent about goldens.
 	var out2 bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out2, 0, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out2, cfg))
 	assert.NotContains(t, out2.String(), "Updated")
 	assert.NotContains(t, out2.String(), "updated golden")
 }
@@ -62,10 +60,10 @@ func TestRunTestsUpdateSummaryCountsPrunes(t *testing.T) {
 	stale := filepath.Join(dir, "007-gone.stdout.golden")
 	require.Nil(t, os.MkdirAll(dir, 0o755))
 	require.Nil(t, os.WriteFile(stale, []byte("stale"), 0o644))
-	setUpdateFlag(t, true)
+	cfg := updateConfig(true)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, cfg))
 	assert.Contains(t, out.String(), "# pruned stale golden: "+stale)
 	assert.Contains(t, out.String(), "\nUpdated 1 golden file(s), pruned 1 stale\n")
 	_, statErr := os.Stat(stale)
@@ -75,10 +73,10 @@ func TestRunTestsUpdateSummaryCountsPrunes(t *testing.T) {
 func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
 	// Flag off (the default): a missing golden is a failure and no summary line appears.
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
-	setUpdateFlag(t, false)
+	cfg := updateConfig(false)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, cfg)
 	assert.ErrorIs(t, err, errTestsFailed)
 	assert.Contains(t, out.String(), "does not exist (run with --update to create it)")
 	assert.NotContains(t, out.String(), "Updated")
@@ -88,6 +86,7 @@ func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
 
 func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
+	holdRootCmd(t)
 
 	t.Cleanup(func() {
 		updateGoldens = false
@@ -105,23 +104,22 @@ func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
 
 func TestExampleSnapshotGoldensInSync(t *testing.T) {
 	example := filepath.Join("..", "examples", "snapshot.dats")
-	setUpdateFlag(t, false)
+	cfg := updateConfig(false)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{example}, &out, 0, nil, ""), "output:\n%s", out.String())
+	require.Nil(t, runTests(context.Background(), []string{example}, &out, cfg), "output:\n%s", out.String())
 	assert.Contains(t, out.String(), "6/6 passed")
 }
 
 func TestReportsIncludeSnapshotFailures(t *testing.T) {
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
-	setUpdateFlag(t, false)
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, cfg)
 	assert.ErrorIs(t, err, errTestsFailed)
 
 	jsonRaw, readErr := os.ReadFile(jsonPath)

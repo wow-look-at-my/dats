@@ -28,16 +28,17 @@ func registerReportFlags(flags *pflag.FlagSet) {
 		"write a JSON report of the run to the given file")
 }
 
-// writeReports writes every requested report file from the run's results.
-func writeReports(results []*runner.FileResult, wall time.Duration) error {
+// writeReports writes every requested report file from the run's results. The
+// paths come from the run's config, not from the flag variables here.
+func writeReports(results []*runner.FileResult, wall time.Duration, junitPath, jsonPath string) error {
 	var errs []error
-	if reportJUnit != "" {
-		errs = append(errs, writeReportFile(reportJUnit, func(w io.Writer) error {
+	if junitPath != "" {
+		errs = append(errs, writeReportFile(junitPath, func(w io.Writer) error {
 			return report.WriteJUnit(w, results, wall)
 		}))
 	}
-	if reportJSON != "" {
-		errs = append(errs, writeReportFile(reportJSON, func(w io.Writer) error {
+	if jsonPath != "" {
+		errs = append(errs, writeReportFile(jsonPath, func(w io.Writer) error {
 			return report.WriteJSON(w, results, wall)
 		}))
 	}

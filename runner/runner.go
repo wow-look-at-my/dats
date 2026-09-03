@@ -187,14 +187,14 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		if r.Verbose && len(testFile.Setup) > 0 {
 			fmt.Fprintln(r.Formatter.Writer)
 		}
-		// Launch every instance; the pool bounds how many run concurrently.
 		instanceResults := make([]TestResult, len(instances))
 		var wg sync.WaitGroup
 		for i := range instances {
+			// Taking the slot here, not in the goroutine, starts instances in declaration order.
+			pool.acquire()
 			wg.Add(1)
 			go func(i int) {
 				defer wg.Done()
-				pool.acquire()
 				defer pool.release()
 				testResult := r.RunTest(ctx, &instances[i].Test, tempDir, i)
 				testResult.Name = instanceName(&instances[i])

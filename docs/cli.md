@@ -303,7 +303,8 @@ would be the ssh analogue of a file switching its own sandbox off.
 
 dats runs test commands concurrently by default — one per logical CPU. There is a single
 execution path: `-j`/`--jobs` only sizes the pool, and `-j1` is how you ask for one command
-at a time.
+at a time. Instances take their slot in declaration order, so `-j1` is a sequential run of
+the file as written.
 
 ### Flag forms
 
@@ -327,6 +328,11 @@ at a time.
   "skipped") without running them; teardown commands run (sequentially, in declared order)
   only after the file's last instance finishes, and always run. Test instances of one file
   may run concurrently with each other and with other files' instances and hooks.
+- **A file's instances START in declaration order.** A worker takes its slot in the order
+  the instances are declared, so `-j1` is a sequential run: instance 2 begins only after
+  instance 1 has finished. This is what makes a stateful file — one whose tests mutate what
+  the setup command built, in order — express that with `-j1`. At a higher `-j`, start order
+  is still declaration order, but instances overlap, so finishing order is not.
 - **Everything still runs.** `-j` changes scheduling only — there is no test filtering or
   selection, and per-test timeouts, exit-code semantics, fixture isolation, and
   `--coverdir` behave identically at every `-j` value.
