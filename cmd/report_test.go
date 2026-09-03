@@ -14,11 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setReportFlags(t *testing.T, junitPath, jsonPath string) {
-	t.Helper()
-	prevJUnit, prevJSON := reportJUnit, reportJSON
-	reportJUnit, reportJSON = junitPath, jsonPath
-	t.Cleanup(func() { reportJUnit, reportJSON = prevJUnit, prevJSON })
+// reportConfig is a run that writes both report files.
+func reportConfig(junitPath, jsonPath string) runConfig {
+	return runConfig{ReportJUnit: junitPath, ReportJSON: jsonPath}
 }
 
 func writeReportCorpus(t *testing.T) (dir string, files []string) {
@@ -86,11 +84,12 @@ func runCorpusWithReports(t *testing.T, dir string, files []string, jobs int) (j
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
+	cfg.Jobs = jobs
 
 	t.Chdir(dir)
 	var out bytes.Buffer
-	runErr = runTests(context.Background(), files, &out, jobs, nil, "")
+	runErr = runTests(context.Background(), files, &out, cfg)
 
 	var err error
 	junitRaw, err = os.ReadFile(junitPath)
@@ -167,10 +166,10 @@ func TestReportsCreateParentDirectories(t *testing.T) {
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "deep", "junit", "report.xml")
 	jsonPath := filepath.Join(outDir, "deeper", "json", "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
 
 	var out bytes.Buffer
-	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, 0, nil, ""))
+	require.Nil(t, runTests(context.Background(), []string{datsFile}, &out, cfg))
 	_, err := os.Stat(junitPath)
 	assert.Nil(t, err, "missing parent directories must be created")
 	_, err = os.Stat(jsonPath)
@@ -182,10 +181,10 @@ func TestReportsWrittenWhenRunFails(t *testing.T) {
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, cfg)
 	assert.ErrorIs(t, err, errTestsFailed, "exit-code semantics stay unchanged")
 
 	raw, readErr := os.ReadFile(jsonPath)
@@ -210,10 +209,10 @@ func TestReportsUnwritablePathFailsTheRun(t *testing.T) {
 
 	junitPath := filepath.Join(outDir, "fine.xml")
 	jsonPath := filepath.Join(blocker, "sub", "report.json") // path through a FILE
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, cfg)
 	require.NotNil(t, err, "a report write failure must fail the run even when all tests passed")
 	assert.NotErrorIs(t, err, errTestsFailed, "the error must surface on stderr, not exit silently")
 	assert.Contains(t, err.Error(), jsonPath)
@@ -230,10 +229,10 @@ func TestReportsControlCharsStayParseable(t *testing.T) {
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	cfg := reportConfig(junitPath, jsonPath)
 
 	var out bytes.Buffer
-	err := runTests(context.Background(), []string{datsFile}, &out, 0, nil, "")
+	err := runTests(context.Background(), []string{datsFile}, &out, cfg)
 	assert.ErrorIs(t, err, errTestsFailed)
 
 	junitRaw, readErr := os.ReadFile(junitPath)
@@ -269,7 +268,10 @@ func TestSyntaxUnaffectedByReportFlags(t *testing.T) {
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")
 	jsonPath := filepath.Join(outDir, "report.json")
-	setReportFlags(t, junitPath, jsonPath)
+	// This asserts that dats syntax ignores the flag variables, so it sets them.
+	prevJUnit, prevJSON := reportJUnit, reportJSON
+	reportJUnit, reportJSON = junitPath, jsonPath
+	t.Cleanup(func() { reportJUnit, reportJSON = prevJUnit, prevJSON })
 
 	var out, errw bytes.Buffer
 	assert.True(t, runSyntax([]string{datsFile}, &out, &errw))
