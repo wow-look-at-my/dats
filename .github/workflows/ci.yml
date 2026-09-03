@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    # Every branch and no tag: a bare push: re-enters this workflow on each tag the release step pushes.
+    branches: ['**']
   workflow_dispatch:
 
 concurrency:
@@ -44,14 +46,13 @@ jobs:
           for t in localhost 127.0.0.1; do
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$t" 'echo ssh ok; command -v tar bash'
           done
-      - uses: wow-look-at-my/go-toolchain@v1
+      - uses: wow-look-at-my/go-toolchain@master
         env:
           # Job level, not step level: the tests run inside the action.
           DATS_TEST_SSH_TARGET: localhost
           DATS_TEST_SSH_TARGET2: 127.0.0.1
         with:
           autorelease: true
-          upload-artifacts: true
 
   schema:
     runs-on: ubuntu-latest
@@ -101,7 +102,7 @@ jobs:
       # THIS commit's binary: the APE the test job handed off runs on all three hosts.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-test.broot
           path: build
       # The .exe name everywhere: NT needs the suffix and a posix host does not care, so one script covers every leg.
       - name: Run this commit's binary
@@ -126,7 +127,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-test.broot
           path: build
       # The same script the action installs a backend with, so a consumer's host and this one agree.
       - name: Provision the sandbox backend
@@ -155,7 +156,7 @@ jobs:
       # THIS commit's binary, not the published one.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
-          name: go-build
+          name: go-build-test.broot
           path: build
       - name: Stage the binary this commit built
         run: |

@@ -52,15 +52,7 @@ Depth: "dats docs cli", section "Watch Mode".`,
 
 // runWatchCommand implements dats watch: an initial run, then re-runs driven by filesystem events.
 func runWatchCommand(cmd *cobra.Command, args []string) error {
-	jobs, err := resolveJobs(cmd.Flags())
-	if err != nil {
-		return err
-	}
-	sandbox, err := resolveSandbox(cmd.Flags())
-	if err != nil {
-		return err
-	}
-	sshTarget, err := resolveSSH(cmd.Flags())
+	cfg, err := resolveRunConfig(cmd.Flags())
 	if err != nil {
 		return err
 	}
@@ -72,13 +64,11 @@ func runWatchCommand(cmd *cobra.Command, args []string) error {
 	defer stop()
 
 	w := &watchSession{
-		args:      args,
-		jobs:      jobs,
-		sandbox:   sandbox,
-		sshTarget: sshTarget,
-		out:       os.Stdout,
-		isTTY:     stdoutIsTTY(),
-		events:    make(chan watchEvent, 64),
+		args:   args,
+		cfg:    cfg,
+		out:    os.Stdout,
+		isTTY:  stdoutIsTTY(),
+		events: make(chan watchEvent, 64),
 	}
 	defer w.closeWatcher()
 
@@ -132,12 +122,10 @@ func watchLoop(ctx context.Context, events <-chan watchEvent, cycle func(ctx con
 }
 
 type watchSession struct {
-	args      []string
-	jobs      int
-	sandbox   *runner.SandboxConfig
-	sshTarget string
-	out       io.Writer
-	isTTY     bool
+	args  []string
+	cfg   runConfig
+	out   io.Writer
+	isTTY bool
 
 	run     int      // completed-run counter (headers count from the opening run)
 	files   []string // last successfully resolved file list
@@ -163,7 +151,7 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 	w.run++
 	w.printHeader(changed)
 
-	runErr := runTests(ctx, w.args, w.out, w.jobs, w.sandbox, w.sshTarget)
+	runErr := runTests(ctx, w.args, w.out, w.cfg)
 	if ctx.Err() != nil {
 		return
 	}
@@ -210,7 +198,7 @@ func watchHeader(run int, now time.Time, changed []string) string {
 }
 
 func (w *watchSession) rebuildWatches() error {
-	scope := buildWatchScope(w.files, w.args)
+	scope := buildWatchScope(w.files, w.args, w.cfg)
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return err
@@ -266,11 +254,11 @@ type watchScope struct {
 	update   bool            // --update: the run itself rewrites goldens
 }
 
-func buildWatchScope(files, args []string) *watchScope {
+func buildWatchScope(files, args []string, cfg runConfig) *watchScope {
 	scope := &watchScope{
 		files:   set.New[string](len(files)),
 		reports: set.New[string](2),
-		update:  updateGoldens,
+		update:  cfg.Update,
 	}
 	for _, file := range files {
 		abs := watchAbs(file)
@@ -278,7 +266,7 @@ func buildWatchScope(files, args []string) *watchScope {
 		scope.snapDirs = append(scope.snapDirs, runner.SnapshotDir(abs))
 	}
 	scope.dirTrees = watchDirTrees(args)
-	for _, path := range []string{reportJUnit, reportJSON} {
+	for _, path := range []string{cfg.ReportJUnit, cfg.ReportJSON} {
 		if path != "" {
 			scope.reports.Add(watchAbs(path))
 		}
