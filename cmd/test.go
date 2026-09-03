@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/wow-look-at-my/dats/runner"
 
 	dats "github.com/wow-look-at-my/dats"
@@ -51,36 +52,63 @@ Depth: "dats docs cli" (flags, discovery, sandboxing, -j, output),
 	RunE: runTestsCommand,
 }
 
-func runTestsCommand(cmd *cobra.Command, args []string) error {
-	jobs, err := resolveJobs(cmd.Flags())
-	if err != nil {
-		return err
-	}
-	sandbox, err := resolveSandbox(cmd.Flags())
-	if err != nil {
-		return err
-	}
-	sshTarget, err := resolveSSH(cmd.Flags())
-	if err != nil {
-		return err
-	}
-	return runTests(context.Background(), args, os.Stdout, jobs, sandbox, sshTarget)
+// runConfig is what the flags decided; a run carries it rather than reading
+// shared variables, so parallel tests each drive their own.
+type runConfig struct {
+	Jobs        int
+	Sandbox     *runner.SandboxConfig
+	SSHTarget   string
+	Update      bool
+	ReportJUnit string
+	ReportJSON  string
 }
 
-func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandbox *runner.SandboxConfig, sshTarget string) error {
+// resolveRunConfig reads the flag set into the values a run carries.
+func resolveRunConfig(flags *pflag.FlagSet) (runConfig, error) {
+	jobs, err := resolveJobs(flags)
+	if err != nil {
+		return runConfig{}, err
+	}
+	sandbox, err := resolveSandbox(flags)
+	if err != nil {
+		return runConfig{}, err
+	}
+	sshTarget, err := resolveSSH(flags)
+	if err != nil {
+		return runConfig{}, err
+	}
+	return runConfig{
+		Jobs:        jobs,
+		Sandbox:     sandbox,
+		SSHTarget:   sshTarget,
+		Update:      updateGoldens,
+		ReportJUnit: reportJUnit,
+		ReportJSON:  reportJSON,
+	}, nil
+}
+
+func runTestsCommand(cmd *cobra.Command, args []string) error {
+	cfg, err := resolveRunConfig(cmd.Flags())
+	if err != nil {
+		return err
+	}
+	return runTests(context.Background(), args, os.Stdout, cfg)
+}
+
+func runTests(ctx context.Context, args []string, out io.Writer, cfg runConfig) error {
 	opts := dats.Options{
 		Paths:    args,
 		Output:   out,
-		Jobs:     jobs,
-		SSH:      dats.SSH{Target: sshTarget, Allow: approveSSHTarget},
+		Jobs:     cfg.Jobs,
+		SSH:      dats.SSH{Target: cfg.SSHTarget, Allow: approveSSHTarget},
 		Verbose:  verbose,
-		Update:   updateGoldens,
+		Update:   cfg.Update,
 		KeepTemp: keepTemp,
 		CoverDir: coverDir,
 		Sandbox:  dats.Sandbox{Mode: runner.SandboxNone},
 	}
-	if sandbox != nil {
-		opts.Sandbox = dats.Sandbox{Mode: sandbox.Mode, Image: sandbox.Image}
+	if cfg.Sandbox != nil {
+		opts.Sandbox = dats.Sandbox{Mode: cfg.Sandbox.Mode, Image: cfg.Sandbox.Image}
 	}
 
 	result, err := dats.Run(ctx, opts)
@@ -88,7 +116,7 @@ func runTests(ctx context.Context, args []string, out io.Writer, jobs int, sandb
 		return err
 	}
 
-	if err := writeReports(result.Files, result.Wall); err != nil {
+	if err := writeReports(result.Files, result.Wall, cfg.ReportJUnit, cfg.ReportJSON); err != nil {
 		return err
 	}
 
