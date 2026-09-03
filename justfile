@@ -10,13 +10,13 @@ _help:
 build output="$BUILD_DIR/dats":
     go fmt ./...
     go vet ./...
-    go build -o {{output}} .
+    go build -o {{output}} ./cmd/dats
 
 # Build with coverage instrumentation
 build-cover output="$BUILD_DIR/dats":
     go fmt ./...
     go vet ./...
-    go build -cover -o {{output}} .
+    go build -cover -o {{output}} ./cmd/dats
 
 # Run all tests with coverage
 test: build
