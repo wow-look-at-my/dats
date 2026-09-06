@@ -13,11 +13,16 @@
 sandbox:
 	network: false # this file's commands need no network, so they get none
 
+# Every command runs here, resolved against this file's own directory, so the
+# paths below read the same whatever directory the run started in. It replaces
+# a cd inside cmd, which is a parse error.
+workdir: .
+
 tests:
 	# Fixtures and output files live in the sandbox's writable temp directory,
 	# so every placeholder and assertion behaves exactly as it does unsandboxed.
 	- desc: fixtures and output files work the same inside the sandbox
-	  cmd: cat {inputs.in.txt} > {outputs.out.txt}
+	  cmd: cp {inputs.in.txt} {outputs.out.txt}
 	  inputs:
 		files:
 			in.txt: sandboxed content
@@ -30,7 +35,7 @@ tests:
 	# The file-wide shared directory is writable too -- it is part of the same
 	# temp tree -- so setup-style file generation works under a sandbox.
 	- desc: the shared directory is writable
-	  cmd: echo generated > {shared.note.txt} && cat {shared.note.txt}
+	  cmd: echo generated | tee {shared.note.txt}
 	  outputs:
 		stdout:
 			- generated
@@ -43,8 +48,7 @@ tests:
 	- desc: TMPDIR is writable inside the sandbox
 	  cmd: |
 		tmp="${TMPDIR:-/tmp}"
-		printf 'scratch\n' > "$tmp/dats-tmpdir-probe"
-		cat "$tmp/dats-tmpdir-probe"
+		printf 'scratch\n' | tee "$tmp/dats-tmpdir-probe"
 	  outputs:
 		stdout:
 			- scratch
@@ -59,7 +63,7 @@ tests:
 		copy:
 			source.txt: host-files/readonly-source.txt
 	  cmd: |
-		echo "modified inside the sandbox" >> {inputs.source.txt}
+		echo "modified inside the sandbox" | tee -a {inputs.source.txt}
 		cat {inputs.source.txt}
 	  outputs:
 		stdout:
@@ -68,11 +72,10 @@ tests:
 
 	# The host fixture itself is read-only from inside the sandbox (and never
 	# touched by the copy above, which wrote to the temp directory instead).
-	# cmd runs in dats' own working directory (unlike inputs.copy sources,
-	# which resolve relative to this .dats file), so the path is spelled from
-	# the repo root -- the directory `just test` runs `dats examples/` from.
+	# The file's workdir puts cmd in this .dats file's own directory, the same
+	# place inputs.copy sources resolve against, so both spell the path alike.
 	- desc: the host fixture the copy came from is untouched
-	  cmd: cat examples/host-files/readonly-source.txt
+	  cmd: cat host-files/readonly-source.txt
 	  outputs:
 		stdout:
 			- "the source lives on the host"

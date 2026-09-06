@@ -1,25 +1,28 @@
 package schema
 
-import "strings"
+import (
+	"strings"
+
+	"mvdan.cc/sh/v3/syntax"
+)
 
 // A dats command is one command, not a shell script. Everything this file
 // rejects has a schema key that does the same job where the runner can see it:
 // a redirect hides from dats exactly the output dats exists to assert on, a
 // separator turns one test into several whose failures the exit code hides,
 // and a cd makes the command's meaning depend on where the reader started.
-
-// shellFinding is one rejected construct: the offset it starts at and why.
-type shellFinding struct {
-	Offset  int
-	Message string
-}
+//
+// The check runs on a real parse (mvdan.cc/sh/v3/syntax, the parser behind
+// shfmt), so a `;` inside a sed script, a `>` inside $(( )), and a `cd` that is
+// an argument rather than a command are each what they are. Matching bytes had
+// to guess at all three.
 
 const (
-	semicolonMessage = "must not chain commands with `;` -- put each command on its own line (cmd takes a block scalar), and let the shell's errexit stop the line that fails"
+	semicolonMessage = "must not separate commands with `;` -- put each command on its own line (cmd takes a `|` block scalar), and let errexit stop the line that fails"
 
-	andListMessage = "must not chain commands with `&&` -- put each command on its own line; the line that fails ends the command, so && only restates it. Use `|| true` to let one command fail on purpose"
+	andListMessage = "must not chain commands with `&&` -- put each command on its own line; the line that fails ends the command, so && only restates it. Write `|| true` where a command may fail on purpose"
 
-	redirectMessage = "must not redirect -- dats captures stdout and stderr, and a redirect takes away what the assertions read. Feed input with inputs.stdin or inputs.files/inputs.copy, and assert on outputs.stdout, outputs.stderr or outputs.files"
+	redirectMessage = "must not redirect -- dats captures stdout and stderr, and a redirect takes away what the assertions read. Feed input with inputs.stdin or inputs.files/inputs.copy, write a file with the command's own output flag (or tee), and assert on outputs.stdout, outputs.stderr and outputs.files"
 
 	heredocMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
 
@@ -28,95 +31,57 @@ const (
 	cdMessage = "must not cd -- set workdir, which every command in the file (or the test) then runs in, so the command reads the same wherever the run started"
 )
 
-// scanShell reports the first construct a dats command may not contain.
-//
-// The scan honors shell quoting and backslash escapes, so a `;` inside a sed
-// script or a `>` inside an awk program is data and stays legal. It is not a
-// shell parser: it recognizes the operators at the top level of the text, which
-// is where a command turns into a script.
-func scanShell(s string) *shellFinding {
-	atCommandStart := true
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; c {
-		case '\\':
-			i++ // The escaped byte is data, whatever it is.
-		case '\'':
-			if end := strings.IndexByte(s[i+1:], '\''); end >= 0 {
-				i += end + 1
-			} else {
-				i = len(s)
-			}
-		case '"':
-			i = skipDoubleQuoted(s, i)
-		case ';':
-			return &shellFinding{Offset: i, Message: semicolonMessage}
-		case '&':
-			if i+1 < len(s) && s[i+1] == '&' {
-				return &shellFinding{Offset: i, Message: andListMessage}
-			}
-			if i+1 < len(s) && s[i+1] == '>' {
-				return &shellFinding{Offset: i, Message: redirectMessage}
-			}
-			atCommandStart = true
-		case '<':
-			if strings.HasPrefix(s[i:], "<<<") {
-				return &shellFinding{Offset: i, Message: herestringMessage}
-			}
-			if strings.HasPrefix(s[i:], "<<") {
-				return &shellFinding{Offset: i, Message: heredocMessage}
-			}
-			return &shellFinding{Offset: i, Message: redirectMessage}
-		case '>':
-			return &shellFinding{Offset: i, Message: redirectMessage}
-		case '\n', '|', '(', '{':
-			atCommandStart = true
-		case ' ', '\t':
-			// Whitespace neither starts nor ends a command word.
-		default:
-			if atCommandStart && isCdWord(s[i:]) {
-				return &shellFinding{Offset: i, Message: cdMessage}
-			}
-			atCommandStart = false
-		}
-	}
-	return nil
-}
-
-// skipDoubleQuoted returns the index of the closing quote of the run starting at
-// the quote s[open], or the end of s when the run never closes. A backslash
-// inside double quotes still escapes, so an escaped quote does not close it.
-func skipDoubleQuoted(s string, open int) int {
-	for i := open + 1; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case '"':
-			return i
-		}
-	}
-	return len(s)
-}
-
-// isCdWord reports whether s opens with cd as a whole command word.
-func isCdWord(s string) bool {
-	rest, found := strings.CutPrefix(s, "cd")
-	if !found {
-		return false
-	}
-	if rest == "" {
-		return true
-	}
-	switch rest[0] {
-	case ' ', '\t', '\n', ';', '&', '|':
-		return true
-	}
-	return false
-}
-
-// checkShellCommand reports why a command text may not run as a dats command.
+// checkShellCommand reports why a command may not run as a dats command, empty
+// when it may. Text no shell can parse is reported as the parse error it is.
 func checkShellCommand(s string) string {
-	if finding := scanShell(s); finding != nil {
-		return finding.Message
+	file, err := syntax.NewParser().Parse(strings.NewReader(s), "")
+	if err != nil {
+		return "is not valid shell: " + err.Error()
 	}
-	return ""
+
+	var found string
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if found != "" {
+			return false
+		}
+		switch n := node.(type) {
+		case *syntax.Stmt:
+			// A statement written `a; b` carries the semicolon; a newline-
+			// separated one carries none.
+			if n.Semicolon.IsValid() {
+				found = semicolonMessage
+			}
+		case *syntax.BinaryCmd:
+			// `||` stays legal: it is how a command says a failure is expected,
+			// and under errexit there is no other way to say it.
+			if n.Op == syntax.AndStmt {
+				found = andListMessage
+			}
+		case *syntax.Redirect:
+			found = redirectFinding(n.Op)
+		case *syntax.CallExpr:
+			if isCdCall(n) {
+				found = cdMessage
+			}
+		}
+		return found == ""
+	})
+	return found
+}
+
+// redirectFinding names the redirection, so the reader is pointed at the key
+// that replaces the operator they wrote.
+func redirectFinding(op syntax.RedirOperator) string {
+	switch op {
+	case syntax.Hdoc, syntax.DashHdoc:
+		return heredocMessage
+	case syntax.WordHdoc:
+		return herestringMessage
+	}
+	return redirectMessage
+}
+
+// isCdCall reports whether the call runs cd, rather than merely naming it.
+func isCdCall(call *syntax.CallExpr) bool {
+	return len(call.Args) > 0 && call.Args[0].Lit() == "cd"
 }
