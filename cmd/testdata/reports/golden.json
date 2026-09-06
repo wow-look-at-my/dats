@@ -51,7 +51,7 @@
             "stdout: expected output to contain \"wanted-one\"",
             "stdout: expected output to contain \"wanted-two\""
           ],
-          "command": "printf 'real-out'; printf 'real-err' >&2; exit 3",
+          "command": "printf 'real-out'\nprintf 'real-err' >&2\nexit 3\n",
           "stdout": "real-out",
           "stderr": "real-err"
         },
@@ -71,8 +71,8 @@
           "failures": [
             "file result.txt: file \"TMPDIR/test-2/outputs/result.txt\": expected to match \"different\""
           ],
-          "command": "printf data > TMPDIR/test-2/outputs/result.txt",
-          "stdout": "",
+          "command": "printf data | tee TMPDIR/test-2/outputs/result.txt",
+          "stdout": "data",
           "stderr": ""
         }
       ]
@@ -82,7 +82,7 @@
       "ok": false,
       "duration_seconds": 0,
       "setup_failure": {
-        "command": "echo setup-out; echo setup-err >&2; exit 7",
+        "command": "echo setup-out\necho setup-err >&2\nexit 7\n",
         "detail": "exit code 7",
         "stdout": "setup-out\n",
         "stderr": "setup-err\n"
@@ -122,13 +122,13 @@
       "setup_failure": null,
       "teardown_failures": [
         {
-          "command": "echo cleanup-out; exit 4",
+          "command": "echo cleanup-out\nexit 4\n",
           "detail": "exit code 4",
           "stdout": "cleanup-out\n",
           "stderr": ""
         },
         {
-          "command": "echo cleanup-err >&2; exit 5",
+          "command": "echo cleanup-err >&2\nexit 5\n",
           "detail": "exit code 5",
           "stdout": "",
           "stderr": "cleanup-err\n"

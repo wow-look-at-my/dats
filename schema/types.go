@@ -26,8 +26,8 @@ type TestFile struct {
 	Sandbox  *SandboxSpec     `yaml:"sandbox,omitempty"`
 	// SSH proposes the machine this file's commands run on; a run approves it.
 	SSH *SSHSpec `yaml:"ssh,omitempty"`
-	// Workdir is the directory every command in the file runs in, relative to the
-	// .dats file's own directory. It replaces cd, which is a parse error.
+	// Workdir is where every command runs, relative to this .dats file. It
+	// replaces cd, which is a parse error.
 	Workdir string `yaml:"workdir,omitempty"`
 	Tests   []Test `yaml:"tests"`
 }
@@ -322,8 +322,8 @@ func (o *OutputBlock) JSONOutputValue() (any, error) {
 type OutputCheck struct {
 	Patterns   []string       // patterns to match anywhere
 	LineChecks map[int]string // line-specific patterns, keyed by the line's offset from the top
-	// Stated records that the file wrote this key. An empty check is a parse error,
-	// so "written empty" must stay distinguishable from "omitted".
+	// Stated records that the file wrote this key: an empty check is a parse
+	// error, so "written empty" must differ from "omitted".
 	Stated bool
 }
 

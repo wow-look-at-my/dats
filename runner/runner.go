@@ -324,11 +324,8 @@ func sourceDirOf(path string) (string, error) {
 }
 
 // resolveWorkdir turns a declared workdir into the absolute directory commands
-// run in. An empty declaration keeps the directory the run started in.
-//
-// The path resolves against the .dats file's own directory, so the suite names
-// the same place from any starting directory. A path that is not a directory is
-// an error here rather than a cd failure repeated once per test.
+// run in; empty keeps the directory the run started in. A path that is not a
+// directory fails here, rather than as a cd failure repeated per test.
 func resolveWorkdir(dir, sourceDir string) (string, error) {
 	if dir == "" {
 		return "", nil
@@ -410,7 +407,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	}
 	env, added := r.commandEnv(extra...)
 
-	// A test's own workdir overrides the file's, so one test can step aside.
+	// A test's own workdir overrides the file's.
 	workdir := r.fileWorkdir
 	if test.Workdir != "" {
 		if workdir, err = resolveWorkdir(test.Workdir, r.sourceDir); err != nil {

@@ -28,7 +28,7 @@ func setLowPriority(pid int) error {
 	return syscall.Setpriority(syscall.PRIO_PGRP, pid, 19)
 }
 
-// nicePath resolves nice once per run. Empty when the host has none.
+// nicePath resolves nice for the whole run. Empty when the host has none.
 var nicePath = sync.OnceValue(func() string {
 	path, err := exec.LookPath("nice")
 	if err != nil {
@@ -38,9 +38,9 @@ var nicePath = sync.OnceValue(func() string {
 })
 
 // lowPriorityArgv prefixes argv so the child lowers its OWN priority before the
-// real command runs. Renicing from the parent after the start loses a race that
-// a short command wins, and nice execs in place, so the pid and the process
-// group the canceller kills stay the same. Empty means the host has no nice.
+// real command runs; renicing from the parent afterward loses to a command that
+// finishes first. nice execs in place, so the pid and process group the
+// canceller kills are unchanged. Empty means the host has no nice.
 func lowPriorityArgv(argv []string) []string {
 	path := nicePath()
 	if path == "" {

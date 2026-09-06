@@ -118,8 +118,7 @@ func TestRunFilesCrossFileConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	aMarker := filepath.Join(dir, "a.txt")
 	bMarker := filepath.Join(dir, "b.txt")
-	// The lines carry the block scalar's own indentation, since they are
-	// interpolated into one.
+	// The lines carry block-scalar indentation: they are interpolated into one.
 	wait := func(marker string) string {
 		return strings.ReplaceAll(fmt.Sprintf(
 			`ok=1

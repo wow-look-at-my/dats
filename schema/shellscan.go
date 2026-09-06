@@ -6,16 +6,12 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
-// A dats command is one command, not a shell script. Everything this file
-// rejects has a schema key that does the same job where the runner can see it:
-// a redirect hides from dats exactly the output dats exists to assert on, a
-// separator turns one test into several whose failures the exit code hides,
-// and a cd makes the command's meaning depend on where the reader started.
+// A dats command is a command, not a shell script. Everything rejected here has
+// a schema key that does the same job where the runner can see it.
 //
 // The check runs on a real parse (mvdan.cc/sh/v3/syntax, the parser behind
-// shfmt), so a `;` inside a sed script, a `>` inside $(( )), and a `cd` that is
-// an argument rather than a command are each what they are. Matching bytes had
-// to guess at all three.
+// shfmt), so a `;` inside a sed script, a `>` inside $(( )), and a `cd` used as
+// an argument are each what they are. Matching bytes had to guess.
 
 const (
 	semicolonMessage = "must not separate commands with `;` -- put each command on its own line (cmd takes a `|` block scalar), and let errexit stop the line that fails"
@@ -36,9 +32,8 @@ const (
 func checkShellCommand(s string) string {
 	file, err := syntax.NewParser().Parse(strings.NewReader(s), "")
 	if err != nil {
-		// A heredoc whose body never arrives fails the parse before the walk can
-		// name it. The author still wrote a heredoc, so say which key replaces it
-		// rather than report an unclosed one they cannot close from here.
+		// An unterminated heredoc fails the parse before the walk sees it. The
+		// author still wrote a heredoc, so name the key that replaces it.
 		if strings.Contains(err.Error(), "here-document") {
 			return heredocMessage
 		}
@@ -52,14 +47,13 @@ func checkShellCommand(s string) string {
 		}
 		switch n := node.(type) {
 		case *syntax.Stmt:
-			// A statement written `a; b` carries the semicolon; a newline-
-			// separated one carries none.
+			// `a; b` carries the semicolon; newline-separated carries none.
 			if n.Semicolon.IsValid() {
 				found = semicolonMessage
 			}
 		case *syntax.BinaryCmd:
-			// `||` stays legal: it is how a command says a failure is expected,
-			// and under errexit there is no other way to say it.
+			// `||` stays legal: under errexit it is the only way to say a
+			// failure is expected.
 			if n.Op == syntax.AndStmt {
 				found = andListMessage
 			}
@@ -75,9 +69,8 @@ func checkShellCommand(s string) string {
 	return found
 }
 
-// redirectFinding names the redirection, so the reader is pointed at the key
-// that replaces the operator they wrote. It reports empty for a redirection that
-// keeps the bytes inside dats.
+// redirectFinding names the key that replaces the operator the author wrote,
+// and reports empty for a redirection that keeps the bytes inside dats.
 func redirectFinding(r *syntax.Redirect) string {
 	switch r.Op {
 	case syntax.Hdoc, syntax.DashHdoc:
@@ -85,9 +78,8 @@ func redirectFinding(r *syntax.Redirect) string {
 	case syntax.WordHdoc:
 		return herestringMessage
 	case syntax.DplOut, syntax.DplIn:
-		// `>&2` and `2>&1` move output between the two streams dats captures, so
-		// nothing escapes and every assertion still reads it. A duplication onto
-		// any other descriptor does escape, and is a redirect like the rest.
+		// Moving output between the streams dats captures lets every assertion
+		// still read it. Any other descriptor escapes, like a file would.
 		if target := r.Word.Lit(); target == "1" || target == "2" {
 			return ""
 		}

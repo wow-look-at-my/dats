@@ -138,12 +138,9 @@ func ParseFile(path string) (*TestFile, error) {
 	return &testFile, nil
 }
 
-// validateWorkdir rejects a workdir the run cannot reproduce.
-//
-// The path resolves against the .dats file's own directory, so a suite means the
-// same thing wherever it is checked out and whatever directory the run started
-// in. An absolute path names one machine's layout, and a path climbing out of
-// the tree names whatever happens to sit above the checkout.
+// validateWorkdir rejects a workdir the run cannot reproduce. The path resolves
+// against the .dats file's own directory, so an absolute path names a single
+// machine's layout and a climbing path names whatever sits above the checkout.
 func validateWorkdir(dir, key string) error {
 	if dir == "" {
 		return nil
@@ -160,9 +157,8 @@ func validateWorkdir(dir, key string) error {
 // validateOutputAssertions rejects an outputs key that names a stream or a file
 // set and then asserts nothing about it.
 //
-// dats reports such a test as ok, and the reader sees a key that says the output
-// was checked. Omitting the key runs the same assertions and claims nothing, so
-// the empty form only ever misleads. Either way the test still checks the exit code.
+// dats reports such a test as ok while the reader sees a key saying the output
+// was checked. Omitting the key runs the same assertions and claims nothing.
 func validateOutputAssertions(out *OutputBlock) error {
 	for _, check := range []struct {
 		key   string
