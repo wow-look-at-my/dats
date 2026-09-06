@@ -101,8 +101,8 @@ it.
 
 ## The input surface is typed, not a raw argv
 
-The action's inputs are `tests`, `working-directory`, `version`, `jobs` and
-`sandbox`. There is deliberately no `args` passthrough: a caller cannot hand
+The action's inputs are `tests`, `working-directory`, `jobs` and `sandbox`.
+There is deliberately no `args` passthrough: a caller cannot hand
 dats a raw command line, so nothing a caller types becomes a flag or a
 subcommand. Each input selects a documented behaviour and is checked against
 what dats accepts, so a typo fails in the action naming the input rather than

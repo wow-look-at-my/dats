@@ -175,7 +175,7 @@ On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
 24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
 way this repo's own CI does (see "CI/CD" above) — so a caller gets real
 sandboxing without needing `--no-sandbox` to work around the runner. The
-action's surface is `tests`/`working-directory`/`version`/`jobs`/`sandbox`:
+action's surface is `tests`/`working-directory`/`jobs`/`sandbox`:
 every input is typed and validated against what dats accepts, and there is no
 `args` passthrough, so a caller selects a documented behaviour and can never
 smuggle a flag. `jobs: '1'` is what a stateful suite needs. `sandbox: none` is
