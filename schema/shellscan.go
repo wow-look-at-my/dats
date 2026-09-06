@@ -22,7 +22,7 @@ const (
 
 	andListMessage = "must not chain commands with `&&` -- put each command on its own line; the line that fails ends the command, so && only restates it. Write `|| true` where a command may fail on purpose"
 
-	redirectMessage = "must not redirect -- dats captures stdout and stderr, and a redirect takes away what the assertions read. Feed input with inputs.stdin or inputs.files/inputs.copy, write a file with the command's own output flag (or tee), and assert on outputs.stdout, outputs.stderr and outputs.files"
+	redirectMessage = "must not redirect to a file -- dats captures stdout and stderr, and a redirect sends them where no assertion can read them. Feed input with inputs.stdin or inputs.files/inputs.copy, write a file with the command's own output flag (or tee), and assert on outputs.stdout, outputs.stderr and outputs.files. Moving output between the two captured streams (>&2, 2>&1) stays legal"
 
 	heredocMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
 
@@ -36,6 +36,12 @@ const (
 func checkShellCommand(s string) string {
 	file, err := syntax.NewParser().Parse(strings.NewReader(s), "")
 	if err != nil {
+		// A heredoc whose body never arrives fails the parse before the walk can
+		// name it. The author still wrote a heredoc, so say which key replaces it
+		// rather than report an unclosed one they cannot close from here.
+		if strings.Contains(err.Error(), "here-document") {
+			return heredocMessage
+		}
 		return "is not valid shell: " + err.Error()
 	}
 
@@ -58,7 +64,7 @@ func checkShellCommand(s string) string {
 				found = andListMessage
 			}
 		case *syntax.Redirect:
-			found = redirectFinding(n.Op)
+			found = redirectFinding(n)
 		case *syntax.CallExpr:
 			if isCdCall(n) {
 				found = cdMessage
@@ -70,13 +76,21 @@ func checkShellCommand(s string) string {
 }
 
 // redirectFinding names the redirection, so the reader is pointed at the key
-// that replaces the operator they wrote.
-func redirectFinding(op syntax.RedirOperator) string {
-	switch op {
+// that replaces the operator they wrote. It reports empty for a redirection that
+// keeps the bytes inside dats.
+func redirectFinding(r *syntax.Redirect) string {
+	switch r.Op {
 	case syntax.Hdoc, syntax.DashHdoc:
 		return heredocMessage
 	case syntax.WordHdoc:
 		return herestringMessage
+	case syntax.DplOut, syntax.DplIn:
+		// `>&2` and `2>&1` move output between the two streams dats captures, so
+		// nothing escapes and every assertion still reads it. A duplication onto
+		// any other descriptor does escape, and is a redirect like the rest.
+		if target := r.Word.Lit(); target == "1" || target == "2" {
+			return ""
+		}
 	}
 	return redirectMessage
 }

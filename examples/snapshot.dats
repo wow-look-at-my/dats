@@ -15,7 +15,9 @@ tests:
 
 	# Per-stream form: each enabled stream gets its own golden file
 	- desc: snapshots both streams
-	  cmd: echo "to stdout"; echo "to stderr" >&2
+	  cmd: |
+		echo "to stdout"
+		echo "to stderr" >&2
 	  outputs:
 		snapshot:
 			stdout: true
@@ -42,7 +44,9 @@ tests:
 	# Output containing fixture paths: the golden stores the {testdir} token,
 	# so it matches on every run even though the temp directory changes
 	- desc: prints a fixture path
-	  cmd: echo "reading {inputs.data.txt}" && cat {inputs.data.txt}
+	  cmd: |
+		echo "reading {inputs.data.txt}"
+		cat {inputs.data.txt}
 	  inputs:
 		files:
 			data.txt: "fixture content"

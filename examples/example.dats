@@ -10,8 +10,8 @@ shared:
 # also accepted). Only {shared.X} placeholders are expanded here. If a
 # command fails, every test in this file is reported as failed.
 setup:
-	- cat {shared.config.json} > {shared.generated.txt}
-	- echo "generated at setup" >> {shared.generated.txt}
+	- cp {shared.config.json} {shared.generated.txt}
+	- echo "generated at setup" | tee -a {shared.generated.txt}
 
 # File-level teardown (string form): always runs once after the tests --
 # after test failures and even when setup failed.
@@ -106,7 +106,7 @@ tests:
 	# Output file validation
 	- desc: writes an output file
 	  exit: 0
-	  cmd: echo "result data" > {outputs.result.txt}
+	  cmd: echo "result data" | tee {outputs.result.txt}
 	  outputs:
 		files:
 			result.txt:
@@ -145,7 +145,9 @@ tests:
 		env:
 			GREETING: hello from env
 			CONFIG_PATH: "{inputs.cfg.json}"
-	  cmd: echo "$GREETING"; cat "$CONFIG_PATH"
+	  cmd: |
+		echo "$GREETING"
+		cat "$CONFIG_PATH"
 	  outputs:
 		stdout:
 			- "hello from env"
@@ -155,7 +157,7 @@ tests:
 	# files/!files are created before the command runs
 	- desc: writes a nested output file
 	  exit: 0
-	  cmd: echo "nested report" > {outputs.sub/report.txt}
+	  cmd: echo "nested report" | tee {outputs.sub/report.txt}
 	  outputs:
 		files:
 			sub/report.txt:
@@ -165,7 +167,7 @@ tests:
 	# An empty file check is an implicit existence assertion (must exist)
 	- desc: empty check means the file must exist
 	  exit: 0
-	  cmd: date > {outputs.stamp.txt}
+	  cmd: date | tee {outputs.stamp.txt}
 	  outputs:
 		files:
 			stamp.txt: {}
