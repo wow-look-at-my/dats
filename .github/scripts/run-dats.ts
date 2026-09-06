@@ -8,10 +8,14 @@
 const bin = process.env.DATS_BIN;
 if (!bin) throw new Error('DATS_BIN is not set');
 
-const workdir = inputs['working-directory'] || '.';
+// An action input arrives as text, but the typescript action types the whole
+// `inputs` record as string | number | boolean, so a YAML scalar the workflow
+// wrote unquoted is a number to the type-checker. String() is what makes the
+// value the string this file has always treated it as.
+const workdir = String(inputs['working-directory'] ?? '') || '.';
 process.chdir(workdir);
 
-const raw = (inputs.tests ?? '').split(/\s+/).filter(Boolean);
+const raw = String(inputs.tests ?? '').split(/\s+/).filter(Boolean);
 if (raw.length === 0) throw new Error('tests is required: list .dats files and/or directories');
 
 const tests: string[] = [];
