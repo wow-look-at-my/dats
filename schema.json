@@ -28,6 +28,10 @@
     "ssh": {
       "$ref": "#/definitions/ssh"
     },
+    "workdir": {
+      "$ref": "#/definitions/workdir",
+      "description": "Directory every command in this file runs in - tests, setup and teardown alike. Relative to the directory holding this .dats file, so the suite names the same place from any starting directory; an absolute path or one climbing out with \"..\" is a parse error, and a path that is not an existing directory fails the run. This REPLACES cd, which is a parse error inside cmd/setup/teardown. Omit it to run in the directory the run started in."
+    },
     "tests": {
       "type": "array",
       "minItems": 1,
@@ -165,7 +169,11 @@
         },
         "cmd": {
           "type": "string",
-          "description": "Command to execute (via bash -c). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination). A shell heredoc (<<WORD, <<-WORD, <<~WORD) is rejected at parse time -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead -- and so is a herestring (<<<), which should be inputs.stdin or a pipe instead."
+          "description": "Command to execute (via bash -c, under `set -euo pipefail`). {inputs.X} expands to the absolute path of the declared input file X; {outputs.X} expands to an absolute path in the test's private outputs directory (no outputs.files check required); {shared.X} expands to an absolute path in the file's shared directory (no declaration required). The same expansion is applied to inputs.files contents. When the test declares a matrix, {matrix.X} is substituted first (plain text, one instance per value combination). A cmd is a COMMAND, not a script: the text is parsed at parse time and these are rejected -- `;` (put each command on its own line in a `|` block scalar), `&&` (errexit already ends the command at the failing line; `||` stays legal for a failure you expect), redirection to a file (dats captures both streams, so feed input with inputs.stdin/inputs.files/inputs.copy, write files with the command's own output flag or tee, and assert with outputs.stdout/outputs.stderr/outputs.files), a heredoc (<<WORD) or herestring (<<<), and cd (set workdir). Moving output between the captured streams (>&2, 2>&1) stays legal, as do pipes and operators that are data inside quotes or $(( ))."
+        },
+        "workdir": {
+          "$ref": "#/definitions/workdir",
+          "description": "Directory THIS test's command runs in, overriding the file-level workdir. Same rules: relative to the directory holding this .dats file, no absolute path and no \"..\". {matrix.X} IS substituted here, so one test can fan across directories."
         },
         "exit": {
           "description": "Expected exit code (0-255, bare or quoted) or exit code name (default 0)",
@@ -286,14 +294,16 @@
         },
         "files": {
           "type": "object",
-          "description": "Output file validations, mapping filename to checks. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "minProperties": 1,
+          "description": "Output file validations, mapping filename to checks. File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed. An empty mapping is a parse error - it asserts nothing, so drop the key.",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
         },
         "!files": {
           "type": "object",
-          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails). File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed.",
+          "minProperties": 1,
+          "description": "Negated output file validations, mapping filename to checks. Each check is inverted: exists is flipped (exists: true means the file must NOT exist), match patterns must NOT match the contents (a missing file passes), and notMatch patterns MUST match the contents (a missing file fails). File names must be relative paths that stay inside the test directory (no \"..\" or absolute paths; rejected at parse time); nested paths like \"sub/file.txt\" are allowed. An empty mapping is a parse error.",
           "additionalProperties": {
             "$ref": "#/definitions/fileCheck"
           }
@@ -336,19 +346,26 @@
         }
       }
     },
+    "workdir": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "The locality rule (no absolute path, no \"..\") is enforced at parse time; expressing it here needs lookahead, which not every validator has."
+    },
     "outputCheck": {
-      "description": "Output validation - either an array of literal substrings or a map of line-specific regex checks",
+      "description": "Output validation - either an array of literal substrings or a map of line-specific regex checks. An EMPTY array or map is a parse error: it names a stream and asserts nothing about it, so the test reports ok while the reader sees a key saying the output was checked. Drop the key instead.",
       "oneOf": [
         {
           "type": "array",
+          "minItems": 1,
           "items": {
             "type": "string"
           },
-          "description": "Literal substrings matched anywhere in the whole output. NOT regexes - metacharacters have no special meaning."
+          "description": "Literal substrings matched anywhere in the whole output. NOT regexes - metacharacters have no special meaning. At least one."
         },
         {
           "type": "object",
-          "description": "Map of 0-indexed line numbers to Go/RE2 regexes. Each regex is searched UNANCHORED within its line - use ^...$ to pin the whole line. Positive checks fail when the addressed line does not exist; negated checks pass.",
+          "minProperties": 1,
+          "description": "Map of 0-indexed line numbers to Go/RE2 regexes. Each regex is searched UNANCHORED within its line - use ^...$ to pin the whole line. Positive checks fail when the addressed line does not exist; negated checks pass. At least one entry.",
           "propertyNames": {
             "pattern": "^[0-9]+$"
           },
