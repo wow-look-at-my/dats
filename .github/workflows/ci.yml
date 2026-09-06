@@ -88,9 +88,7 @@ jobs:
         with:
           tests: examples/example.dats
 
-  # The action's two selecting inputs. Its own job, and never after a sandboxed
-  # one: sandbox: none skips the backend install, and a job that already
-  # installed a backend cannot show that the skip is harmless.
+  # The action's two selecting inputs, alone in a job because sandbox: none skips the backend install.
   action-opted-out:
     runs-on: ubuntu-latest
     timeout-minutes: 15

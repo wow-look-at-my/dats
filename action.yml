@@ -38,8 +38,7 @@ runs:
         project: dats
         version: ${{ inputs.version }}
 
-    # A caller must never need --no-sandbox to work around us -- docs/action.md.
-    # A run that opted out needs no backend, and on NT this step builds a WSL one.
+    # Installed so a caller never needs --no-sandbox; a run that opted out needs none -- docs/action.md.
     - name: Install the sandbox backend
       if: inputs.sandbox != 'none'
       shell: bash
