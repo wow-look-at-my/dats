@@ -50,7 +50,15 @@ func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 
 	// Commands run through bash -c, directly or wrapped by the sandbox backend (which ends in the same bash -c).
 	sandboxed := req.Sandbox.command(req.Cmd, req.EnvExtra)
-	command := exec.CommandContext(ctx, sandboxed.Argv[0], sandboxed.Argv[1:]...)
+	argv := sandboxed.Argv
+	reniceAfterStart := req.LowPriority
+	if req.LowPriority {
+		if prefixed := lowPriorityArgv(argv); prefixed != nil {
+			argv = prefixed
+			reniceAfterStart = false
+		}
+	}
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 	command.Stdout = &stdoutBuf
@@ -85,7 +93,7 @@ func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 		return nil, err
 	}
 
-	if req.LowPriority {
+	if reniceAfterStart {
 		_ = setLowPriority(command.Process.Pid)
 	}
 

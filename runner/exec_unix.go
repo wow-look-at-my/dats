@@ -5,6 +5,7 @@ package runner
 import (
 	"os"
 	"os/exec"
+	"sync"
 	"syscall"
 )
 
@@ -25,6 +26,27 @@ func killProcessGroup(p *os.Process) error {
 
 func setLowPriority(pid int) error {
 	return syscall.Setpriority(syscall.PRIO_PGRP, pid, 19)
+}
+
+// nicePath resolves nice once per run. Empty when the host has none.
+var nicePath = sync.OnceValue(func() string {
+	path, err := exec.LookPath("nice")
+	if err != nil {
+		return ""
+	}
+	return path
+})
+
+// lowPriorityArgv prefixes argv so the child lowers its OWN priority before the
+// real command runs. Renicing from the parent after the start loses a race that
+// a short command wins, and nice execs in place, so the pid and the process
+// group the canceller kills stay the same. Empty means the host has no nice.
+func lowPriorityArgv(argv []string) []string {
+	path := nicePath()
+	if path == "" {
+		return nil
+	}
+	return append([]string{path, "-n", "19"}, argv...)
 }
 
 func stateSignal(state *os.ProcessState) string {

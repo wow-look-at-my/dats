@@ -22,3 +22,6 @@ func killProcessGroup(p *os.Process) error {
 func stateSignal(state *os.ProcessState) string { return "" }
 
 func setLowPriority(pid int) error { return nil }
+
+// lowPriorityArgv leaves argv alone on windows, which hosts no nice(1).
+func lowPriorityArgv(argv []string) []string { return nil }

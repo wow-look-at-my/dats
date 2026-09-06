@@ -304,6 +304,7 @@ func copyOutputCheck(check OutputCheck) OutputCheck {
 	return OutputCheck{
 		Patterns:   slices.Clone(check.Patterns),
 		LineChecks: maps.Clone(check.LineChecks),
+		Stated:     check.Stated,
 	}
 }
 

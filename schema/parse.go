@@ -116,12 +116,49 @@ func ParseFile(path string) (*TestFile, error) {
 				return nil, fmt.Errorf("test %d: output file name %q must be a relative path that stays inside the test directory", i+1, name)
 			}
 		}
+		if err := validateOutputAssertions(&test.Outputs); err != nil {
+			return nil, fmt.Errorf("test %d: %w", i+1, err)
+		}
 		if err := validateMatrixRefs(&test); err != nil {
 			return nil, fmt.Errorf("test %d: %w", i+1, err)
 		}
 	}
 
 	return &testFile, nil
+}
+
+// validateOutputAssertions rejects an outputs key that names a stream or a file
+// set and then asserts nothing about it.
+//
+// dats reports such a test as ok, and the reader sees a key that says the output
+// was checked. Omitting the key runs the same assertions and claims nothing, so
+// the empty form only ever misleads. Either way the test still checks the exit code.
+func validateOutputAssertions(out *OutputBlock) error {
+	for _, check := range []struct {
+		key   string
+		check OutputCheck
+	}{
+		{"stdout", out.Stdout},
+		{"stderr", out.Stderr},
+		{"!stdout", out.NotStdout},
+		{"!stderr", out.NotStderr},
+	} {
+		if check.check.Stated && check.check.IsEmpty() {
+			return fmt.Errorf("outputs.%s: an empty check asserts nothing -- write a pattern, or drop the key", check.key)
+		}
+	}
+	for _, files := range []struct {
+		key   string
+		files map[string]FileCheck
+	}{
+		{"files", out.Files},
+		{"!files", out.NotFiles},
+	} {
+		if files.files != nil && len(files.files) == 0 {
+			return fmt.Errorf("outputs.%s: an empty mapping asserts nothing -- name a file, or drop the key", files.key)
+		}
+	}
+	return nil
 }
 
 func validateCopyBlock(copyMap, filesMap map[string]string, context string) error {

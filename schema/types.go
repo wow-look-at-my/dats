@@ -332,10 +332,14 @@ func (o *OutputBlock) JSONOutputValue() (any, error) {
 type OutputCheck struct {
 	Patterns   []string       // patterns to match anywhere
 	LineChecks map[int]string // line-specific patterns, keyed by the line's offset from the top
+	// Stated records that the file wrote this key. An empty check is a parse error,
+	// so "written empty" must stay distinguishable from "omitted".
+	Stated bool
 }
 
 // UnmarshalYAML decodes every accepted OutputCheck shape.
 func (o *OutputCheck) UnmarshalYAML(value any) error {
+	o.Stated = true
 	if value == nil {
 		return nil
 	}

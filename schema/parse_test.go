@@ -445,6 +445,108 @@ tests:
 	}
 }
 
+func TestParseFile_EmptyOutputAssertionRejected(t *testing.T) {
+	// An outputs key that names a stream and checks nothing reports ok while the
+	// reader believes the output was verified. Every spelling of it is rejected.
+	cases := map[string]struct {
+		content string
+		wantErr string
+	}{
+		"stdout empty list": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		stdout: []
+`, "test 1: outputs.stdout: an empty check asserts nothing -- write a pattern, or drop the key"},
+		"stdout empty map": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		stdout: {}
+`, "test 1: outputs.stdout: an empty check asserts nothing"},
+		"stdout explicit null": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		stdout:
+`, "test 1: outputs.stdout: an empty check asserts nothing"},
+		"stderr empty list": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		stderr: []
+`, "test 1: outputs.stderr: an empty check asserts nothing"},
+		"negated stdout empty list": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		!stdout: []
+`, "test 1: outputs.!stdout: an empty check asserts nothing"},
+		"negated stderr empty list": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		!stderr: []
+`, "test 1: outputs.!stderr: an empty check asserts nothing"},
+		"files empty map": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		files: {}
+`, "test 1: outputs.files: an empty mapping asserts nothing -- name a file, or drop the key"},
+		"negated files empty map": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		!files: {}
+`, "test 1: outputs.!files: an empty mapping asserts nothing"},
+		"error names the offending test": {`
+tests:
+	- cmd: echo hi
+	  outputs:
+		stdout:
+			- hi
+
+	- cmd: echo bye
+	  outputs:
+		stderr: []
+`, "test 2: outputs.stderr: an empty check asserts nothing"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseFile(writeTempDats(t, tc.content))
+			require.NotNil(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestParseFile_OutputAssertionsWithContentAccepted(t *testing.T) {
+	// The rejection is about an EMPTY check, so a populated check and an absent
+	// key both keep parsing. A bare cmd still checks the exit code.
+	path := writeTempDats(t, `
+tests:
+	- cmd: echo hi
+
+	- cmd: echo hi
+	  outputs:
+		stdout:
+			- hi
+		!stderr:
+			- boom
+		files:
+			out.txt: {}
+`)
+	tf, err := ParseFile(path)
+	require.NoError(t, err)
+	require.Len(t, tf.Tests, 2)
+	assert.True(t, tf.Tests[0].Outputs.Stdout.IsEmpty())
+	assert.False(t, tf.Tests[0].Outputs.Stdout.Stated)
+	assert.Equal(t, []string{"hi"}, tf.Tests[1].Outputs.Stdout.Patterns)
+	assert.Equal(t, []string{"boom"}, tf.Tests[1].Outputs.NotStderr.Patterns)
+	assert.Len(t, tf.Tests[1].Outputs.Files, 1)
+}
+
 func TestParseFile_NestedLocalFileNamesAllowed(t *testing.T) {
 	// Nested relative names like sub/file.txt are local and stay accepted.
 	path := writeTempDats(t, `
