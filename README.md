@@ -2,11 +2,11 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
-Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off..
 
-Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
+Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI..
 
-The whole reference under [docs/](docs/README.md) is compiled into the binary, so a machine with `dats` and nothing else still has it: `dats docs` lists the topics, `dats docs format` prints the file-format reference, and `dats help <topic>` prints the same pages.
+This README and `schema.json` are the reference. `schema.json` is the machine-readable copy of the file format, and every key below carries its accepted forms and its default.
 
 ## Installation
 
@@ -86,11 +86,6 @@ dats syntax
 
 # Print the version
 dats version
-
-# The documentation ships in the binary: topics, one page, or all of it
-dats docs
-dats docs format
-dats help format
 ```
 
 Both `test` and `syntax` accept any mix of `.dats` files and directories.
@@ -103,9 +98,8 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Command | Description |
 |---------|-------------|
 | `test` | Run tests from `.dats` files or directories (default when no subcommand given) |
-| `watch` | Run tests, then re-run the **complete** argument scope whenever the resolved `.dats` files, their `.snapshots/` golden dirs, or directory arguments change (debounced; no per-file re-run — dats has no test filtering by design). Ctrl-C exits 0. See [docs/cli.md](docs/cli.md#watch-mode-dats-watch) |
+| `watch` | Run tests, then re-run the **complete** argument scope whenever the resolved `.dats` files, their `.snapshots/` golden dirs, or directory arguments change (debounced; no per-file re-run — dats has no test filtering by design). Ctrl-C exits 0 |
 | `syntax` | Validate `.dats` file syntax without executing tests |
-| `docs` | Print the documentation compiled into the binary: `dats docs` lists the topics, `dats docs format` prints the file-format reference, `dats docs all` prints everything |
 | `version` | Print a one-line `dats <version>` |
 
 ### Flags
@@ -113,22 +107,21 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 | Flag | Scope | Description |
 |------|-------|-------------|
 | `-v, --verbose` | Global | Show verbose output |
-| `-j, --jobs[=N]` | Global | Run up to N test commands concurrently. **Default (flag absent) is one per logical CPU**; use `-j1` for one command at a time. Attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make. Spawned commands run at low OS priority (unix nice 19, best-effort). Output never depends on this: results are buffered per file and printed in canonical order, so any `-j` produces identical bytes for identical outcomes; see [docs/cli.md](docs/cli.md) |
-| `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. See [docs/reports.md](docs/reports.md) |
-| `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). See [docs/reports.md](docs/reports.md) |
-| `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. See [docs/cli.md](docs/cli.md#updating-snapshots---update) |
-| `--sandbox <mode>` | Global | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, `none`. See [docs/cli.md](docs/cli.md#sandboxing---sandbox) |
+| `-j, --jobs[=N]` | Global | Run up to N test commands concurrently. **Default (flag absent) is one per logical CPU**; use `-j1` for one command at a time. Attach the value: `-jN`/`-j=N`/`--jobs=N` — a space-separated `-j N` leaves `4` positional, as in GNU make. Spawned commands run at low OS priority (unix nice 19, best-effort). Output never depends on this: results are buffered per file and printed in canonical order, so any `-j` produces identical bytes for identical outcomes; |
+| `--report-junit <path>` | Global | Write a JUnit XML report of the run to `<path>` — also (especially) on failing runs; identical data in serial and `-j` runs. |
+| `--report-json <path>` | Global | Write a JSON report of the run to `<path>` (`format_version` 1, a stable consumption contract). |
+| `--update` | Global | Rewrite snapshot golden files (`outputs.snapshot`) from actual output instead of failing, pruning stale ones; every write/prune is listed. |
+| `--sandbox <mode>` | Global | Sandbox backend for test commands: `auto` (default — bwrap, then seatbelt, then docker), `bwrap`, `seatbelt`, `docker`, `none`. |
 | `--no-sandbox` | Global | Run test commands directly on the host (same as `--sandbox=none`) |
 | `--sandbox-image <ref>` | Global | Image the docker backend runs commands in (default `debian:stable-slim`); typed, it pins the run and outranks a file's `image:` |
-| `--ssh <[user@]host>` | Global | Run every test command on another machine over ssh. Replaces the sandbox rather than nesting in one, and each file's header line says so. See [docs/cli.md](docs/cli.md#remote-execution---ssh) |
+| `--ssh <[user@]host>` | Global | Run every test command on another machine over ssh. Replaces the sandbox rather than nesting in one, and each file's header line says so. |
 | `--keep-temp` | Global | Keep temp directory for debugging |
 | `--coverdir` | Global | Set GOCOVERDIR on executed commands (tests and file-level setup/teardown) to collect coverage data |
 | `--version` | Root | Print `dats <version>` (same output as `dats version`) |
 
 ## DATS File Format
 
-`.dats` files are indented with tabs, not spaces, and have no anchors/aliases — see
-[YAML Dialect](docs/file-format.md#yaml-dialect).
+`.dats` files are indented with tabs, not spaces, and have no anchors or aliases. Scalars reformat to their canonical spelling, so `1.50` round-trips as `1.5`. The negated keys are written bare, as `!stdout:`.
 
 ```yaml
 # Optional file-level keys: shared fixture files written once per file,
@@ -285,11 +278,11 @@ tests:
 | Property | Required | Description |
 |----------|----------|-------------|
 | `shared.files` | No | Map of filename → content, written once per file into a `shared/` directory before `setup` runs; addressed via `{shared.X}` placeholders (treat as read-only from tests). Contents expand `{shared.X}` only |
-| `shared.copy` | No | Map of filename → host source path, copied once per file into `shared/`, writable. A name may not also appear under `files`; the block needs at least one entry across the two. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
+| `shared.copy` | No | Map of filename → host source path, copied once per file into `shared/`, writable. A name may not also appear under `files`; the block needs at least one entry across the two. |
 | `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`) run once, in order, before the file's tests. `cmd`/`env` expand `{shared.X}` only; bounded by `timeout` (default 30s, must be > 0 when set). On failure the remaining setup commands are skipped and EVERY test in the file is reported as failed (never "skipped"); teardown still runs |
 | `teardown` | No | Same hook command or list form as `setup`, always run once, in order, after the file's tests — after test failures and even when setup failed. One failing command does not stop the rest, but any failure marks the file failed (exit 1) even when all tests passed |
-| `sandbox` | No | A mapping (`network`, `image`) narrowing the sandbox for this file's commands — the tests AND the setup/teardown hooks. A file can never turn its own sandbox off: `sandbox: false` and `enabled` are parse errors naming `--no-sandbox`. See [docs/file-format.md](docs/file-format.md#sandbox) |
-| `ssh` | No | `[user@]host` this file's commands run on. A request, not a decision: the (file, host) pair must be approved (`dats trust add`), and a typed `--ssh` outranks it. See [docs/file-format.md](docs/file-format.md#ssh) |
+| `sandbox` | No | A mapping (`network`, `image`) narrowing the sandbox for this file's commands — the tests AND the setup/teardown hooks. A file can never turn its own sandbox off: `sandbox: false` and `enabled` are parse errors naming `--no-sandbox`. |
+| `ssh` | No | `[user@]host` this file's commands run on. A request, not a decision: the (file, host) pair must be approved (`dats trust add`), and a typed `--ssh` outranks it. |
 
 Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
 concurrently within and across files, but no test in a file starts before
@@ -308,7 +301,7 @@ mode — do not assume exclusive access to global resources.
 | `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). Reference values as `{matrix.X}` in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs and reports as `desc [k=v, ...]` |
 | `inputs.stdin` | No | Content piped to command's stdin |
 | `inputs.files` | No | Map of filename → content (creates fixture files) |
-| `inputs.copy` | No | Map of filename → host source path, copied in writable before running (relative sources resolve against the `.dats` file's directory). A name may not also appear under `files`. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) |
+| `inputs.copy` | No | Map of filename → host source path, copied in writable before running (relative sources resolve against the `.dats` file's directory). A name may not also appear under `files`. |
 | `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
 | `outputs.stdout` | No | Patterns to match in stdout |
 | `outputs.stderr` | No | Patterns to match in stderr |
@@ -334,9 +327,7 @@ working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both
 rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a
 file inline instead of using the two mechanisms above, and a herestring
 redirects stdin from the end of the line instead of the normal left-to-right
-flow (`inputs.stdin`, or a pipe). See
-[docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy)
-for the full reference.
+flow (`inputs.stdin`, or a pipe).
 
 ### Output Assertions
 
@@ -344,8 +335,7 @@ for the full reference.
 - `!stdout` / `!stderr` - Patterns that must NOT appear in output (list of substrings, or map of 0-indexed line numbers to regexes that must not match within that line)
 - `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match); an empty check is an implicit "must exist"
 - `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match; an empty check is an implicit "must NOT exist"
-- `snapshot` - Golden-file assertion: captured stdout (and/or stderr) must byte-match a golden stored in a `.snapshots` directory next to the `.dats` file, temp paths normalized to stable tokens; `dats --update` rewrites goldens from actual output and prunes stale ones. See [docs/file-format.md](docs/file-format.md#snapshot-assertions-outputssnapshot)
-- `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
+- `snapshot` - Golden-file assertion: captured stdout (and/or stderr) must byte-match a golden stored in a `.snapshots` directory next to the `.dats` file, temp paths normalized to stable tokens; `dats --update` rewrites goldens from actual output and prunes stale ones.- `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
 ### Failure Reporting
 

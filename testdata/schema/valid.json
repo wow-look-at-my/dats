@@ -28,7 +28,6 @@
         "stdout": [
           "Hello, world!"
         ],
-        "stderr": [],
         "!stdout": [
           "error",
           "fail"
