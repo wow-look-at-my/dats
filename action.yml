@@ -3,16 +3,13 @@ description: Download the dats binary from buildhost and run it, without a calle
 
 inputs:
   tests:
-    description: 'Space- or newline-separated .dats files and directories to run. A directory runs its top-level *.dats files. Paths are relative to working-directory.'
-    required: true
+    description: 'Space- or newline-separated .dats files and directories to run. Paths are relative to working-directory. Defaults to everything in the repo.'
+    required: false
+    default: '**/*.dats'
   working-directory:
     description: 'Directory to run dats from'
     required: false
     default: '.'
-  version:
-    description: 'dats release version to download (e.g. v3); omit for the newest on the default branch'
-    required: false
-    default: ''
   jobs:
     description: 'Commands to run at once, as -j takes it. "1" runs one at a time, which a stateful suite needs. Omit for one per CPU.'
     required: false
@@ -30,13 +27,13 @@ outputs:
 runs:
   using: composite
   steps:
+    - uses: wow-look-at-my/actions@common-checks#latest
     # os/arch default to the runner's own platform -- docs/action.md.
     - name: Download dats
       id: download
       uses: wow-look-at-my/buildhost/.github/actions/buildhost-download@master
       with:
         project: dats
-        version: ${{ inputs.version }}
 
     # Installed so a caller never needs --no-sandbox; a run that opted out needs none -- docs/action.md.
     - name: Install the sandbox backend
