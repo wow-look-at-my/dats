@@ -54,6 +54,14 @@ The action's inputs are `tests`, `working-directory`, `jobs` and `sandbox`. Ther
 
 `-v` is always on, and there is no input to turn it off. Without it a failing leg reports only that a test failed. With it the leg names the test and prints its output. An input will make that a thing a caller remembers to set after the run that needed it.
 
+## The action runs no org-wide repository checks
+
+`common-checks` lints the calling repository. A consumer runs this action to run a test suite, and nothing else.
+
+Running those checks from here pointed them at the consumer. That failed the actions repo on its own linter fixtures. It also failed every Windows job, because one check needs a `yq` that a Windows runner does not carry.
+
+dats gets the same checks from `go-toolchain` in its own CI. Nothing here goes unchecked.
+
 ## NT gets its backend from WSL
 
 Windows hosts no sandbox backend of its own. bwrap is Linux, seatbelt is macOS, and the runner's docker daemon serves.

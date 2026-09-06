@@ -27,7 +27,6 @@ outputs:
 runs:
   using: composite
   steps:
-    - uses: wow-look-at-my/actions@common-checks#latest
     # os/arch default to the runner's own platform -- docs/action.md.
     - name: Download dats
       id: download
