@@ -57,7 +57,10 @@ func writeReportCorpus(t *testing.T) (dir string, files []string) {
 				match:
 					- different
 `},
-		{"c-setupfail.dats", `setup: echo setup-out; echo setup-err >&2; exit 7
+		{"c-setupfail.dats", `setup: |
+	echo setup-out
+	echo setup-err >&2
+	exit 7
 tests:
 	- desc: never runs
 	  cmd: echo hi
@@ -65,8 +68,12 @@ tests:
 	  cmd: echo hi2
 `},
 		{"d-teardownfail.dats", `teardown:
-	- echo cleanup-out; exit 4
-	- echo cleanup-err >&2; exit 5
+	- cmd: |
+		echo cleanup-out
+		exit 4
+	- cmd: |
+		echo cleanup-err >&2
+		exit 5
 tests:
 	- desc: passes fine
 	  cmd: echo ok

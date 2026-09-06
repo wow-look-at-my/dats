@@ -374,7 +374,7 @@ setup:
 	  env:
 		FOO: bar
 tests:
-	- cmd: echo "[$FOO]"
+	- cmd: echo "[${FOO-}]"
 	  outputs:
 		stdout:
 			- "[]"
