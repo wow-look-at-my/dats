@@ -16,37 +16,20 @@ tests:
 	- # test 2
 ```
 
-A file must contain exactly one YAML document. A second `---` document is a parse error
-(`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys
-anywhere in the file are also parse errors, so a misspelled field cannot silently disable its
-assertion.
+A file must contain exactly one YAML document. A second `---` document is a parse error (`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys anywhere in the file are also parse errors. A misspelled field therefore cannot silently disable its assertion.
 
 ## YAML Dialect
 
-`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a
-general-purpose YAML library, and it enforces one convention plus two capability gaps every
-existing file must satisfy:
+`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML library. It enforces one convention plus two capability gaps every existing file must satisfy.
 
-- **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be
-  used for indentation; indent with tabs`); spaces are only valid to ALIGN past a tab, e.g. a
-  sequence item's own mapping keys continuing past its `- ` marker. The
-  [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>`
-  command reindents an existing space-indented file (it does not preserve comments).
-- **No anchors or aliases.** `&name`/`*name` are not a YAML feature here — they parse as literal
-  scalar text, not a reference. Duplicate a value instead of anchoring it.
-- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`,
-  `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser would have needed
-  `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
-- **Scalars reformat to their canonical spelling**, not the source text: a float like `1.50`
-  round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see
-  [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an
-  error message.
+- **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be used for indentation, indent with tabs`). Spaces are only valid to ALIGN past a tab, for example a sequence item's own mapping keys continuing past its `- ` marker. The [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>` command reindents an existing space-indented file. It does not preserve comments.
+- **No anchors or aliases.** `&name` and `*name` are not a YAML feature here. They parse as literal scalar text, not a reference. Duplicate a value instead of anchoring it.
+- **No tags, so `!` is an ordinary character.** The negated keys are written bare, as `!stdout:`, `!stderr:` and `!files:`. A general-purpose YAML parser needs `"!stdout":` for the same key. The quoted spelling still parses here, so older files keep working.
+- **Scalars reformat to their canonical spelling**, not the source text. A float like `1.50` round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an error message.
 
 ## File-Level Setup, Teardown, and Shared Fixtures
 
-Three optional top-level keys run commands and materialize fixture files once per **file**
-(backwards compatible for existing files — see
-[Backwards Compatibility](#backwards-compatibility) for the one caveat):
+Three optional top-level keys run commands and materialize fixture files once per **file**. This is backwards compatible for existing files, with one caveat described under [Backwards Compatibility](#backwards-compatibility).
 
 ```yaml
 shared:
