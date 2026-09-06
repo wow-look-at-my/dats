@@ -46,16 +46,14 @@ go test -cover ./...
 ## Architecture
 
 ### Core Flow
-1. `.dats` YAML file is parsed using [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed) — tabs-only indentation, no
-   anchors/aliases, no tags (so the negated keys are written bare: `!stdout:`, quoted still accepted), canonical scalar
-   reformatting
+1. `.dats` YAML file is parsed using [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed) — tabs-only indentation, no anchors/aliases, no tags (so the negated keys are written bare: `!stdout:`, quoted still accepted), canonical scalar reformatting
 2. Every test is expanded up front into its matrix instances (`schema.ExpandMatrix`; non-matrix tests = one instance) — the header count, instance numbering, temp dirs, summary counts, and setup-failure reporting all operate on the expanded list; every instance always runs (no test filtering/selection by design)
 3. Per file: the file's sandbox is resolved (`Runner.newSandboxPlan`) BEFORE anything runs — a file that must be sandboxed and cannot be fails outright; then a `shared/` dir is created, `shared.files` are written into it, and `setup` commands run in order (a failure fails EVERY test instance in the file — reported as failures, never "skipped" — but teardown still runs)
 4. For each test instance, fixtures are set up in a temp directory
 5. Command is executed via `bash -c` — inside the file's sandbox unless the RUN opted out (`runner/sandbox.go`; the wrapper ends in the same `bash -c`) — with placeholder expansion
 6. Exit code, stdout, stderr, and output files are validated against assertions; `outputs.snapshot` additionally byte-compares captured streams against golden files in `<file>.snapshots/` next to the .dats file (temp paths normalized to `{testdir}`/`{shareddir}`/`{tmproot}` tokens), and `--update` rewrites those goldens from actual output (never from an instance with other failures) and prunes stale ones
 7. `teardown` commands always run in order (after test failures and even when setup failed); any teardown failure marks the file failed (exit 1) even when all tests passed
-8. Results are printed in TAP-like format
+8. Results print in TAP-like format
 9. Execution is ALWAYS concurrent — there is one execution path, not a serial one and a parallel one. `-j`/`--jobs` only sizes the pool: absent = one per logical CPU, `-j1` = one command at a time. A file's instances take their slot in DECLARATION ORDER (the dispatch loop blocks on a free slot rather than launching every goroutine to race for one), so `-j1` is a sequential run and a stateful file can say so. One global N-slot pool bounds every spawned command (instances and hooks) across all files, per-file barriers are preserved, spawned commands are reniced to 19 (unix, best-effort), and output is buffered and printed in canonical order — the bytes depend only on outcomes, never on `-j` or on scheduling
 10. With `--report-junit`/`--report-json`, runTests writes report files from the finished results at end of run — always when the run executed (especially failing runs; identical data serial and `-j`), never on hard errors that abort the run; a report write failure is itself an error (stderr, exit 1). Field names are a stability contract
 11. `dats watch` wraps the same pipeline in an fsnotify loop: after each run it waits for relevant changes (resolved `.dats` files, their `.snapshots/` golden dirs, directory args recursively; 250ms debounce) and re-runs the COMPLETE original argument scope — never a subset (no test filtering by design, no narrowing flags). Ctrl-C/SIGTERM exits 0: the context plumbed through the runner kills in-flight process groups, teardown still runs, the aborted outcome is discarded
@@ -79,11 +77,7 @@ go test -cover ./...
   - `version.go` - `version` subcommand and `--version` flag: one-line `dats <version>` from build info
 - `schema/` - YAML schema types + parser (public, importable by external modules)
   - `types.go` - Schema types with custom unmarshalers
-  - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, non-local
-    fixture names, undeclared `{matrix.X}` references, matrix placeholders in setup/teardown/shared, a banned redirect in
-    cmd/setup/teardown (`bannedRedirect`, types.go -- a heredoc `<<WORD` or a herestring `<<<`, each with its own message),
-    and a `copy` destination that is non-local, empty-sourced, or collides with a `files` entry of the same name
-    (`validateCopyBlock`, shared across `shared.copy` and `inputs.copy`)
+  - `parse.go` - `ParseFile`: reads and validates a `.dats` file (rejects unknown keys, multi-document YAML, non-local fixture names, undeclared `{matrix.X}` references, matrix placeholders in setup/teardown/shared, a banned redirect in cmd/setup/teardown (`bannedRedirect`, types.go -- a heredoc `<<WORD` or a herestring `<<<`, each with its own message), and a `copy` destination that is non-local, empty-sourced, or collides with a `files` entry of the same name (`validateCopyBlock`, shared across `shared.copy` and `inputs.copy`)
   - `sandbox.go` - `SandboxSpec`: the file-level `sandbox` key (mapping of `network`/`image`, strictly validated — unknown/duplicate keys, wrong types, non-mappings, and an empty mapping are parse errors) plus the nil-safe `NetworkEnabled` accessor (unstated = network on). A file can only NARROW its sandbox: `sandbox: false` and `enabled:` are parse errors naming `--no-sandbox`, so a file cannot take isolation away from whoever runs it
   - `matrix.go` - `Matrix` (declaration-ordered variables, strict value validation), `ExpandMatrix` (cartesian instance expansion, deep copies, single-pass `{matrix.X}` substitution), and the single definition of the matrix substitution scope shared by validation and expansion
 - `runner/` - Native test runner (public, importable by external modules). RunFile/RunFiles/RunTest/Execute take a context: cancellation kills in-flight process groups (surfacing as signal deaths, never as timeouts); teardown runs under context.WithoutCancel so it always executes
@@ -109,13 +103,8 @@ go test -cover ./...
 - **SnapshotCheck** - The `outputs.snapshot` key: scalar bool (`true` = snapshot stdout; `false` = zero value, same as omitted) or a map of stream booleans (`stdout`/`stderr`, at least one true; duplicate/unknown keys and non-bool values are parse errors). Value type (no pointer) so matrix `copyTest` duplicates it by plain value copy; holds no strings, so it is outside the `{matrix.X}` substitution scope
 - **SandboxSpec** - The file-level `sandbox` key: a map of `network`/`image` only (there is deliberately no `writable` key -- scratch goes in the temp dir -- and no `enabled` key: a file narrows its sandbox, never turns it off). The `Network` pointer keeps "unstated" distinct from an explicit `false`; nil spec = nothing narrowed. `NetworkEnabled`/`ImageName` are the nil-safe accessors, and `image:` is a request, not a decision: a typed `--sandbox-image` wins. `sandbox: false`/`enabled:` (both spellings of off) are parse errors naming `--no-sandbox`, and so is `sandbox: true`; unknown/duplicate keys, non-bool `network`, empty `image`, a non-mapping value, and an empty mapping are too. `{matrix.X}` is rejected in `image` (the sandbox is resolved once per file, before instances exist)
 - **FileCheck** - Validates output files with `exists`, `match`, and `notMatch` properties; an empty check (`{}` or null) is an implicit existence assertion
-- **InputBlock** - Contains `stdin` (string), `files` (map of filename to content), `copy` (map of filename to a host source
-  path, copied in writable -- the read-write counterpart of the sandbox's read-only cwd bind mount; a name may not also
-  appear under `files`; `{matrix.X}` substitutes into the source), and `env` (map of env var name to value, added to the
-  inherited environment in sorted key order)- **HookCommand / CommandList / SetupCommands / TeardownCommands** - `HookCommand` is one `setup`/`teardown` entry: `Cmd`, optional `Env`, `StdinFile` (raw content piped to stdin, resolved like `inputs.copy`), and `Timeout` (`*Duration`, nil = `DefaultHookTimeout` 30s via `EffectiveTimeout()`; an explicit value must be > 0 — a hook always has a bound, unlike a test's 0/omitted = unbounded). YAML form is a bare command string, or a mapping (`cmd`, `env`, `stdin_file`, `timeout`; unknown/duplicate keys and a missing `cmd` are parse errors). `CommandList` is `[]HookCommand`; `SetupCommands`/`TeardownCommands` wrap it so parse errors name their key. Empty lists, blank/non-string/non-mapping entries, a shell heredoc (`<<WORD`), and a herestring (`<<<`) in `cmd` are all parse errors
-- **Shared** - File-level `shared` block with `Files map[string]string` and `Copy map[string]string` (same read-write-copy
-  semantics as `InputBlock.Copy`, resolved once per file; `{matrix.X}` in a source is rejected, no instance exists yet);
-  must declare at least one entry across the two, names disjoint and locality-validated (nil pointer on TestFile when absent)
+- **InputBlock** - Contains `stdin` (string), `files` (map of filename to content), `copy` (map of filename to a host source path, copied in writable -- the read-write counterpart of the sandbox's read-only cwd bind mount; a name may not also appear under `files`; `{matrix.X}` substitutes into the source), and `env` (map of env var name to value, added to the inherited environment in sorted key order)- **HookCommand / CommandList / SetupCommands / TeardownCommands** - `HookCommand` is one `setup`/`teardown` entry: `Cmd`, optional `Env`, `StdinFile` (raw content piped to stdin, resolved like `inputs.copy`), and `Timeout` (`*Duration`, nil = `DefaultHookTimeout` 30s via `EffectiveTimeout()`; an explicit value must be > 0 — a hook always has a bound, unlike a test's 0/omitted = unbounded). YAML form is a bare command string, or a mapping (`cmd`, `env`, `stdin_file`, `timeout`; unknown/duplicate keys and a missing `cmd` are parse errors). `CommandList` is `[]HookCommand`; `SetupCommands`/`TeardownCommands` wrap it so parse errors name their key. Empty lists, blank/non-string/non-mapping entries, a shell heredoc (`<<WORD`), and a herestring (`<<<`) in `cmd` are all parse errors
+- **Shared** - File-level `shared` block with `Files map[string]string` and `Copy map[string]string` (same read-write-copy semantics as `InputBlock.Copy`, resolved once per file; `{matrix.X}` in a source is rejected, no instance exists yet); must declare at least one entry across the two, names disjoint and locality-validated (nil pointer on TestFile when absent)
 - **Matrix / TestInstance** - Per-test `matrix` block: ordered `[]MatrixVariable` (declaration order is semantic — label order and expansion order, last variable fastest); values are the literal scalar text (`1.50` stays `"1.50"`). `ExpandMatrix` yields `TestInstance`s (deep-copied substituted Test + `[k=v, ...]` label + assignments). Bad names, empty/non-sequence value lists, non-scalar or duplicate values, and undeclared references are parse errors; `matrix:` with explicit null = absent
 
 ### Placeholder System
@@ -141,8 +130,7 @@ Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`,
 - Every command runs under `set -euo pipefail`, with no key to turn it off. Write one command per line in a `|` block scalar. Write `|| true` where a failure is expected.
 - `workdir` (file-level, overridable per test) is the directory commands run in, relative to the .dats file. It replaces `cd`.
 - An EMPTY `outputs` check is a parse error. It names a stream and asserts nothing, which reports ok while the reader believes the output was checked.
-- A file may only NARROW its sandbox. `sandbox: false` and `ssh: false` are parse errors naming `--no-sandbox`: turning isolation off, or pulling
-  a remote command back onto the reader's machine, is the run-starter's decision.
+- A file may only NARROW its sandbox. `sandbox: false` and `ssh: false` are parse errors naming `--no-sandbox`: turning isolation off, or pulling a remote command back onto the reader's machine, is the run-starter's decision.
 - A setup failure reports every test in the file as FAILED, never skipped; teardown runs regardless, and its own failure fails the file.
 - Every expanded instance always runs. There is no filtering, selection, or skip mechanism at any layer, by design.
 
@@ -159,24 +147,7 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push, with a job pe
 
 ## Consuming dats from another repo's CI
 
-`action.yml` at repo root makes this a composite GitHub Action:
-`uses: wow-look-at-my/dats@master` downloads the newest build from buildhost
-(never pinned) and runs it via a typed `tests:` input (files and directories,
-expanded to their top-level `*.dats` files) — see the README's
-"GitHub Actions" section. It wraps
-`wow-look-at-my/buildhost/.github/actions/buildhost-download` (`project:
-dats`), the same download every consumer used to hand-roll with curl/chmod.
-On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
-24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
-way this repo's own CI does (see "CI/CD" above) — so a caller gets real
-sandboxing without needing `--no-sandbox` to work around the runner. The
-action's surface is deliberately just `tests`/`working-directory`/`version`:
-there is no `args` passthrough and no way to disable the sandbox; the argv is
-built and sanitized in `.github/scripts/run-dats.ts` (a
-`wow-look-at-my/actions@typescript` script). That argv always carries `-v`, and
-there is no input to turn it off: a red leg has to name the test that failed and
-print its output, and a caller who must ask for that asks after the run they
-needed it on.
+`action.yml` at repo root makes this a composite GitHub Action: `uses: wow-look-at-my/dats@master` downloads the newest build from buildhost (never pinned) and runs it via a typed `tests:` input (files and directories, expanded to their top-level `*.dats` files) — see the README's "GitHub Actions" section. It wraps `wow-look-at-my/buildhost/.github/actions/buildhost-download` (`project: dats`), the same download every consumer used to hand-roll with curl/chmod. On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu 24.04's default `apparmor_restrict_unprivileged_userns` restriction the same way this repo's own CI does (see "CI/CD" above) — so a caller gets real sandboxing without needing `--no-sandbox` to work around the runner. The action's surface is deliberately just `tests`/`working-directory`/`version`: there is no `args` passthrough and no way to disable the sandbox; the argv is built and sanitized in `.github/scripts/run-dats.ts` (a `wow-look-at-my/actions@typescript` script). That argv always carries `-v`, and there is no input to turn it off: a red leg has to name the test that failed and print its output, and a caller who must ask for that asks after the run they needed it on.
 
 ## JSON Schema
 

@@ -17,13 +17,7 @@ just install        # Symlink binary to ~/.local/bin/dats
 
 ### GitHub Actions
 
-`wow-look-at-my/dats@master` is a composite action: it downloads the newest
-`dats` build from buildhost (no pinned version to drift behind) and runs it,
-so a workflow doesn't have to hand-roll the download. On Linux it also makes
-sure bubblewrap sandboxing actually works first (installing it if missing,
-and clearing Ubuntu 24.04's default AppArmor restriction on unprivileged user
-namespaces if it's blocking bwrap) -- a caller should never have to reach for
-`--no-sandbox` just to work around runner infrastructure.
+`wow-look-at-my/dats@master` is a composite action: it downloads the newest `dats` build from buildhost (no pinned version to drift behind) and runs it, so a workflow doesn't have to hand-roll the download. On Linux it also makes sure bubblewrap sandboxing actually works first (installing it if missing, and clearing Ubuntu 24.04's default AppArmor restriction on unprivileged user namespaces if it's blocking bwrap) -- a caller should never have to reach for `--no-sandbox` just to work around runner infrastructure.
 
 ```yaml
 - uses: wow-look-at-my/dats@master
@@ -37,9 +31,7 @@ namespaces if it's blocking bwrap) -- a caller should never have to reach for
 | `working-directory` | No | `.` | Directory to run `dats` from |
 | `version` | No | Newest on the default branch | `dats` release version to download |
 
-The action's surface is deliberately just those inputs: there is no way to
-pass arbitrary flags or to disable the sandbox. Outputs `path`, the full path
-to the downloaded binary.
+The action's surface is deliberately just those inputs: there is no way to pass arbitrary flags or to disable the sandbox. Outputs `path`, the full path to the downloaded binary.
 
 ## Usage
 
@@ -88,10 +80,7 @@ dats syntax
 dats version
 ```
 
-Both `test` and `syntax` accept any mix of `.dats` files and directories.
-Directory arguments and no-arg discovery recurse the tree, skipping hidden
-directories and hidden `.dats` files (leading `.`); explicitly named files are
-always accepted. Repeated arguments are deduplicated by absolute path.
+Both `test` and `syntax` accept any mix of `.dats` files and directories. Directory arguments and no-arg discovery recurse the tree, skipping hidden directories and hidden `.dats` files (leading `.`); explicitly named files are always accepted. Repeated arguments are deduplicated by absolute path.
 
 ### Subcommands
 
@@ -284,11 +273,7 @@ tests:
 | `sandbox` | No | A mapping (`network`, `image`) narrowing the sandbox for this file's commands — the tests AND the setup/teardown hooks. A file can never turn its own sandbox off: `sandbox: false` and `enabled` are parse errors naming `--no-sandbox`. |
 | `ssh` | No | `[user@]host` this file's commands run on. A request, not a decision: the (file, host) pair must be approved (`dats trust add`), and a typed `--ssh` outranks it. |
 
-Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
-concurrently within and across files, but no test in a file starts before
-that file's setup completes, and teardown starts only after the file's last
-test finishes. Setup/teardown of different files may overlap in parallel
-mode — do not assume exclusive access to global resources.
+Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests concurrently within and across files, but no test in a file starts before that file's setup completes, and teardown starts only after the file's last test finishes. Setup/teardown of different files may overlap in parallel mode — do not assume exclusive access to global resources.
 
 ### Test Properties
 
@@ -312,22 +297,11 @@ mode — do not assume exclusive access to global resources.
 | `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or `{stdout: bool, stderr: bool}` (at least one true). Output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp paths normalize to `{testdir}`/`{shareddir}`/`{tmproot}`; `dats --update` (re)writes goldens and prunes stale ones |
 | `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
-File names under `inputs.files`, `inputs.copy`, `outputs.files`, and
-`outputs.!files` must be relative paths that stay inside the test directory
-(no `..` or absolute paths; rejected at parse time, so `dats syntax` catches
-it). Nested names like `sub/file.txt` are allowed. A name may appear under
-`files` or `copy`, never both.
+File names under `inputs.files`, `inputs.copy`, `outputs.files`, and `outputs.!files` must be relative paths that stay inside the test directory (no `..` or absolute paths; rejected at parse time, so `dats syntax` catches it). Nested names like `sub/file.txt` are allowed. A name may appear under `files` or `copy`, never both.
 
 ### Pulling files into the sandbox
 
-`inputs.files`/`shared.files` author a fixture's content inline as YAML text;
-`inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable
-— the read-write counterpart of the sandbox's read-only bind mount of the
-working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both
-rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a
-file inline instead of using the two mechanisms above, and a herestring
-redirects stdin from the end of the line instead of the normal left-to-right
-flow (`inputs.stdin`, or a pipe).
+`inputs.files`/`shared.files` author a fixture's content inline as YAML text; `inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable — the read-write counterpart of the sandbox's read-only bind mount of the working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a file inline instead of using the two mechanisms above, and a herestring redirects stdin from the end of the line instead of the normal left-to-right flow (`inputs.stdin`, or a pipe).
 
 ### Output Assertions
 
@@ -339,23 +313,12 @@ flow (`inputs.stdin`, or a pipe).
 
 ### Failure Reporting
 
-- A failing file-level `setup` command prints a loud file-level diagnostic
-  (command, exit status, captured output) and reports EVERY test in the file
-  as a failure with reason `file setup failed` — never as "skipped". Teardown
-  still runs.
-- A failing file-level `teardown` command prints the same style of diagnostic
-  and marks the file failed (exit 1) even when all tests passed; the summary
-  line gains a `teardown failed` annotation.
-- A command that exceeds its `timeout` has its whole process group killed
-  (background children included) and fails with only `command timed out after
-  X` — all other assertions are skipped, since checking partial output would
-  bury the real cause. Captured stdout/stderr are still shown in verbose mode.
-- A command killed by a signal names it in the exit-code failure, e.g.
-  `expected exit code 0, got -1 (killed by signal: killed)`.
+- A failing file-level `setup` command prints a loud file-level diagnostic (command, exit status, captured output) and reports EVERY test in the file as a failure with reason `file setup failed` — never as "skipped". Teardown still runs.
+- A failing file-level `teardown` command prints the same style of diagnostic and marks the file failed (exit 1) even when all tests passed; the summary line gains a `teardown failed` annotation.
+- A command that exceeds its `timeout` has its whole process group killed (background children included) and fails with only `command timed out after X` — all other assertions are skipped, since checking partial output would bury the real cause. Captured stdout/stderr are still shown in verbose mode.
+- A command killed by a signal names it in the exit-code failure, e.g. `expected exit code 0, got -1 (killed by signal: killed)`.
 - Multiple failing file checks report in sorted-by-name order.
-- Commands that leave orphaned background processes holding stdout/stderr do
-  not block the runner: the pipes are force-closed about 1 second after the
-  main process exits, and anything stragglers write after that is not captured.
+- Commands that leave orphaned background processes holding stdout/stderr do not block the runner: the pipes are force-closed about 1 second after the main process exits, and anything stragglers write after that is not captured.
 
 ### Placeholder System
 
