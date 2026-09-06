@@ -101,18 +101,33 @@ it.
 
 ## The input surface is typed, not a raw argv
 
-The action's only inputs are `tests`, `working-directory`, and `version`.
-There is deliberately no `args` passthrough: a caller cannot hand dats a raw
-command line, so nothing a caller types can become a flag, a subcommand, or a
-`--no-sandbox`. The argv is built and sanitized in `.github/scripts/run-dats.ts`
-(a `wow-look-at-my/actions@typescript` script), which:
+The action's inputs are `tests`, `working-directory`, `version`, `jobs` and
+`sandbox`. There is deliberately no `args` passthrough: a caller cannot hand
+dats a raw command line, so nothing a caller types becomes a flag or a
+subcommand. Each input selects a documented behaviour and is checked against
+what dats accepts, so a typo fails in the action naming the input rather than
+reaching the binary. The argv is built and sanitized in
+`.github/scripts/run-dats.ts` (a `wow-look-at-my/actions@typescript` script),
+which:
 
 - splits `tests` on whitespace and rejects any entry that starts with `-`, is
   an absolute path, or contains a `..` segment;
 - expands a directory entry to its top-level `*.dats` files (never recursive,
   never a hidden file);
-- runs `dats -v test <files...>` from `working-directory` with the downloaded
-  binary, passing each file as its own argument.
+- rejects a `jobs` that is not a positive integer, and a `sandbox` that is not
+  one of `auto`, `bwrap`, `seatbelt`, `docker`, `none`;
+- runs `dats -v [-jN] [--sandbox=MODE] test <files...>` from `working-directory`
+  with the downloaded binary, passing each file as its own argument.
+
+`jobs: '1'` is what a stateful suite needs: one command at a time, instances in
+declaration order.
+
+`sandbox: none` is the opt-out, and it is the RUN-STARTER's decision, never the
+file's — a `.dats` file still cannot turn its own sandbox off. It is for a suite
+whose commands must reach the host: one driving the runner's own Docker daemon
+has nothing left to test once it is isolated from it. The backend install steps
+are skipped with it, since no backend is going to be used; on NT that skips
+building a WSL one.
 
 `-v` is always on, and there is no input to turn it off. Without it a failing
 leg reports only that a test failed; with it the leg names the test and prints

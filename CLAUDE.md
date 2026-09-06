@@ -157,6 +157,7 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push, with a job pe
 - `schema` - validates `testdata/schema/*.json` fixtures against `schema.json` using the `wow-look-at-my/json-validator` action, guarding against schema drift
 - `every-host` - one matrix job over ubuntu/macos/windows, not a bespoke NT job: each leg runs THIS commit's APE (the `test` job's `go-build-test.broot` hand-off) over `examples/example.dats` with `--no-sandbox`, under the identical script. The NT leg is what catches a missed call site in `runner/hostpath.go`'s backslash conversion, which unit tests can only reach by forcing `hostGOOS`; the posix legs are what make a red NT leg a DIFFERENCE between hosts rather than an unverified claim about one. `fail-fast: false`, because which hosts disagree is the finding
 - `self-hosted-sandbox` - the CONSUMER path: this repo's own `action.yml` on the org's dind pool, running the PUBLISHED binary a caller would get. Privileged, so it says nothing about the unprivileged case
+- `action-opted-out` - the action's `jobs` and `sandbox` inputs, on ubuntu. Its own job on purpose: `sandbox: none` skips the backend install, and a job that already installed one cannot show the skip is harmless
 - `action-every-host` - the action itself on ubuntu/macos/windows. The NT leg is the one that proves the WSL backend: Windows hosts no backend of its own, so `install-wsl-backend.sh` puts bubblewrap in a WSL distribution and the APE runs its Linux payload in there rather than anything relaxing -- docs/action.md. The published binary is a fat APE, so HOW it starts differs per host, and a raw spawn works only on Linux: Darwin answers `ENOEXEC` and NT finds an executable by extension. `every-host` cannot catch that -- it starts the binary from bash, which hides both. `fail-fast: false`, because which hosts disagree is the finding
 - `native-backends` - `examples/sandbox.dats` under bwrap (ubuntu) and seatbelt (macos), on THIS commit's binary, with the backend installed by the same `.github/scripts/install-sandbox-backend.sh` a consumer gets. It exists because the two backends can disagree about what a command may do -- scratch space was the first case -- and because no other job can catch that: `action-every-host` downloads the PUBLISHED binary, so a runner-side sandbox fix is unprovable there until it has already merged, and `every-host` runs this commit's binary with `--no-sandbox`. NT is absent on purpose: its backend IS bwrap, inside WSL, so the ubuntu leg exercises the same one
 - `sandbox-unprivileged-masked` - the sandbox itself, in a container this job BUILDS: unprivileged, `/proc` masked by docker, running the binary THIS commit built (the `test` job's `go-build-test.broot` hand-off). It deliberately does not borrow the org's slim fleet -- a merge gate that depends on another repo's deployed state can be frozen by that repo, and was. dats proves the mechanism; webhooks' gha-runner smoke test proves the image
@@ -174,8 +175,13 @@ On Linux it also installs bubblewrap and, if it's blocked, clears Ubuntu
 24.04's default `apparmor_restrict_unprivileged_userns` restriction the same
 way this repo's own CI does (see "CI/CD" above) — so a caller gets real
 sandboxing without needing `--no-sandbox` to work around the runner. The
-action's surface is deliberately just `tests`/`working-directory`/`version`:
-there is no `args` passthrough and no way to disable the sandbox; the argv is
+action's surface is `tests`/`working-directory`/`version`/`jobs`/`sandbox`:
+every input is typed and validated against what dats accepts, and there is no
+`args` passthrough, so a caller selects a documented behaviour and can never
+smuggle a flag. `jobs: '1'` is what a stateful suite needs. `sandbox: none` is
+the run-starter's opt-out for a suite that must reach the host — the daemon it
+drives, say — and it skips the backend install; a `.dats` file still cannot
+turn its own sandbox off. The argv is
 built and sanitized in `.github/scripts/run-dats.ts` (a
 `wow-look-at-my/actions@typescript` script). That argv always carries `-v`, and
 there is no input to turn it off: a red leg has to name the test that failed and

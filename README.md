@@ -36,10 +36,12 @@ namespaces if it's blocking bwrap) -- a caller should never have to reach for
 | `tests` | Yes | — | Space- or newline-separated `.dats` files and directories to run. A directory runs its top-level `*.dats` files. Paths are relative to `working-directory`. |
 | `working-directory` | No | `.` | Directory to run `dats` from |
 | `version` | No | Newest on the default branch | `dats` release version to download |
+| `jobs` | No | One per CPU | Commands to run at once, as `-j` takes it. `1` runs one at a time, which a stateful suite needs. |
+| `sandbox` | No | `auto` | `auto`, `bwrap`, `seatbelt`, `docker` or `none`. `none` is for a suite that drives the host itself, and skips the backend install. |
 
-The action's surface is deliberately just those inputs: there is no way to
-pass arbitrary flags or to disable the sandbox. Outputs `path`, the full path
-to the downloaded binary.
+Every input is typed and checked: there is no way to pass arbitrary flags, and
+a value dats would not accept fails in the action naming the input. Outputs
+`path`, the full path to the downloaded binary.
 
 ## Usage
 

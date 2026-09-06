@@ -1,8 +1,9 @@
 // Builds a sanitized dats argv from the action's typed inputs and runs it.
-// The action's only surface is `tests` (files and directories), so nothing a
-// caller types can become a flag or a --no-sandbox: every entry is validated
-// to be a relative path, and a directory is expanded to its top-level *.dats
-// files before anything reaches the binary.
+// Nothing a caller types reaches the binary as text: a tests entry is validated
+// to be a relative path and a directory is expanded to its top-level *.dats
+// files, jobs must be a positive integer, and sandbox must be one of the modes
+// named below. So an input can select a documented behaviour and can never
+// smuggle a flag.
 
 const bin = process.env.DATS_BIN;
 if (!bin) throw new Error('DATS_BIN is not set');
@@ -45,7 +46,29 @@ for (const entry of raw) {
 // instead of only reporting that something failed, and a caller who has to ask
 // for that asks after the run they needed it on. A root flag, so it precedes
 // the subcommand.
-const argv = ['-v', 'test', ...tests];
+// Both are root flags, so they precede the subcommand. Each is checked against
+// what dats accepts rather than passed through, so a typo fails here naming the
+// input instead of reaching the binary as an unknown flag.
+const rootFlags: string[] = [];
+
+const jobs = (inputs.jobs ?? '').trim();
+if (jobs) {
+	if (!/^[1-9][0-9]*$/.test(jobs)) {
+		throw new Error(`jobs must be a positive integer, got "${jobs}"`);
+	}
+	rootFlags.push(`-j${jobs}`);
+}
+
+const sandboxModes = ['auto', 'bwrap', 'seatbelt', 'docker', 'none'];
+const sandbox = (inputs.sandbox ?? '').trim();
+if (sandbox) {
+	if (!sandboxModes.includes(sandbox)) {
+		throw new Error(`sandbox must be one of ${sandboxModes.join(', ')}; got "${sandbox}"`);
+	}
+	rootFlags.push(`--sandbox=${sandbox}`);
+}
+
+const argv = ['-v', ...rootFlags, 'test', ...tests];
 const windows = process.platform === 'win32';
 
 // NT can host no sandbox backend, so install-wsl-backend.sh puts bubblewrap in

@@ -88,6 +88,20 @@ jobs:
         with:
           tests: examples/example.dats
 
+  # The action's two selecting inputs. Its own job, and never after a sandboxed
+  # one: sandbox: none skips the backend install, and a job that already
+  # installed a backend cannot show that the skip is harmless.
+  action-opted-out:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./
+        with:
+          tests: examples/example.dats
+          jobs: '1'
+          sandbox: none
+
   # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:
     strategy:
