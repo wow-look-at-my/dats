@@ -20,14 +20,11 @@ Drop the intermediate BATS generation step. Instead of `dats generate foo.dats` 
 
 ## Why Drop BATS
 
-1. **Extra dependency** - Users need BATS, bats-support, bats-assert installed
-2. **Two-step process** - Generate then run is unnecessary indirection
-3. **Limited value** - We only use a small subset of BATS features:
+1. **Extra dependency** - Users need BATS, bats-support, bats-assert installed 2. **Two-step process** - Generate then run is unnecessary indirection 3. **Limited value** - We only use a small.
    - `run` to capture exit code and output
    - `assert_output --partial` / `refute_output --partial`
    - `assert_line --index N --regexp`
-   - Exit code comparison
-4. **Simpler debugging** - Native runner can provide better error messages
+   - Exit code comparison 4. **Simpler debugging** - Native runner can provide better error messages
 
 ## CLI Interface (unchanged)
 
@@ -177,11 +174,7 @@ Same interface, different behavior:
 
 ## Verification
 
-1. Run `dats run examples/example.dats` - should execute all tests
-2. Verify exit code 0 when all tests pass, non-zero when any fail
-3. Verify verbose mode shows useful debugging info
-4. Verify fixture cleanup happens (or doesn't with debug flag)
-5. Compare behavior against current BATS-based execution for same .dats files
+1. Run `dats run examples/example.dats` - must execute all tests 2. Verify exit code 0 when all tests pass, non-zero when any fail 3. Verify verbose mode shows useful debugging info 4. Verify fixture cleanup happens (or does not with debug flag) 5. Compare behavior against current BATS-based execution for same .dats files
 
 ## Migration Notes
 

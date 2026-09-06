@@ -2,11 +2,11 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
-Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker): writes are confined to the test's temp directory, and running on the host is an explicit opt-out. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
 
 Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
 
-The whole reference under [docs/](docs/README.md) is compiled into the binary, so a machine with `dats` and nothing else still has it: `dats docs` lists the topics, `dats docs format` prints the file-format reference, and `dats help <topic>` prints the same pages.
+The whole reference under [docs/](docs/README.md) is compiled into the binary, so a machine with `dats` and nothing else still has it: `dats docs` lists the topics.
 
 ## Installation
 
@@ -17,13 +17,7 @@ just install        # Symlink binary to ~/.local/bin/dats
 
 ### GitHub Actions
 
-`wow-look-at-my/dats@master` is a composite action: it downloads the newest
-`dats` build from buildhost (no pinned version to drift behind) and runs it,
-so a workflow doesn't have to hand-roll the download. On Linux it also makes
-sure bubblewrap sandboxing actually works first (installing it if missing,
-and clearing Ubuntu 24.04's default AppArmor restriction on unprivileged user
-namespaces if it's blocking bwrap) -- a caller should never have to reach for
-`--no-sandbox` just to work around runner infrastructure.
+`wow-look-at-my/dats@master` is a composite action: it downloads the newest `dats` build from buildhost (no pinned version to drift behind) and runs it. So a workflow does not have to hand-roll the download. On Linux it also makes sure bubblewrap sandboxing actually works first (installing it if missing, and clearing Ubuntu 24.04's default AppArmor restriction on unprivileged user.
 
 ```yaml
 - uses: wow-look-at-my/dats@master
@@ -38,9 +32,7 @@ namespaces if it's blocking bwrap) -- a caller should never have to reach for
 | `jobs` | No | One per CPU | Commands to run at once, as `-j` takes it. `1` runs one at a time, which a stateful suite needs. |
 | `sandbox` | No | `auto` | `auto`, `bwrap`, `seatbelt`, `docker` or `none`. `none` is for a suite that drives the host itself, and skips the backend install. |
 
-Every input is typed and checked: there is no way to pass arbitrary flags, and
-a value dats would not accept fails in the action naming the input. Outputs
-`path`, the full path to the downloaded binary.
+Every input is typed and checked: there is no way to pass arbitrary flags. And a value dats will not accept fails in the action naming the input. Outputs `path`, the full path to the downloaded binary.
 
 ## Usage
 
@@ -94,10 +86,7 @@ dats docs format
 dats help format
 ```
 
-Both `test` and `syntax` accept any mix of `.dats` files and directories.
-Directory arguments and no-arg discovery recurse the tree, skipping hidden
-directories and hidden `.dats` files (leading `.`); explicitly named files are
-always accepted. Repeated arguments are deduplicated by absolute path.
+Both `test` and `syntax` accept any mix of `.dats` files and directories. Directory arguments and no-arg discovery recurse the tree, skipping hidden directories and hidden `.dats` files (leading `.`). Explicitly named files are always accepted. Repeated arguments are deduplicated by absolute path.
 
 ### Subcommands
 
@@ -128,8 +117,7 @@ always accepted. Repeated arguments are deduplicated by absolute path.
 
 ## DATS File Format
 
-`.dats` files are indented with tabs, not spaces, and have no anchors/aliases — see
-[YAML Dialect](docs/file-format.md#yaml-dialect).
+`.dats` files are indented with tabs, not spaces, and have no anchors/aliases — see [YAML Dialect](docs/file-format.md#yaml-dialect).
 
 ```yaml
 # Optional file-level keys: shared fixture files written once per file,
@@ -292,11 +280,7 @@ tests:
 | `sandbox` | No | A mapping (`network`, `image`) narrowing the sandbox for this file's commands — the tests AND the setup/teardown hooks. A file can never turn its own sandbox off: `sandbox: false` and `enabled` are parse errors naming `--no-sandbox`. See [docs/file-format.md](docs/file-format.md#sandbox) |
 | `ssh` | No | `[user@]host` this file's commands run on. A request, not a decision: the (file, host) pair must be approved (`dats trust add`), and a typed `--ssh` outranks it. See [docs/file-format.md](docs/file-format.md#ssh) |
 
-Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests
-concurrently within and across files, but no test in a file starts before
-that file's setup completes, and teardown starts only after the file's last
-test finishes. Setup/teardown of different files may overlap in parallel
-mode — do not assume exclusive access to global resources.
+Setup and teardown are per-file barriers: parallel mode (`-j`) runs tests concurrently within and across files, but no test in a file starts before. Setup/teardown of different files may overlap in parallel mode — do not assume exclusive access to global resources.
 
 ### Test Properties
 
@@ -320,68 +304,44 @@ mode — do not assume exclusive access to global resources.
 | `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or `{stdout: bool, stderr: bool}` (at least one true). Output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp paths normalize to `{testdir}`/`{shareddir}`/`{tmproot}`; `dats --update` (re)writes goldens and prunes stale ones |
 | `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality) |
 
-File names under `inputs.files`, `inputs.copy`, `outputs.files`, and
-`outputs.!files` must be relative paths that stay inside the test directory
-(no `..` or absolute paths; rejected at parse time, so `dats syntax` catches
-it). Nested names like `sub/file.txt` are allowed. A name may appear under
-`files` or `copy`, never both.
+File names under `inputs.files`, `inputs.copy`, `outputs.files`, and `outputs.!files` must be relative paths that stay inside the test directory (no `..` or absolute paths. Rejected at parse time, so `dats syntax` catches it). Nested names like `sub/file.txt` are allowed. A name may appear under `files` or `copy`, never both.
 
 ### Pulling files into the sandbox
 
-`inputs.files`/`shared.files` author a fixture's content inline as YAML text;
-`inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable
-— the read-write counterpart of the sandbox's read-only bind mount of the
-working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both
-rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a
-file inline instead of using the two mechanisms above, and a herestring
-redirects stdin from the end of the line instead of the normal left-to-right
-flow (`inputs.stdin`, or a pipe). See
-[docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy)
-for the full reference.
+`inputs.files`/`shared.files` author a fixture's content inline as YAML text. `inputs.copy`/`shared.copy` instead copy an *existing* host file in, writable — the read-write counterpart of the sandbox's read-only bind mount of the working directory. Heredocs (`<<WORD`) and herestrings (`<<<`) are both rejected at parse time in `cmd`, `setup`, and `teardown`: a heredoc embeds a file inline instead of using. See [docs/file-format.md](docs/file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for the full reference.
 
 ### Output Assertions
 
 - `stdout` / `stderr` - List of patterns to match (substring), or map of line numbers (0-indexed) to regex patterns
 - `!stdout` / `!stderr` - Patterns that must NOT appear in output (list of substrings, or map of 0-indexed line numbers to regexes that must not match within that line)
-- `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match); an empty check is an implicit "must exist"
-- `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match; an empty check is an implicit "must NOT exist"
-- `snapshot` - Golden-file assertion: captured stdout (and/or stderr) must byte-match a golden stored in a `.snapshots` directory next to the `.dats` file, temp paths normalized to stable tokens; `dats --update` rewrites goldens from actual output and prunes stale ones. See [docs/file-format.md](docs/file-format.md#snapshot-assertions-outputssnapshot)
+- `files` - Map of output filename to FileCheck with `exists` (bool), `match` (regex patterns that must match), and `notMatch` (regex patterns that must not match). An empty check is an implicit "must exist"
+- `!files` - Same FileCheck shape with each check inverted: `exists` flipped, `match` patterns must NOT match, `notMatch` patterns must match. An empty check is an implicit "must NOT exist"
+- `snapshot` - Golden-file assertion: captured stdout (and/or stderr) must byte-match a golden stored in a `.snapshots` directory next to the `.dats` file, temp paths normalized to stable. `dats --update` rewrites goldens from actual output and prunes stale ones. See [docs/file-format.md](docs/file-format.md#snapshot-assertions-outputssnapshot)
 - `json_output` - Expected JSON value of the whole stdout: keys order-insensitive, arrays order-sensitive, numbers by value
 
 ### Failure Reporting
 
-- A failing file-level `setup` command prints a loud file-level diagnostic
-  (command, exit status, captured output) and reports EVERY test in the file
-  as a failure with reason `file setup failed` — never as "skipped". Teardown
-  still runs.
-- A failing file-level `teardown` command prints the same style of diagnostic
-  and marks the file failed (exit 1) even when all tests passed; the summary
-  line gains a `teardown failed` annotation.
-- A command that exceeds its `timeout` has its whole process group killed
-  (background children included) and fails with only `command timed out after
-  X` — all other assertions are skipped, since checking partial output would
-  bury the real cause. Captured stdout/stderr are still shown in verbose mode.
-- A command killed by a signal names it in the exit-code failure, e.g.
-  `expected exit code 0, got -1 (killed by signal: killed)`.
+- A failing file-level `setup` command prints a loud file-level diagnostic (command, exit status, captured output) and reports EVERY test in the file as a failure with reason `file setup failed` — never. Teardown still runs.
+- A failing file-level `teardown` command prints the same style of diagnostic and marks the file failed (exit 1) even when all tests passed. The summary line gains a `teardown failed` annotation.
+- A command that exceeds its `timeout` has its whole process group killed (background children included) and fails with only `command timed out after X` — all other assertions are skipped, since checking. Captured stdout/stderr are still shown in verbose mode.
+- A command killed by a signal names it in the exit-code failure, e.g. `expected exit code 0, got -1 (killed by signal: killed)`.
 - Multiple failing file checks report in sorted-by-name order.
-- Commands that leave orphaned background processes holding stdout/stderr do
-  not block the runner: the pipes are force-closed about 1 second after the
-  main process exits, and anything stragglers write after that is not captured.
+- Commands that leave orphaned background processes holding stdout/stderr do not block the runner: the pipes are force-closed about 1 second after the main process exits.
 
 ### Placeholder System
 
 Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in a temp directory:
-- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`; otherwise left as-is)
-- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `files` check required, as long as X is a local relative path; non-local names like `../x` or `/abs` are left as-is)
+- `{inputs.foo.txt}` → `/tmp/dats-xxx/test-N/inputs/foo.txt` (X must be declared under `inputs.files`. Otherwise left as-is)
+- `{outputs.result.txt}` → `/tmp/dats-xxx/test-N/outputs/result.txt` (no `files` check required, as long as X is a local relative path. Non-local names like `../x` or `/abs` are left as-is)
 - `{shared.config.json}` → `/tmp/dats-xxx/shared/config.json` (file-wide, same locality rule as `{outputs.X}`)
 
-Setup commands, teardown commands, and `shared.files` contents expand only `{shared.X}`; the per-test `{inputs.X}`/`{outputs.X}` namespaces stay verbatim there. `inputs.stdin` is never expanded.
+Setup commands, teardown commands, and `shared.files` contents expand only `{shared.X}`. The per-test `{inputs.X}`/`{outputs.X}` namespaces stay verbatim there. `inputs.stdin` is never expanded.
 
-`{matrix.X}` is a separate, earlier layer: it is text substitution (not a path), applied once per instance at expansion time — before any runtime expansion, and also in `desc`, `inputs.stdin`, and output patterns. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`, which then expand as usual at runtime; substituted text is never re-scanned for `{matrix.Y}`. Matrix placeholders are rejected at parse time in setup/teardown commands and `shared.files` contents (`not available outside tests`).
+`{matrix.X}` is a separate, earlier layer: it is text substitution (not a path), applied once per instance at expansion time — before any runtime expansion, and also. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`, which then expand as usual at runtime. Substituted text is never re-scanned for `{matrix.Y}`. Matrix placeholders are rejected at parse time in setup/teardown commands and `shared.files` contents (`not available outside tests`).
 
-Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs, so it can write nested outputs directly; the same goes for nested `shared.files` names.
+Parent directories of output files declared under `files`/`!files` (e.g. `sub/report.txt`) are created before the command runs. So it can write nested outputs directly. The same goes for nested `shared.files` names.
 
-Commands run with `bash -c` in the working directory of the `dats` invocation; only fixture files live in the temp directory.
+Commands run with `bash -c` in the working directory of the `dats` invocation. Only fixture files live in the temp directory.
 
 ## JSON Schema
 

@@ -37,8 +37,7 @@ tests:
 
 ### Bounding Run Time
 
-`timeout` accepts an integer number of seconds or a Go duration string. A command that exceeds
-the timeout is killed and the test fails.
+`timeout` accepts an integer number of seconds or a Go duration string. A command that exceeds the timeout is killed and the test fails.
 
 ```yaml
 tests:
@@ -109,8 +108,7 @@ tests:
 
 ### Environment Variables
 
-`inputs.env` adds variables to the environment the command inherits. Values go through the
-same placeholder expansion as the command, so a variable can point at a fixture:
+`inputs.env` adds variables to the environment the command inherits. Values go through the same placeholder expansion as the command, so a variable can point at a fixture:
 
 ```yaml
 tests:
@@ -220,12 +218,7 @@ tests:
 
 ## Snapshot (Golden-File) Assertions
 
-Pin an entire output verbatim without spelling it out in YAML: the captured stream must
-byte-match a golden file stored next to the `.dats` file. Create and refresh goldens with
-`dats --update`; see the
-[file format reference](file-format.md#snapshot-assertions-outputssnapshot) for storage,
-naming, and normalization details, and `examples/snapshot.dats` in the repository for a
-runnable demo with committed goldens.
+Pin an entire output verbatim without spelling it out in YAML: the captured stream must byte-match a golden file stored next to the `.dats` file. Create and refresh goldens with `dats --update`. See the [file format reference](file-format.md#snapshot-assertions-outputssnapshot) for storage, naming, and normalization details, and `examples/snapshot.dats` in the repository for a runnable demo with committed goldens.
 
 ```yaml
 tests:
@@ -246,8 +239,7 @@ tests:
 
 ## Sandboxing
 
-Test commands are sandboxed by default, and ordinary tests need no changes for it: fixtures,
-`{outputs.X}` and `{shared.X}` all live in the sandbox's writable temp directory.
+Test commands are sandboxed by default, and ordinary tests need no changes for it: fixtures, `{outputs.X}` and `{shared.X}` all live in the sandbox's writable temp.
 
 ### Narrowing the sandbox for one file
 
@@ -260,15 +252,11 @@ tests:
 	  cmd: go build ./...
 ```
 
-Scratch space is the temp directory, never a host path: there is no way to declare a host
-path writable, and no way for a file to switch its own sandbox off. A command that must write
-outside the temp directory needs a `--no-sandbox` run.
+Scratch space is the temp directory, never a host path: there is no way to declare a host path writable, and no way. A command that must write outside the temp directory needs a `--no-sandbox` run.
 
 ### Pulling a host file in, writable
 
-`inputs.copy`/`shared.copy` copy an *existing* host file into that writable temp directory --
-the read-write counterpart of the working directory's read-only bind mount, for a fixture the
-test needs to mutate:
+`inputs.copy`/`shared.copy` copy an *existing* host file into that writable temp directory -- the read-write counterpart of the working directory's read-only bind mount, for a fixture.
 
 ```yaml
 tests:
@@ -279,15 +267,11 @@ tests:
 	  cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
 ```
 
-See [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for the full
-reference, including why heredocs and herestrings are rejected in `cmd`/`setup`/`teardown` in
-favor of this, `files`, and `inputs.stdin`.
+See [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy) for the full reference, including why heredocs and herestrings are rejected in `cmd`/`setup`/`teardown` in favor of this, `files`, and `inputs.stdin`.
 
 ### Commands that need the host
 
-A file cannot opt itself out -- `sandbox: false` and `sandbox.enabled` are parse errors. For
-commands that genuinely need the host -- driving the local docker daemon, installing
-packages, writing outside the temp tree -- whoever runs the file decides:
+A file cannot opt itself out -- `sandbox: false` and `sandbox.enabled` are parse errors. For commands that genuinely need the host -- driving the local docker daemon, installing packages, writing outside the temp tree -- whoever runs the file decides:
 
 ```bash
 dats --no-sandbox needs-the-host.dats
@@ -300,15 +284,11 @@ tests:
 	  cmd: docker info
 ```
 
-Under a sandboxed run that file fails, loudly, instead of reaching a daemon the runner never
-agreed to expose.
+Under a sandboxed run that file fails, loudly, instead of reaching a daemon the runner never agreed to expose.
 
 ### Picking the image for the docker backend
 
-Only used when the docker backend is selected (bubblewrap runs commands against the host's
-own filesystem and ignores this), and only when the run did not pin an image itself: a typed
-`--sandbox-image` outranks this, and the run's `# sandbox:` line says the file's was refused.
-The image must ship bash:
+Only used when the docker backend is selected (bubblewrap runs commands against the host's own filesystem and ignores this), and only when the run did not pin an image itself: a typed `--sandbox-image` outranks this. The image must ship bash:
 
 ```yaml
 sandbox:
@@ -318,15 +298,13 @@ tests:
 	  cmd: go build -o {outputs.bin} ./...
 ```
 
-See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates and how to opt a
-whole run out (`--no-sandbox`).
+See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates and how to opt a whole run out (`--no-sandbox`).
 
 ## Common Patterns
 
 ### Testing CLI Tools
 
-Pattern lists are literal substrings, so matching a version number takes the line-keyed regex
-form (list patterns like `v[0-9]+` would be searched for verbatim and never match):
+Pattern lists are literal substrings, so matching a version number takes the line-keyed regex form (list patterns like `v[0-9]+` will be searched for verbatim and never match):
 
 ```yaml
 tests:
