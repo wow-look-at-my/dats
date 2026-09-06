@@ -2,8 +2,7 @@
 
 ## Root Structure
 
-A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`,
-`setup`, `teardown`, `sandbox`, and `ssh` keys:
+A `.dats` file contains a `tests` array, optionally preceded by the file-level `shared`, `setup`, `teardown`, `sandbox`, `ssh` and `workdir` keys:
 
 ```yaml
 shared:      # optional file-level fixture files
@@ -11,6 +10,7 @@ setup:       # optional command(s) run once before the tests
 teardown:    # optional command(s) always run once after the tests
 sandbox:     # optional: narrow this file's sandbox (a file can never turn it off)
 ssh:         # optional: ask to run this file's commands on another machine
+workdir:     # optional: the directory every command runs in (replaces cd)
 tests:
 	- # test 1
 	- # test 2
@@ -355,10 +355,75 @@ tests:
 rejected the same way it is in `shared.files` (`shared copy "X": {matrix.x} is not available
 outside tests`).
 
+## Working Directory (`workdir`)
+
+`workdir` is the directory every command in the file runs in. Tests, setup and teardown all use it. It replaces `cd`, which is a parse error inside a command.
+
+```yaml
+workdir: .        # this .dats file's own directory
+tests:
+	- desc: reads a fixture beside this file
+	  cmd: cat host-files/readonly-source.txt
+
+	- desc: this one steps aside
+	  cmd: pwd
+	  workdir: sub/deeper
+```
+
+The path resolves against the directory holding the `.dats` file, never against the directory the run started in. A suite therefore names the same place from anywhere. An absolute path names a single machine's layout. A path climbing out with `..` names whatever sits above the checkout. Both are parse errors. A path that is not an existing directory fails the run, rather than failing as a `cd` error repeated once per test.
+
+A test's own `workdir` overrides the file's. `{matrix.X}` substitutes into a test's `workdir`, so one test can fan across directories. It is rejected in the file-level `workdir`, which dats resolves before any instance exists.
+
+Omit the key to run in the directory the run started in, which is what dats did before `workdir` existed.
+
+## A Command, Not a Script
+
+`cmd`, `setup` and `teardown` each hold one command. dats parses the text at parse time, with [mvdan.cc/sh](https://pkg.go.dev/mvdan.cc/sh/v3/syntax), the parser behind `shfmt`. It rejects the constructs that turn a command into a script. Each one has a schema key that does the same job where dats can see it.
+
+```text
+REJECTED                       WRITE INSTEAD
+a ; b                          one command per line, in a | block scalar
+a && b                         one command per line -- errexit ends the command at the line that fails
+> file   >> file               the command's own output flag, or tee, to write a file
+2> file  &> file               assert with outputs.stdout, outputs.stderr, outputs.files
+< file                         feed input with inputs.stdin, inputs.files or inputs.copy
+<<WORD heredoc                 inputs.files, inputs.copy, shared.files or shared.copy
+<<< herestring                 inputs.stdin
+cd dir                         workdir
+```
+
+Four things stay legal, because each keeps the command visible instead of hiding it. A `|` pipeline is one of them. So is `a || b`, the way to say that a failure is expected. So are `>&2` and `2>&1`, which move output between the two streams dats captures, so every assertion still reads it. So is any of these operators written as data, inside quotes or inside arithmetic.
+
+The check parses the command. It does not match bytes. A separator inside a `sed` script, a `>` inside `$(( 3 > 2 ))` and `echo cd` are all accepted.
+
+### Every command runs under `set -euo pipefail`
+
+No key turns this off. A test command is an assertion about what happened. A command that fails halfway must not report the exit code of whatever ran after it.
+
+```yaml
+- desc: errexit ends the command at the failing line
+  exit: 3
+  cmd: |
+	echo before
+	exit 3
+	echo after   # never runs
+```
+
+`nounset` makes an unset variable an error instead of an empty string. Write `${VAR-}` where empty is what you mean. `pipefail` carries a failure out of the left side of a pipe.
+
+Where a command may fail on purpose, write `|| true`. The reader then sees the intent.
+
+```yaml
+- desc: the sandbox refuses the write
+  cmd: echo pwned | tee /etc/probe || echo BLOCKED
+  outputs:
+	stdout:
+		- BLOCKED
+```
+
 ### Why not a heredoc or herestring?
 
-A shell heredoc (`<<WORD`, `<<-WORD`, `<<~WORD`) or herestring (`<<<`) in `cmd`, `setup`, or
-`teardown` is rejected at parse time, each with its own error naming why:
+A shell heredoc (`<<WORD`, `<<-WORD`, `<<~WORD`) or herestring (`<<<`) in `cmd`, `setup`, or `teardown` is rejected at parse time, each with its own error naming why:
 
 ```
 test 1: cmd: must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead
@@ -1102,6 +1167,7 @@ shared:                    # optional file-level fixtures
 		<name>: string         # filename: content ({shared.X} placeholders expanded)
 	copy:
 		<name>: string         # filename: host source path (relative to the .dats file)
+workdir: string            # optional. Directory every command runs in, relative to the .dats file. Replaces cd
 setup: hookCommand|[]      # optional; command(s) run once before the tests
 teardown: hookCommand|[]   # optional; command(s) always run once after the tests
 # hookCommand = string, or:
@@ -1113,7 +1179,7 @@ tests:
 	- desc: string           # optional, defaults to cmd value
 	  exit: int|string       # optional, defaults to 0
 	  timeout: int|string    # optional, seconds or duration string; 0/omitted = no timeout
-	  cmd: string            # required; a shell heredoc (<<WORD) or herestring (<<<) is rejected at parse time
+	  cmd: string            # required. One command. `;`, `&&`, a file redirect, a heredoc, a herestring and cd are parse errors
 	  matrix:                # optional; expands the test into one instance per combination
 		<name>: [scalar, ...]  # variable: at least one scalar value, referenced as {matrix.<name>}
 	  inputs:
