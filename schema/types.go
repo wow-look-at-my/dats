@@ -25,8 +25,11 @@ type TestFile struct {
 	Shared   *Shared          `yaml:"shared,omitempty"`
 	Sandbox  *SandboxSpec     `yaml:"sandbox,omitempty"`
 	// SSH proposes the machine this file's commands run on; a run approves it.
-	SSH   *SSHSpec `yaml:"ssh,omitempty"`
-	Tests []Test   `yaml:"tests"`
+	SSH *SSHSpec `yaml:"ssh,omitempty"`
+	// Workdir is the directory every command in the file runs in, relative to the
+	// .dats file's own directory. It replaces cd, which is a parse error.
+	Workdir string `yaml:"workdir,omitempty"`
+	Tests   []Test `yaml:"tests"`
 }
 
 // DefaultHookTimeout bounds a setup/teardown command when its entry does not state its own timeout.
@@ -171,25 +174,10 @@ func commandFromValue(value any, key, label string) (string, error) {
 	if strings.TrimSpace(s) == "" {
 		return "", fmt.Errorf("%s: %s must not be empty", key, label)
 	}
-	if msg := bannedRedirect(s); msg != "" {
+	if msg := checkShellCommand(s); msg != "" {
 		return "", fmt.Errorf("%s: %s: %s", key, label, msg)
 	}
 	return s, nil
-}
-
-const heredocBanMessage = "must not use a shell heredoc (<<WORD) -- write the file and pull it in with inputs.files/inputs.copy or shared.files/shared.copy instead"
-
-const herestringBanMessage = "must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line"
-
-func bannedRedirect(s string) string {
-	idx := strings.Index(s, "<<")
-	if idx == -1 {
-		return ""
-	}
-	if idx+2 < len(s) && s[idx+2] == '<' {
-		return herestringBanMessage
-	}
-	return heredocBanMessage
 }
 
 // Shared declares file-level fixture files, written a single time into the file's shared directory before setup runs.
@@ -207,7 +195,9 @@ type Test struct {
 	Timeout Duration `yaml:"timeout,omitempty"`
 	Matrix  Matrix   `yaml:"matrix,omitempty"`
 	// SSH overrides the file's target for this test; needs a file-level ssh:.
-	SSH     *SSHSpec    `yaml:"ssh,omitempty"`
+	SSH *SSHSpec `yaml:"ssh,omitempty"`
+	// Workdir overrides the file's workdir for this test, resolved the same way.
+	Workdir string      `yaml:"workdir,omitempty"`
 	Inputs  InputBlock  `yaml:"inputs,omitempty"`
 	Outputs OutputBlock `yaml:"outputs,omitempty"`
 }

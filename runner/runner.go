@@ -30,6 +30,9 @@ type Runner struct {
 
 	sourceDir string
 
+	// fileWorkdir is the current file's workdir, already resolved against sourceDir.
+	fileWorkdir string
+
 	// SSH picks which machine each file's commands run on; nil runs them here.
 	SSH *SSHManager
 
@@ -121,6 +124,9 @@ func (r *Runner) runFile(ctx context.Context, path string, testFile *schema.Test
 		return nil, err
 	}
 	if r.sourceDir, err = sourceDirOf(path); err != nil {
+		return nil, err
+	}
+	if r.fileWorkdir, err = resolveWorkdir(testFile.Workdir, r.sourceDir); err != nil {
 		return nil, err
 	}
 
@@ -267,6 +273,7 @@ func (r *Runner) runHookCommand(ctx context.Context, kind string, hc schema.Hook
 		EnvExtra:    added,
 		Timeout:     hc.EffectiveTimeout(),
 		LowPriority: r.lowPriority,
+		Workdir:     r.fileWorkdir,
 		Sandbox:     r.plan,
 	})
 	if err != nil {
@@ -314,6 +321,27 @@ func sourceDirOf(path string) (string, error) {
 		return "", fmt.Errorf("resolving %s: %w", path, err)
 	}
 	return filepath.Dir(abs), nil
+}
+
+// resolveWorkdir turns a declared workdir into the absolute directory commands
+// run in. An empty declaration keeps the directory the run started in.
+//
+// The path resolves against the .dats file's own directory, so the suite names
+// the same place from any starting directory. A path that is not a directory is
+// an error here rather than a cd failure repeated once per test.
+func resolveWorkdir(dir, sourceDir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	abs := filepath.Join(sourceDir, dir)
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", fmt.Errorf("workdir %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("workdir %q: %s is not a directory", dir, abs)
+	}
+	return abs, nil
 }
 
 // testName returns the display name for a test: its desc, falling back to the command.
@@ -382,6 +410,16 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 	}
 	env, added := r.commandEnv(extra...)
 
+	// A test's own workdir overrides the file's, so one test can step aside.
+	workdir := r.fileWorkdir
+	if test.Workdir != "" {
+		if workdir, err = resolveWorkdir(test.Workdir, r.sourceDir); err != nil {
+			result.Failures = append(result.Failures, err.Error())
+			result.Duration = time.Since(start)
+			return result
+		}
+	}
+
 	// Execute the command
 	execResult, err := execute(ctx, execRequest{
 		Cmd:         cmd,
@@ -390,6 +428,7 @@ func (r *Runner) RunTest(ctx context.Context, test *schema.Test, baseDir string,
 		EnvExtra:    added,
 		Timeout:     test.Timeout.Value,
 		LowPriority: r.lowPriority,
+		Workdir:     workdir,
 		Sandbox:     plan,
 	})
 	if err != nil {

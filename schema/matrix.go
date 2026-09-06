@@ -174,6 +174,8 @@ func applyToMatrixScope(test *Test, f func(string) string) {
 	if test.SSH != nil {
 		test.SSH.Target = f(test.SSH.Target)
 	}
+	// So is a per-test workdir, which lets one test run the same command per directory.
+	test.Workdir = f(test.Workdir)
 	test.Inputs.Stdin = f(test.Inputs.Stdin)
 	for _, name := range slices.Sorted(maps.Keys(test.Inputs.Files)) {
 		test.Inputs.Files[name] = f(test.Inputs.Files[name])

@@ -32,6 +32,8 @@ type execRequest struct {
 	EnvExtra    []string
 	Timeout     time.Duration
 	LowPriority bool
+	// Workdir is the absolute directory the command runs in, empty to inherit ours.
+	Workdir string
 	// Sandbox wraps the command in an OS-level sandbox; nil runs it directly on the host.
 	Sandbox *sandboxPlan
 }
@@ -49,7 +51,7 @@ func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 	}
 
 	// Commands run through bash -c, directly or wrapped by the sandbox backend (which ends in the same bash -c).
-	sandboxed := req.Sandbox.command(req.Cmd, req.EnvExtra)
+	sandboxed := req.Sandbox.command(shellScript(req.Cmd, req.Workdir), req.EnvExtra)
 	argv := sandboxed.Argv
 	reniceAfterStart := req.LowPriority
 	if req.LowPriority {

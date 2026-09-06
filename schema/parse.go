@@ -27,6 +27,10 @@ func ParseFile(path string) (*TestFile, error) {
 		return nil, fmt.Errorf("no tests defined")
 	}
 
+	if err := validateWorkdir(testFile.Workdir, "workdir"); err != nil {
+		return nil, err
+	}
+
 	if testFile.Shared != nil {
 		if len(testFile.Shared.Files) == 0 && len(testFile.Shared.Copy) == 0 {
 			return nil, fmt.Errorf("shared: must declare at least one file under files or copy")
@@ -79,6 +83,10 @@ func ParseFile(path string) (*TestFile, error) {
 			return nil, fmt.Errorf("sandbox image: {matrix.%s} is not available outside tests", name)
 		}
 	}
+	// The file's workdir is resolved a single time, before any instance exists.
+	if name, found := findMatrixPlaceholder(testFile.Workdir); found {
+		return nil, fmt.Errorf("workdir: {matrix.%s} is not available outside tests", name)
+	}
 	// The ssh target is file-level for the same reason: it is resolved a single time, before any instance exists.
 	if testFile.SSH != nil {
 		if name, found := findMatrixPlaceholder(testFile.SSH.Target); found {
@@ -94,7 +102,7 @@ func ParseFile(path string) (*TestFile, error) {
 		if test.SSH != nil && testFile.SSH == nil {
 			return nil, fmt.Errorf("test %d: ssh: a per-test target needs a file-level ssh: target too (setup, teardown and shared/ always run on the file's target)", i+1)
 		}
-		if msg := bannedRedirect(test.Cmd); msg != "" {
+		if msg := checkShellCommand(test.Cmd); msg != "" {
 			return nil, fmt.Errorf("test %d: cmd: %s", i+1, msg)
 		}
 		// Fixture file names must stay inside the test directory.
@@ -116,6 +124,9 @@ func ParseFile(path string) (*TestFile, error) {
 				return nil, fmt.Errorf("test %d: output file name %q must be a relative path that stays inside the test directory", i+1, name)
 			}
 		}
+		if err := validateWorkdir(test.Workdir, "workdir"); err != nil {
+			return nil, fmt.Errorf("test %d: %w", i+1, err)
+		}
 		if err := validateOutputAssertions(&test.Outputs); err != nil {
 			return nil, fmt.Errorf("test %d: %w", i+1, err)
 		}
@@ -125,6 +136,25 @@ func ParseFile(path string) (*TestFile, error) {
 	}
 
 	return &testFile, nil
+}
+
+// validateWorkdir rejects a workdir the run cannot reproduce.
+//
+// The path resolves against the .dats file's own directory, so a suite means the
+// same thing wherever it is checked out and whatever directory the run started
+// in. An absolute path names one machine's layout, and a path climbing out of
+// the tree names whatever happens to sit above the checkout.
+func validateWorkdir(dir, key string) error {
+	if dir == "" {
+		return nil
+	}
+	if strings.TrimSpace(dir) == "" {
+		return fmt.Errorf("%s: must name a directory", key)
+	}
+	if !filepath.IsLocal(dir) && dir != "." {
+		return fmt.Errorf("%s: %q must be a relative path that stays inside the .dats file's own directory", key, dir)
+	}
+	return nil
 }
 
 // validateOutputAssertions rejects an outputs key that names a stream or a file
