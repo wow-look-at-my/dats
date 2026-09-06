@@ -38,12 +38,12 @@ func TestRunFileSandboxBlocksHostWrites(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
 	- desc: host filesystem is read-only
-	  cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  cmd: 'echo pwned | tee `+probe+` || echo BLOCKED'
 	  outputs:
 		stdout:
 			- BLOCKED
 	- desc: the test's own outputs directory is writable
-	  cmd: echo produced > {outputs.result.txt}
+	  cmd: echo produced | tee {outputs.result.txt}
 	  outputs:
 		files:
 			result.txt:
@@ -67,7 +67,7 @@ func TestRunFileSandboxHooksAreSandboxedToo(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(probe) })
 
 	path := writeRunnerDats(t, `
-setup: echo pwned > `+probe+`
+setup: echo pwned | tee `+probe+`
 tests:
 	- desc: fails with the file's setup
 	  cmd: echo hi
@@ -91,7 +91,7 @@ func TestRunFileSandboxFileCannotOptOut(t *testing.T) {
 sandbox: false
 tests:
 	- desc: writes to the host
-	  cmd: echo produced > `+probe+`
+	  cmd: echo produced | tee `+probe+`
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -110,7 +110,7 @@ func TestRunFileRunLevelOptOutRunsOnHost(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
 	- desc: writes to the host
-	  cmd: echo produced > `+probe+`
+	  cmd: echo produced | tee `+probe+`
 `)
 	var buf bytes.Buffer
 	r := NewRunner(&buf, false, false, "")
@@ -161,14 +161,14 @@ tests:
 		stdout:
 			- produced
 	- desc: ...or in the test's own outputs directory
-	  cmd: echo produced > {outputs.result.txt}
+	  cmd: echo produced | tee {outputs.result.txt}
 	  outputs:
 		files:
 			result.txt:
 				match:
 					- produced
 	- desc: an undeclared host path is not
-	  cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  cmd: 'echo pwned | tee `+probe+` || echo BLOCKED'
 	  outputs:
 		stdout:
 			- BLOCKED
@@ -212,7 +212,10 @@ shared:
 setup: cp {shared.shared.txt} {shared.copied.txt}
 tests:
 	- desc: fixtures, env, stdin and shared files
-	  cmd: cat {inputs.in.txt} {shared.copied.txt}; echo "$MY_VAR"; cat
+	  cmd: |
+		cat {inputs.in.txt} {shared.copied.txt}
+		echo "$MY_VAR"
+		cat
 	  inputs:
 		stdin: from-stdin
 		files:
@@ -240,7 +243,7 @@ func TestRunFilesSandboxed(t *testing.T) {
 	first := writeRunnerDats(t, `
 tests:
 	- desc: read-only host
-	  cmd: echo x > /etc/dats-parallel-probe 2>/dev/null && echo WROTE || echo BLOCKED
+	  cmd: echo x | tee /etc/dats-parallel-probe || echo BLOCKED
 	  outputs:
 		stdout:
 			- BLOCKED
@@ -249,7 +252,7 @@ tests:
 	require.Nil(t, os.WriteFile(second, []byte(`
 tests:
 	- desc: writable outputs
-	  cmd: echo produced > {outputs.out.txt}
+	  cmd: echo produced | tee {outputs.out.txt}
 	  outputs:
 		files:
 			out.txt:
@@ -286,12 +289,14 @@ func TestRunFileSeatbeltSandbox(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
 	- desc: the host filesystem is read-only
-	  cmd: 'echo pwned > `+probe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  cmd: 'echo pwned | tee `+probe+` || echo BLOCKED'
 	  outputs:
 		stdout:
 			- BLOCKED
 	- desc: fixtures, outputs and stdin still work
-	  cmd: 'cat {inputs.in.txt} > {outputs.result.txt}; cat'
+	  cmd: |
+		cp {inputs.in.txt} {outputs.result.txt}
+		cat
 	  inputs:
 		stdin: from-stdin
 		files:

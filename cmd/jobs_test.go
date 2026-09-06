@@ -118,7 +118,7 @@ func TestRunTestsJobsMultiFileOutputMatchesSerial(t *testing.T) {
 		"a.dats": `shared:
 	files:
 		config.txt: from-shared
-setup: echo prepared > {shared.gen.txt}
+setup: echo prepared | tee {shared.gen.txt}
 teardown: echo done
 tests:
 	- desc: greets {matrix.who} at {matrix.volume}

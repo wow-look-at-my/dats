@@ -30,8 +30,8 @@ func ownNice(t *testing.T) string {
 func TestParallelRunsWorkloadsAtLowPriority(t *testing.T) {
 	teardownNice := filepath.Join(t.TempDir(), "teardown-nice.txt")
 	path := writeParallelDats(t, "nice.dats", `
-setup: `+niceProbe+` > {shared.setup-nice.txt}
-teardown: `+niceProbe+` > `+teardownNice+`
+setup: `+niceProbe+` | tee {shared.setup-nice.txt}
+teardown: `+niceProbe+` | tee `+teardownNice+`
 tests:
 	- desc: test command runs at nice 19
 	  cmd: `+niceProbe+`
@@ -64,7 +64,7 @@ func TestSerialRunsWorkloadsAtOwnPriority(t *testing.T) {
 		t.Skip("test process already runs at nice 19; serial control is indistinguishable from jobs mode")
 	}
 	path := writeParallelDats(t, "nice-serial.dats", `
-setup: `+niceProbe+` > {shared.setup-nice.txt}
+setup: `+niceProbe+` | tee {shared.setup-nice.txt}
 tests:
 	- desc: test command inherits the parent priority
 	  cmd: `+niceProbe+`

@@ -36,7 +36,10 @@ func writeReportCorpus(t *testing.T) (dir string, files []string) {
 `},
 		{"b-fail.dats", `tests:
 	- desc: multi-assert failure
-	  cmd: printf 'real-out'; printf 'real-err' >&2; exit 3
+	  cmd: |
+		printf 'real-out'
+		printf 'real-err' >&2
+		exit 3
 	  outputs:
 		stdout:
 			- wanted-one
@@ -47,7 +50,7 @@ func writeReportCorpus(t *testing.T) (dir string, files []string) {
 		stdout:
 			- fine
 	- desc: wrong file content
-	  cmd: printf data > {outputs.result.txt}
+	  cmd: printf data | tee {outputs.result.txt}
 	  outputs:
 		files:
 			result.txt:
@@ -224,7 +227,9 @@ func TestReportsUnwritablePathFailsTheRun(t *testing.T) {
 func TestReportsControlCharsStayParseable(t *testing.T) {
 	datsFile := writeDats(t, "ctrl.dats", `tests:
 	- desc: emits control bytes
-	  cmd: printf 'esc \033[31m nul \000 end'; exit 1
+	  cmd: |
+		printf 'esc \033[31m nul \000 end'
+		exit 1
 `)
 	outDir := t.TempDir()
 	junitPath := filepath.Join(outDir, "report.xml")

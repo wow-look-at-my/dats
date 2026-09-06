@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,11 +29,15 @@ func TestRunFilesBarriers(t *testing.T) {
 	for f := 0; f < 3; f++ {
 		markerDir := t.TempDir()
 		content := fmt.Sprintf(`
-setup: sleep 0.3 && echo ready > {shared.gate.txt}
+setup: |
+	sleep 0.3
+	echo ready | tee {shared.gate.txt}
 teardown: test "$(ls %[1]s | wc -l)" -eq %[2]d
 tests:
 	- desc: gated instance
-	  cmd: grep -q ready {shared.gate.txt} && touch %[1]s/m-{matrix.i}.txt
+	  cmd: |
+		grep -q ready {shared.gate.txt}
+		touch %[1]s/m-{matrix.i}.txt
 	  matrix:
 		i:
 			- 1
@@ -113,20 +118,35 @@ func TestRunFilesCrossFileConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	aMarker := filepath.Join(dir, "a.txt")
 	bMarker := filepath.Join(dir, "b.txt")
+	// The lines carry the block scalar's own indentation, since they are
+	// interpolated into one.
 	wait := func(marker string) string {
-		return fmt.Sprintf(
-			`ok=1; for i in $(seq 100); do if [ -f %s ]; then ok=0; break; fi; sleep 0.1; done; [ "$ok" -eq 0 ]`,
-			marker)
+		return strings.ReplaceAll(fmt.Sprintf(
+			`ok=1
+for i in $(seq 100)
+do
+	if [ -f %s ]
+	then
+		ok=0
+		break
+	fi
+	sleep 0.1
+done
+[ "$ok" -eq 0 ]`, marker), "\n", "\n\t\t")
 	}
 	fileA := writeParallelDats(t, "a.dats", fmt.Sprintf(`
 tests:
 	- desc: writes a, waits for b
-	  cmd: touch %s; %s
+	  cmd: |
+		touch %s
+		%s
 `, aMarker, wait(bMarker)))
 	fileB := writeParallelDats(t, "b.dats", fmt.Sprintf(`
 tests:
 	- desc: waits for a, writes b
-	  cmd: %s && touch %s
+	  cmd: |
+		%s
+		touch %s
 `, wait(aMarker), bMarker))
 
 	var buf bytes.Buffer
@@ -146,7 +166,12 @@ func TestOneJobRunsAFilesInstancesInDeclarationOrder(t *testing.T) {
 	path := writeParallelDats(t, "order.dats", fmt.Sprintf(`
 tests:
 	- desc: records its own position
-	  cmd: if [ {matrix.i} = 1 ]; then sleep 0.3; fi; echo {matrix.i} >> %s
+	  cmd: |
+		if [ {matrix.i} = 1 ]
+		then
+			sleep 0.3
+		fi
+		echo {matrix.i} | tee -a %s
 	  matrix:
 		i:
 			- 1

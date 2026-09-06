@@ -173,7 +173,9 @@ func TestSnapshotUpdateWritesAndLists(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
 	- desc: snap
-	  cmd: printf 'out\n'; printf 'err\n' >&2
+	  cmd: |
+		printf 'out\n'
+		printf 'err\n' >&2
 	  outputs:
 		snapshot:
 			stdout: true
@@ -245,7 +247,9 @@ func TestSnapshotUpdateSkipsFailingInstance(t *testing.T) {
 	path := writeRunnerDats(t, `
 tests:
 	- desc: snap
-	  cmd: echo new-output; exit 3
+	  cmd: |
+		echo new-output
+		exit 3
 	  outputs:
 		snapshot: true
 `)
@@ -444,7 +448,9 @@ tests:
 const snapshotCorpus = `
 tests:
 	- desc: both streams
-	  cmd: printf 'out\n'; printf 'err\n' >&2
+	  cmd: |
+		printf 'out\n'
+		printf 'err\n' >&2
 	  outputs:
 		snapshot:
 			stdout: true

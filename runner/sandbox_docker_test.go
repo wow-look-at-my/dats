@@ -61,7 +61,10 @@ tests:
 	- desc: runs inside the image
 	  cmd: grep -q debian /etc/os-release
 	- desc: fixtures, shared files, env and stdin all arrive
-	  cmd: 'cat {inputs.in.txt} {shared.shared.txt}; echo "$MY_VAR"; cat'
+	  cmd: |
+		cat {inputs.in.txt} {shared.shared.txt}
+		echo "$MY_VAR"
+		cat
 	  inputs:
 		stdin: from-stdin
 		files:
@@ -75,14 +78,14 @@ tests:
 			- from-env
 			- from-stdin
 	- desc: the outputs directory is writable and lands on the host
-	  cmd: echo produced > {outputs.result.txt}
+	  cmd: echo produced | tee {outputs.result.txt}
 	  outputs:
 		files:
 			result.txt:
 				match:
 					- produced
 	- desc: host paths outside the temp directory are not writable
-	  cmd: 'echo pwned > `+hostProbe+` 2>/dev/null && echo WROTE || echo BLOCKED'
+	  cmd: 'echo pwned | tee `+hostProbe+` || echo BLOCKED'
 	  outputs:
 		stdout:
 			- BLOCKED
