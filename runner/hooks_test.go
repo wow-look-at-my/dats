@@ -31,7 +31,9 @@ tests:
 		stdout:
 			- "\"debug\": true"
 	- desc: input contents and env expansion
-	  cmd: diff "$SHARED_PATH" {shared.config.json} && cat {inputs.pointer.txt}
+	  cmd: |
+		diff "$SHARED_PATH" {shared.config.json}
+		cat {inputs.pointer.txt}
 	  inputs:
 		files:
 			pointer.txt: "{shared.config.json}"
@@ -88,7 +90,7 @@ func TestRunFileSetupRunsBeforeTests(t *testing.T) {
 	// Setup output is observable from the tests, proving it ran before them.
 	path := writeRunnerDats(t, `
 setup:
-	- echo generated-by-setup > {shared.marker.txt}
+	- echo generated-by-setup | tee {shared.marker.txt}
 tests:
 	- cmd: cat {shared.marker.txt}
 	  outputs:
@@ -155,7 +157,10 @@ tests:
 
 func TestRunFileSetupFailureShowsCapturedOutput(t *testing.T) {
 	path := writeRunnerDats(t, `
-setup: echo partial output; echo boom >&2; exit 7
+setup: |
+	echo partial output
+	echo boom >&2
+	exit 7
 tests:
 	- cmd: echo never runs
 `)
@@ -282,8 +287,8 @@ func TestRunFileHooksReceiveCoverDir(t *testing.T) {
 	setupMarker := filepath.Join(dir, "setup-cover.txt")
 	teardownMarker := filepath.Join(dir, "teardown-cover.txt")
 	path := writeRunnerDats(t, `
-setup: echo "$GOCOVERDIR" > `+setupMarker+`
-teardown: echo "$GOCOVERDIR" > `+teardownMarker+`
+setup: echo "$GOCOVERDIR" | tee `+setupMarker+`
+teardown: echo "$GOCOVERDIR" | tee `+teardownMarker+`
 tests:
 	- cmd: echo hi
 `)
@@ -306,7 +311,7 @@ func TestRunFileHooksWithoutCoverDirInheritPlainEnv(t *testing.T) {
 	t.Setenv("GOCOVERDIR", "from-parent")
 	marker := filepath.Join(t.TempDir(), "cover.txt")
 	path := writeRunnerDats(t, `
-setup: echo "cover=$GOCOVERDIR" > `+marker+`
+setup: echo "cover=$GOCOVERDIR" | tee `+marker+`
 tests:
 	- cmd: echo hi
 `)
@@ -343,7 +348,7 @@ shared:
 	files:
 		marker.txt: from-shared
 setup:
-	- cmd: echo "$FOO/$BAR" > {shared.out.txt}
+	- cmd: echo "$FOO/$BAR" | tee {shared.out.txt}
 	  env:
 		FOO: bar
 		BAR: "{shared.marker.txt}"
@@ -387,7 +392,7 @@ func TestRunFileHookStdinFile(t *testing.T) {
 	path := filepath.Join(dir, "runner.dats")
 	require.Nil(t, os.WriteFile(path, []byte(`
 setup:
-	- cmd: cat > {shared.out.txt}
+	- cmd: tee {shared.out.txt}
 	  stdin_file: in.txt
 tests:
 	- cmd: cat {shared.out.txt}
