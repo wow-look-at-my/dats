@@ -320,6 +320,42 @@ tests:
 // build cannot reach the parent terminal. Without a writable /dev/ptmx that
 // allocation fails with "can't get Master/Slave device" -- a message that
 // names no path and reads as a broken toolchain rather than a sandbox rule.
+// Both land in a directory the command never named, so a writable set missing
+// either kills an ordinary script before it runs a line.
+func TestRunFileSeatbeltAllowsShellScratchFiles(t *testing.T) {
+	requireSeatbelt(t)
+
+	path := writeRunnerDats(t, `
+tests:
+	- desc: /bin/sh can write a here-document
+	  cmd: /bin/sh {inputs.heredoc.sh}
+	  inputs:
+		files:
+			heredoc.sh: |
+				cat <<EOF
+				heredoc-ok
+				EOF
+	  outputs:
+		stdout:
+			- heredoc-ok
+	- desc: mktemp can take a scratch directory
+	  cmd: |
+			d="$(mktemp -d)"
+			echo mktemp-ok > "$d/scratch.txt"
+			cat "$d/scratch.txt"
+	  outputs:
+		stdout:
+			- mktemp-ok
+`)
+	var buf bytes.Buffer
+	r := NewRunner(&buf, false, false, "")
+	r.Sandbox = NewSandboxConfig(SandboxSeatbelt, "")
+
+	result, err := r.RunFile(context.Background(), path)
+	require.Nil(t, err)
+	assert.Equal(t, 2, result.Passed, "output:\n%s", buf.String())
+}
+
 func TestRunFileSeatbeltAllowsPTY(t *testing.T) {
 	requireSeatbelt(t)
 
