@@ -87,6 +87,10 @@ jobs:
       - uses: ./
         with:
           tests: examples/example.dats
+      # A directory argument, so the NT leg gates the path each file takes into WSL.
+      - uses: ./
+        with:
+          tests: examples
 
   # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:

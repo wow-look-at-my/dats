@@ -35,7 +35,8 @@ for (const entry of raw) {
 	const files = fs
 		.readdirSync(entry)
 		.filter((f) => f.endsWith('.dats'))
-		.map((f) => path.join(entry, f));
+		// posix: an NT path with backslashes loses them on the way into WSL.
+		.map((f) => path.posix.join(entry.replace(/\\/g, "/"), f));
 	if (files.length === 0) throw new Error(`no .dats files in directory "${entry}"`);
 	tests.push(...files);
 }
