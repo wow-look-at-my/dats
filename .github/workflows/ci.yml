@@ -53,6 +53,8 @@ jobs:
           DATS_TEST_SSH_TARGET2: 127.0.0.1
         with:
           autorelease: true
+          # dats sandboxes every test command and refuses to run without one of these.
+          apt-depends: 'bubblewrap | docker.io'
 
   schema:
     runs-on: ubuntu-latest
