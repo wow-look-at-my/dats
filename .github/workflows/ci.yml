@@ -42,7 +42,7 @@ jobs:
           chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys
           # BatchMode refuses an unknown host key rather than prompting.
           ssh-keyscan -H localhost 127.0.0.1 >> ~/.ssh/known_hosts
-          # Two target STRINGS for one machine: the per-test override needs a second.
+          # Target STRINGS for one machine: the per-test override needs a second.
           for t in localhost 127.0.0.1; do
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$t" 'echo ssh ok; command -v tar bash'
           done
@@ -94,7 +94,7 @@ jobs:
         with:
           tests: examples
 
-  # One script on three hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
+  # One script on hosts: the NT leg gates runner/hostpath.go, the posix legs make a red one a difference -- CLAUDE.md.
   every-host:
     strategy:
       fail-fast: false
@@ -105,7 +105,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      # THIS commit's binary: the APE the test job handed off runs on all three hosts.
+      # THIS commit's binary: the APE the test job handed off runs on all hosts.
       - uses: wow-look-at-my/actions@cache-download#latest
         with:
           name: go-build-test.broot
