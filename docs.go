@@ -85,12 +85,6 @@ var docPages = []DocPage{
 		File:    "docs/reports.md",
 	},
 	{
-		Name:    "action",
-		Aliases: []string{"github", "gha", "ci"},
-		Summary: "Running dats from another repository's GitHub Actions workflow",
-		File:    "docs/action.md",
-	},
-	{
 		Name:    "sandbox-internals",
 		Aliases: []string{"backends", "argv"},
 		Summary: "How each backend builds its argv, and which details are load-bearing",

@@ -645,6 +645,7 @@ func TestResolvConfTargetIsAFileOutsideTheToolTree(t *testing.T) {
 }
 
 func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
+	t.Serial()
 	orig := resolvConfTarget
 	t.Cleanup(func() { resolvConfTarget = orig })
 	const stub = "/run/systemd/resolve/stub-resolv.conf"

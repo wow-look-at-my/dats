@@ -257,6 +257,7 @@ func TestReportsControlCharsStayParseable(t *testing.T) {
 }
 
 func TestSyntaxUnaffectedByReportFlags(t *testing.T) {
+	t.Serial()
 	for _, name := range []string{"report-junit", "report-json"} {
 		f := rootCmd.PersistentFlags().Lookup(name)
 		require.NotNil(t, f, name)

@@ -15,7 +15,6 @@ and `dats help <topic>` prints the same pages.
 - [Go Library API](library.md) (`dats docs library`) - Running suites in-process from Go
 - [Machine-Readable Reports](reports.md) (`dats docs reports`) - JUnit XML / JSON report file formats
 - [Examples](examples.md) (`dats docs examples`) - Annotated examples
-- [GitHub Action](action.md) (`dats docs action`) - Running dats from another repo's workflow
 - [Sandbox internals](sandbox-internals.md) (`dats docs sandbox-internals`) - How each backend builds its argv
 - [Masked /proc fallback](sandbox-masked-proc.md) (`dats docs masked-proc`) - Sandboxing inside a container
 
