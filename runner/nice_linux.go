@@ -21,10 +21,8 @@ func startCommand(cmd *exec.Cmd, lowPriority bool) (release func(), err error) {
 	go func() {
 		// The thread stays locked, so the runtime ends it with this goroutine.
 		runtime.LockOSThread()
-		if err := syscall.Setpriority(syscall.PRIO_PROCESS, syscall.Gettid(), 19); err != nil {
-			started <- err
-			return
-		}
+		// A cosmo binary on a Windows host has no setpriority, and the command still runs.
+		_ = syscall.Setpriority(syscall.PRIO_PROCESS, syscall.Gettid(), 19)
 		if err := cmd.Start(); err != nil {
 			started <- err
 			return
