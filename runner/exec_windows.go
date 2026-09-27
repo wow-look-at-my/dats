@@ -22,4 +22,6 @@ func killProcessGroup(p *os.Process) error {
 func stateSignal(state *os.ProcessState) string { return "" }
 
 // startCommand starts cmd. Windows has no nice value to lower.
-func startCommand(cmd *exec.Cmd, lowPriority bool) error { return cmd.Start() }
+func startCommand(cmd *exec.Cmd, lowPriority bool) (release func(), err error) {
+	return func() {}, cmd.Start()
+}

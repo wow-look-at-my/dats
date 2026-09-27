@@ -9,12 +9,15 @@ import (
 )
 
 // On Linux a nice value belongs to a thread, and a child takes it from the
-// thread that forks it.
-func startCommand(cmd *exec.Cmd, lowPriority bool) error {
+// thread that forks it. The fork therefore runs on a locked thread at nice 19.
+// That thread must live until the command exits: the parent-death signal that
+// bwrap --die-with-parent sets fires when the forking thread exits.
+func startCommand(cmd *exec.Cmd, lowPriority bool) (release func(), err error) {
 	if !lowPriority {
-		return cmd.Start()
+		return func() {}, cmd.Start()
 	}
 	started := make(chan error, 1)
+	done := make(chan struct{})
 	go func() {
 		// The thread stays locked, so the runtime ends it with this goroutine.
 		runtime.LockOSThread()
@@ -22,7 +25,15 @@ func startCommand(cmd *exec.Cmd, lowPriority bool) error {
 			started <- err
 			return
 		}
-		started <- cmd.Start()
+		if err := cmd.Start(); err != nil {
+			started <- err
+			return
+		}
+		started <- nil
+		<-done
 	}()
-	return <-started
+	if err := <-started; err != nil {
+		return nil, err
+	}
+	return func() { close(done) }, nil
 }
