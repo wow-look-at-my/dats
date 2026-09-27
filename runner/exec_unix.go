@@ -23,10 +23,6 @@ func killProcessGroup(p *os.Process) error {
 	return syscall.Kill(-pgid, syscall.SIGKILL)
 }
 
-func setLowPriority(pid int) error {
-	return syscall.Setpriority(syscall.PRIO_PGRP, pid, 19)
-}
-
 func stateSignal(state *os.ProcessState) string {
 	if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
 		return ws.Signal().String()

@@ -21,4 +21,5 @@ func killProcessGroup(p *os.Process) error {
 // stateSignal always reports no signal on windows.
 func stateSignal(state *os.ProcessState) string { return "" }
 
-func setLowPriority(pid int) error { return nil }
+// startCommand starts cmd. Windows has no nice value to lower.
+func startCommand(cmd *exec.Cmd, lowPriority bool) error { return cmd.Start() }

@@ -80,13 +80,9 @@ func execute(ctx context.Context, req execRequest) (*ExecResult, error) {
 
 	command.WaitDelay = waitDelay
 
-	if err := command.Start(); err != nil {
+	if err := startCommand(command, req.LowPriority); err != nil {
 		// The command never started (e.g. bash could not be spawned).
 		return nil, err
-	}
-
-	if req.LowPriority {
-		_ = setLowPriority(command.Process.Pid)
 	}
 
 	err := command.Wait()
