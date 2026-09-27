@@ -85,6 +85,7 @@ func TestRunTestsWithoutUpdateComparesOnly(t *testing.T) {
 }
 
 func TestSyntaxAcceptsSnapshotFilesAndUpdateFlag(t *testing.T) {
+	t.Serial()
 	datsFile := writeDats(t, "snap.dats", snapshotDats)
 	holdRootCmd(t)
 
