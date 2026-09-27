@@ -65,9 +65,9 @@ jobs:
           schema: schema.json
           files: testdata/schema/*.json
 
-  # This repo's own action, on the fleet a consumer uses.
+  # This repo's own action, sandboxing examples/sandbox.dats.
   self-hosted-sandbox:
-    runs-on: ${{ vars.CI_RUNNER_DIND || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: ./
