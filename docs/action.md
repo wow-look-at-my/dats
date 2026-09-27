@@ -42,15 +42,11 @@ docker. A Windows runner's own daemon serves WINDOWS containers, and WSL1 cannot
 host a Linux one — see [sandbox-internals.md](sandbox-internals.md) for the
 measurement. A suite on an NT runner needs `--no-sandbox` until that changes.
 
-On a Linux runner with apt, dpkg and sudo but no `bwrap`, the action installs
-bubblewrap with `wow-look-at-my/actions@cached-apt` before the script runs. A
-cache hit restores the package's files without calling apt at all.
-`.github/scripts/bwrap-needs-apt.sh` makes that decision. It skips cached-apt
-when `bwrap` is already present, because cached-apt would run
-`apt-get update` for nothing there.
+On Linux the action installs bubblewrap with `wow-look-at-my/actions@cached-apt`
+before the script runs. A cache hit restores the package's files without
+calling apt at all. On other hosts cached-apt installs nothing.
 
-Every other Linux runner gets bubblewrap from the script, which installs it when
-`bwrap` is not already on PATH:
+The script then installs bubblewrap itself when `bwrap` is still not on PATH:
 
 - **It only reaches for `sudo` when it is not already root.** A container job
   usually runs as root with no `sudo` binary present at all, so an
