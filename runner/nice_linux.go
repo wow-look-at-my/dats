@@ -9,9 +9,9 @@ import (
 )
 
 // On Linux a nice value belongs to a thread, and a child takes it from the
-// thread that forks it. The fork therefore runs on a locked thread at nice 19.
-// That thread must live until the command exits: the parent-death signal that
-// bwrap --die-with-parent sets fires when the forking thread exits.
+// thread that forks it. That thread must live until the command exits: the
+// parent-death signal that bwrap --die-with-parent sets fires when the forking
+// thread exits.
 func startCommand(cmd *exec.Cmd, lowPriority bool) (release func(), err error) {
 	if !lowPriority {
 		return func() {}, cmd.Start()
