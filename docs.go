@@ -96,6 +96,12 @@ var docPages = []DocPage{
 		Summary: "Why a container refuses the sandbox a private /proc, and what the fallback keeps",
 		File:    "docs/sandbox-masked-proc.md",
 	},
+	{
+		Name:    "embedding",
+		Aliases: []string{"embed", "consumers", "build-tool"},
+		Summary: "What a repository whose build tool links dats can rely on: layout, handoff dir, sandbox, goldens",
+		File:    "docs/embedding.md",
+	},
 }
 
 // Docs returns every embedded documentation page, in topic-list order.
