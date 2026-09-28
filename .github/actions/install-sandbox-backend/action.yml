@@ -1,0 +1,20 @@
+name: Install the dats sandbox backend
+description: Puts a usable sandbox backend on the runner, and fails loudly when it cannot.
+
+# dats owns the sandbox, so it owns the provisioning. A consumer that LINKS the dats library rather than running this repo's own action still needs a backend, and a copy of these scripts in that repository is how the two drift apart.
+runs:
+  using: composite
+  steps:
+    - name: Install the sandbox backend
+      shell: bash
+      env:
+        # An NT runner hands out a backslash path, and bash eats each backslash as an escape -- docs/action.md.
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH//\\//}/../../scripts/install-sandbox-backend.sh"
+
+    - name: Allow an unprivileged user namespace where the kernel gates one (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: bash "${ACTION_PATH//\\//}/../../scripts/allow-unprivileged-userns.sh"
