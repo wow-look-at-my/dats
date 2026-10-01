@@ -1,214 +1,60 @@
-# File-level shared fixtures: written once per file into a shared/ directory
-# before setup runs. Tests address them with {shared.X} placeholders and
-# should treat them as read-only.
-shared:
-	files:
-		config.json: |
-			{"debug": true}
+<dats>
+  <!-- Simple command with no inputs -->
+  <test desc="echo test" cmd="echo Hello World">
+    <stdout>
+      <match>Hello World</match>
+    </stdout>
+  </test>
 
-# File-level setup: runs once, in order, before any test (a single string is
-# also accepted). Only {shared.X} placeholders are expanded here. If a
-# command fails, every test in this file is reported as failed.
-setup:
-	- cat {shared.config.json} > {shared.generated.txt}
-	- echo "generated at setup" >> {shared.generated.txt}
+  <!-- Command reading from file -->
+  <test desc="cat reads file" cmd="cat {inputs.input.txt}">
+    <input name="input.txt">Hello, world!
+</input>
+    <stdout>
+      <match>Hello, world!</match>
+    </stdout>
+  </test>
 
-# File-level teardown (string form): always runs once after the tests --
-# after test failures and even when setup failed.
-teardown: echo "teardown complete"
+  <!-- Command reading from stdin -->
+  <test desc="cat reads stdin" cmd="cat">
+    <stdin>Hello from stdin</stdin>
+    <stdout>
+      <match>Hello from stdin</match>
+    </stdout>
+  </test>
 
-tests:
-	# Simple command with no inputs
-	- desc: echo test
-	  exit: 0
-	  cmd: echo Hello World
-	  outputs:
-		stdout:
-			- "Hello World"
+  <!-- Multiple input files -->
+  <test desc="concatenate two files" cmd="cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}">
+    <input name="a.txt">Line A</input>
+    <input name="b.txt">Line B</input>
+    <stdout>
+      <match>Line A</match>
+      <match>Line B</match>
+    </stdout>
+  </test>
 
-	# Command reading from file
-	- desc: cat reads file
-	  exit: 0
-	  inputs:
-		files:
-			input.txt: |
-				Hello, world!
-	  cmd: cat {inputs.input.txt}
-	  outputs:
-		stdout:
-			- "Hello, world!"
+  <!-- Line-specific assertions -->
+  <test desc="line matching" cmd="printf &quot;line0\nline1\nline2&quot;">
+    <stdout>
+      <line n="0">^line0$</line>
+      <line n="2">^line2$</line>
+    </stdout>
+  </test>
 
-	# Command reading from stdin
-	- desc: cat reads stdin
-	  exit: 0
-	  inputs:
-		stdin: "Hello from stdin"
-	  cmd: cat
-	  outputs:
-		stdout:
-			- "Hello from stdin"
+  <!-- Negative assertions -->
+  <test desc="no errors in output" cmd="echo success">
+    <stdout>
+      <match>success</match>
+      <not-match>error</not-match>
+      <not-match>fail</not-match>
+    </stdout>
+  </test>
 
-	# Multiple input files
-	- desc: concatenate two files
-	  exit: 0
-	  inputs:
-		files:
-			a.txt: "Line A"
-			b.txt: "Line B"
-	  cmd: cat {inputs.a.txt} {inputs.b.txt} {inputs.a.txt}
-	  outputs:
-		stdout:
-			- "Line A"
-			- "Line B"
+  <!-- Expected non-zero exit -->
+  <test desc="grep returns 1 when not found" exit="1" cmd="grep -q &quot;notfound&quot;">
+    <stdin>hello world</stdin>
+  </test>
 
-	# Line-specific assertions
-	- desc: line matching
-	  exit: 0
-	  cmd: printf "line0\nline1\nline2"
-	  outputs:
-		stdout:
-			0: "^line0$"
-			2: "^line2$"
-
-	# Negative assertions
-	- desc: no errors in output
-	  exit: 0
-	  cmd: echo success
-	  outputs:
-		stdout:
-			- "success"
-		!stdout:
-			- "error"
-			- "fail"
-
-	# Expected non-zero exit
-	- desc: grep returns 1 when not found
-	  exit: 1
-	  inputs:
-		stdin: "hello world"
-	  cmd: grep -q "notfound"
-
-	# Using EXIT_* variable
-	- desc: exit code variable
-	  exit: EXIT_SUCCESS
-	  cmd: true
-
-	# Stderr assertions (cmd is quoted because it contains a colon)
-	- desc: writes to stderr
-	  exit: 0
-	  cmd: 'echo "warning: be careful" >&2'
-	  outputs:
-		stderr:
-			- "warning"
-		!stderr:
-			- "panic"
-
-	# Output file validation
-	- desc: writes an output file
-	  exit: 0
-	  cmd: echo "result data" > {outputs.result.txt}
-	  outputs:
-		files:
-			result.txt:
-				exists: true
-				match:
-					- "result data"
-				notMatch:
-					- "error"
-
-	# Negated output file: a stray file must NOT be created
-	# (!files inverts each check, so exists: true means "must NOT exist")
-	- desc: does not create a stray file
-	  exit: 0
-	  cmd: echo nothing
-	  outputs:
-		!files:
-			unexpected.txt:
-				exists: true
-
-	# Per-test timeout (command completes well within the limit)
-	- desc: finishes within timeout
-	  exit: 0
-	  cmd: echo fast
-	  timeout: 5s
-	  outputs:
-		stdout:
-			- "fast"
-
-	# Per-test environment variables, added to the inherited environment.
-	# Values go through the same placeholder expansion as the command.
-	- desc: environment variables are visible to the command
-	  exit: 0
-	  inputs:
-		files:
-			cfg.json: '{"mode": "test"}'
-		env:
-			GREETING: hello from env
-			CONFIG_PATH: "{inputs.cfg.json}"
-	  cmd: echo "$GREETING"; cat "$CONFIG_PATH"
-	  outputs:
-		stdout:
-			- "hello from env"
-			- '"mode": "test"'
-
-	# Nested output file: parent directories of outputs declared under
-	# files/!files are created before the command runs
-	- desc: writes a nested output file
-	  exit: 0
-	  cmd: echo "nested report" > {outputs.sub/report.txt}
-	  outputs:
-		files:
-			sub/report.txt:
-				match:
-					- "nested report"
-
-	# An empty file check is an implicit existence assertion (must exist)
-	- desc: empty check means the file must exist
-	  exit: 0
-	  cmd: date > {outputs.stamp.txt}
-	  outputs:
-		files:
-			stamp.txt: {}
-
-	# Shared fixture declared under shared.files at the top of this file
-	- desc: reads a shared fixture file
-	  exit: 0
-	  cmd: cat {shared.config.json}
-	  outputs:
-		stdout:
-			- '"debug": true'
-
-	# File generated by the setup commands (setup ran before any test)
-	- desc: reads a file generated by setup
-	  exit: 0
-	  cmd: cat {shared.generated.txt}
-	  outputs:
-		stdout:
-			- '"debug": true'
-			- "generated at setup"
-
-	# Matrix (parameterized) test: expands into one instance per combination
-	# of the declared variables (cartesian product) -- this one runs 4 times,
-	# reported as "greets [greeting=hello, name=alice]" and so on, declaration
-	# order preserved and the last variable varying fastest. {matrix.X}
-	# substitutes in the cmd AND in output patterns (also desc, stdin, file
-	# contents, and env values).
-	- desc: greets
-	  cmd: echo "{matrix.greeting}, {matrix.name}!"
-	  matrix:
-		greeting: [hello, howdy]
-		name: [alice, bob]
-	  outputs:
-		stdout:
-			- "{matrix.greeting}, {matrix.name}!"
-
-	# Matrix substitution happens first, then the runtime placeholder
-	# namespaces expand as usual -- so {shared.X} and {matrix.X} compose in
-	# one command (this instance greps the shared config for the matrix key).
-	- desc: finds the {matrix.key} key in the shared config
-	  cmd: grep -c '"{matrix.key}"' {shared.config.json}
-	  matrix:
-		key: [debug]
-	  outputs:
-		stdout:
-			- "1"
+  <!-- Using EXIT_* variable -->
+  <test desc="exit code variable" exit="EXIT_SUCCESS" cmd="true"/>
+</dats>

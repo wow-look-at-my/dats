@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
+DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative XML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
 ## Build Commands
 
 ```bash
+just generate       # Regenerate Go types from schema/dats.xsd (requires xgen)
 just build          # Build the dats binary to build/dats (runs go fmt, go vet, go build)
 just test           # Run Go tests with coverage + run example.dats
 just install        # Symlink binary to ~/.local/bin/dats
@@ -58,6 +59,8 @@ go test -cover ./...
 10. With `--report-junit`/`--report-json`, runTests writes report files from the finished results at end of run — always when the run executed (especially failing runs; identical data serial and `-j`), never on hard errors that abort the run; a report write failure is itself an error (stderr, exit 1). Formats and stability contract: `docs/reports.md`
 11. `dats watch` wraps the same pipeline in an fsnotify loop: after each run it waits for relevant changes (resolved `.dats` files, their `.snapshots/` golden dirs, directory args recursively; 250ms debounce) and re-runs the COMPLETE original argument scope — never a subset (no test filtering by design, no narrowing flags). Ctrl-C/SIGTERM exits 0: the context plumbed through the runner kills in-flight process groups, teardown still runs, the aborted outcome is discarded
 
+> **Note:** An in-progress migration to an XML-based format lives in `internal/schema/` and `internal/runner/` (see Go Package Structure below); it is not yet wired into the CLI, so the active runtime above uses the YAML path.
+
 ### Go Package Structure
 - `dats.go` (module root, `package dats`) - **The library API, and the product's front door**: `Options`/`Sandbox`/`Result` + `Run`, plus `FindFiles` and `Validate`. Everything a run does lives here or below; the binary is a thin flag-parsing wrapper, so a library caller gets byte-identical behavior instead of a reimplementation. Contract: `Run` errors only when the RUN could not be carried out (bad path, parse failure, unusable sandbox, unknown mode) -- failing TESTS are a `Result`, never an error, and `Result.Ok()` is the verdict (false on a teardown failure even with zero failed tests). The zero `Sandbox` is AUTO, not none: a caller that says nothing gets isolation, and opting out is spelled `Sandbox{Mode: runner.SandboxNone}`. `Options.Env` entries reach every command (hooks included), an empty value clearing an inherited variable. See `docs/library.md`
 - `docs.go` (root) - The prose documentation, compiled in with `//go:embed docs/*.md` and exposed as `DocPage`/`Docs`/`LookupDoc`/`DocTopicNames`. The pages are embedded VERBATIM, so there is no second copy of the reference to drift; `docPages` is the topic table (name, aliases, summary, file) and `TestDocPagesCoverEmbeddedFiles` pins it to the embedded directory both ways, so a new `docs/*.md` fails the build until it has a topic name
@@ -99,6 +102,14 @@ go test -cover ./...
   - `junit.go` - `WriteJUnit`: JUnit XML (testsuites/testsuite/testcase; failed instances carry failure + system-out/err; synthetic `[setup]` first / `[teardown]` trailing cases for hook failures, counted in the tests/failures attrs so JUnit totals ≥ CLI counts) + the XML 1.0 control-char sanitizer (illegal runes → U+FFFD)
   - `json.go` - `WriteJSON`: JSON report (`format_version` 1; summary counts = CLI instance counts; hook failures in setup_failure/teardown_failures; stdout/stderr keys present exactly on failed instances). Field names are a stability contract — see `docs/reports.md` before changing anything here
 - `docs/` - The prose documentation, and the SOURCE the binary embeds (see `docs.go`): a page added here needs a `docPages` entry, and one renamed or deleted breaks the same test. `README.md` = the index (`dats docs overview`), `library.md` = the Go API and its contracts, `reports.md` = report formats + stability contract, `sandbox-internals.md` = the backends' argv builders and why each bind exists, `sandbox-masked-proc.md` = why a container refuses the sandbox a private procfs, and the read-only-bind fallback that keeps every containment property; `schema.json` - JSON Schema for IDE validation
+- `schema/dats.xsd` - Canonical XSD schema for the in-progress XML format (source of truth for `internal/schema` generated types)
+- `internal/schema/` - In-progress XML migration: Go types generated from XSD via `xgen` (not yet wired into the CLI; `just generate` regenerates)
+  - `generated.go` - Go types generated from XSD via `xgen` (DO NOT EDIT)
+  - `types.go` - Custom methods on generated types (ExitCode validation, accessors)
+- `internal/runner/` - In-progress XML migration: native test runner using `encoding/xml` (not yet wired into the CLI)
+  - `runner.go` - Orchestrates test execution (RunFile, RunTest)
+  - `exec.go` - Command execution via bash, captures exit code and output
+  - `fixtures.go` - Creates input files, expands `{inputs.X}` and `{outputs.X}` placeholders
 
 ### Key Types
 - **ExitCode** - Can be int 0-255 (bare or quoted, e.g. `"3"`) or string like `EXIT_SUCCESS`/`EXIT_FAILURE`
@@ -112,6 +123,20 @@ go test -cover ./...
 - **HookCommand / CommandList / SetupCommands / TeardownCommands** - `HookCommand` is one `setup`/`teardown` entry: `Cmd`, optional `Env`, `StdinFile` (raw content piped to stdin, resolved like `inputs.copy`), and `Timeout` (`*Duration`, nil = `DefaultHookTimeout` 30s via `EffectiveTimeout()`; an explicit value must be > 0 — a hook always has a bound, unlike a test's 0/omitted = unbounded). YAML form is a bare command string, or a mapping (`cmd`, `env`, `stdin_file`, `timeout`; unknown/duplicate keys and a missing `cmd` are parse errors). `CommandList` is `[]HookCommand`; `SetupCommands`/`TeardownCommands` wrap it so parse errors name their key. Empty lists, blank/non-string/non-mapping entries, a shell heredoc (`<<WORD`), and a herestring (`<<<`) in `cmd` are all parse errors
 - **Shared** - File-level `shared` block with `Files map[string]string` and `Copy map[string]string` (same read-write-copy semantics as `InputBlock.Copy`, resolved once per file; `{matrix.X}` in a source is rejected, no instance exists yet); must declare at least one entry across the two, names disjoint and locality-validated (nil pointer on TestFile when absent)
 - **Matrix / TestInstance** - Per-test `matrix` block: ordered `[]MatrixVariable` (declaration order is semantic — label order and expansion order, last variable fastest); values are the literal scalar text (`1.50` stays `"1.50"`). `ExpandMatrix` yields `TestInstance`s (deep-copied substituted Test + `[k=v, ...]` label + assignments). Bad names, empty/non-sequence value lists, non-scalar or duplicate values, and undeclared references are parse errors; `matrix:` with explicit null = absent
+
+### Key Types (XML migration — `internal/schema`, not yet wired into the CLI)
+- **Dats** - Root `<dats>` element containing `[]*Test`
+- **Test** - Attributes: `DescAttr`, `CmdAttr`, `ExitAttr`. Children: `Stdin`, `Input`, `Stdout`, `Stderr`, `Output`
+- **ExitCode** - `string` type with custom `UnmarshalXMLAttr` + accessor methods (`IntValue()`, `IsVariable()`, `VariableName()`)
+- **StreamCheck** - `<stdout>`/`<stderr>` with `Match`, `NotMatch`, and `Line` children
+- **InputFile** - `<input name="file.txt">content</input>` — fields: `NameAttr`, `Value`
+- **FileOutput** - `<output name="file.txt" exists="true">` — fields: `NameAttr`, `ExistsAttr *bool`, `Match`, `NotMatch`
+- **LineCheck** - `<line n="0">pattern</line>` — fields: `NAttr`, `Value`
+
+### XML Design: Attributes vs Children
+XML provides a natural distinction between properties ON an object (attributes) and properties IN an object (children):
+- **Attributes** = scalar metadata about the test: `desc`, `cmd`, `exit`
+- **Children** = structured content within the test: `<stdin>`, `<input>`, `<stdout>`, `<output>`
 
 ### Placeholder System
 Commands, `inputs.files` contents, and `inputs.env` values use `{inputs.X}`, `{outputs.X}`, and `{shared.X}`, which expand to absolute paths in the temp directory:
@@ -131,10 +156,84 @@ Fixture names (`inputs.files`, `inputs.copy`, `outputs.files`, `outputs.!files`,
 
 `docs/file-format.md` is the reference — every key, its accepted forms, its default, and the parse error it raises — ending in a complete field map under "Complete Field Reference". `schema.json` is the machine-readable copy, and `docs/examples.md` holds worked files. The properties an agent needs before opening any of them:
 
+The in-progress XML migration (`internal/schema`/`internal/runner`, not yet wired into the CLI) targets this format:
+
 - Indentation is TABS (`docs/file-format.md#yaml-dialect`); a sequence item's sibling keys align with two spaces AFTER the tab.
 - A file may only NARROW its sandbox. `sandbox: false` and `ssh: false` are parse errors naming `--no-sandbox`: turning isolation off, or pulling a remote command back onto the reader's machine, is the run-starter's decision.
 - A setup failure reports every test in the file as FAILED, never skipped; teardown runs regardless, and its own failure fails the file.
 - Every expanded instance always runs. There is no filtering, selection, or skip mechanism at any layer, by design.
+
+### File-Level Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `shared.files` | No | Map of filename → content, written once per file into `shared/` before setup; contents expand `{shared.X}` only; names must be local relative paths |
+| `setup` | No | Hook command or list (bare string, or a mapping of `cmd`/`env`/`stdin_file`/`timeout`), run once in order before the file's tests; `cmd`/`env` expand `{shared.X}` only, bounded by `timeout` (default 30s, must be > 0). A failure skips remaining setup commands and reports EVERY test as failed (reason `file setup failed`, never "skipped"); teardown still runs |
+| `sandbox` | No | A mapping (`network`, `image`) that narrows the sandbox for this file's commands (tests AND setup/teardown). File-level only -- one file's commands share one temp dir and one hook lifecycle. The CLI is the outer bound: under `--no-sandbox` the block is inert, and nothing in a file can turn its own sandbox off (`sandbox: false` is a parse error pointing at `--no-sandbox`) |
+| `ssh` | No | `[user@]host` this file's commands run on (tests AND setup/teardown). A REQUEST, not a decision: the (file, host) pair is approved once and stored in `~/.config/dats/ssh-trust.json` (`dats trust`), and a typed `--ssh` outranks it (announced, never swapped silently). `ssh: false` is a parse error -- local is the MORE privileged side, so a file pulling a command here is the same harm `sandbox: false` prevents. A remote run has NO sandbox and the working directory does not travel |
+| `teardown` | No | Same hook command or list form as `setup`, always run once in order after the file's tests (after failures, even after setup failure; one failure does not stop the rest). Any failure marks the file failed (exit 1) even when all tests passed |
+
+```xml
+<dats>
+  <test desc="optional description" cmd="command to run" exit="0">
+    <!-- Input: stdin content piped to cmd -->
+    <stdin>input text</stdin>
+
+    <!-- Input: fixture files created before running cmd -->
+    <input name="file.txt">content</input>
+
+    <!-- Output: stdout assertions -->
+    <stdout>
+      <match>pattern</match>           <!-- Substring match -->
+      <not-match>error</not-match>     <!-- Must NOT appear -->
+      <line n="0">^first line$</line>  <!-- Line-specific regex (0-indexed) -->
+    </stdout>
+
+    <!-- Output: stderr assertions -->
+    <stderr>
+      <match>warning</match>
+    </stderr>
+
+    <!-- Output: file assertions -->
+    <output name="result.txt" exists="true">
+      <match>expected content</match>
+      <not-match>error</not-match>
+    </output>
+  </test>
+</dats>
+```
+
+### Test Attributes
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `cmd` | Yes | Command to run. Use `{inputs.X}` and `{outputs.X}` for file paths |
+| `desc` | No | Description for the test (used in output) |
+| `exit` | No | Expected exit code (default: 0). Int 0-255 (bare or quoted, e.g. `"3"`) or `EXIT_SUCCESS`/`EXIT_FAILURE`; floats rejected at parse time |
+| `timeout` | No | Per-test timeout: int seconds (bare or quoted, e.g. `"5"`) or Go duration string (e.g. `500ms`, `2s`). 0/omitted = no timeout; floats rejected (write `1.5s`, not `1.5`) |
+| `matrix` | No | Map of variable name → list of scalar values; expands the test into one instance per combination (cartesian product, declaration order, last variable varies fastest). `{matrix.X}` substitutes in desc, cmd, stdin, file contents, env values, and output patterns; every instance always runs, reported as `desc [k=v, ...]` |
+| `ssh` | No | `[user@]host` this ONE test runs on instead of the file's target. Legal only in a file that declares its own `ssh:` -- a per-test target may only move a command between remote hosts, never back onto the reader's machine. Approved separately (a file naming two hosts needs two approvals), gets its own temp dir plus a push-only mirror of `shared/`, and takes `{matrix.X}` so one test fans across a fleet. `setup`/`teardown`/`shared/` still only run on the FILE's target, so a setup that prepares a service prepares only that host |
+| `inputs.stdin` | No | Content piped to command's stdin |
+| `inputs.files` | No | Map of filename → content (creates fixture files) |
+| `inputs.env` | No | Map of env var name → value, added to the inherited environment (values go through placeholder expansion) |
+| `outputs.stdout` | No | Patterns to match in stdout |
+| `outputs.stderr` | No | Patterns to match in stderr |
+| `outputs.!stdout` | No | Patterns that must NOT appear in stdout |
+| `outputs.!stderr` | No | Patterns that must NOT appear in stderr |
+| `outputs.files` | No | Map of filename → FileCheck for output file validation; empty check (`{}`/null) = must exist |
+| `outputs.!files` | No | Map of filename → FileCheck with each check inverted (e.g. `exists: true` = must NOT exist; empty check = must NOT exist) |
+| `outputs.snapshot` | No | Golden-file assertion: `true` (snapshot stdout) or map of stream booleans (`stdout`/`stderr`, at least one true). Captured output must byte-match `<file>.snapshots/NNN-<slug>.<stream>.golden` after temp-path normalization; `--update` rewrites goldens (skipping instances with other failures) and prunes stale ones |
+| `outputs.json_output` | No | Expected JSON value of the whole stdout (deep equality; object keys order-insensitive, arrays order-sensitive, numbers by value) |
+
+### Test Children (XML migration — not yet wired into the CLI)
+
+| Element | Description |
+|---------|-------------|
+| `<stdin>` | Content piped to command's stdin |
+| `<input name="X">` | Fixture file created before running cmd |
+| `<stdout>` | Stdout assertions (`<match>`, `<not-match>`, `<line>`) |
+| `<stderr>` | Stderr assertions (`<match>`, `<not-match>`, `<line>`) |
+| `<output name="X">` | Output file validation with optional `exists` attr |
 
 ## CI/CD
 
