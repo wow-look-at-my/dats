@@ -4,3 +4,5 @@
 # must arrive with LF whatever the host does.
 *.sh text eol=lf
 *.dats text eol=lf
+# A golden file is compared byte for byte, and a CRLF checkout fails every snapshot.
+*.golden -text

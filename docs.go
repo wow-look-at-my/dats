@@ -85,12 +85,6 @@ var docPages = []DocPage{
 		File:    "docs/reports.md",
 	},
 	{
-		Name:    "action",
-		Aliases: []string{"github", "gha", "ci"},
-		Summary: "Running dats from another repository's GitHub Actions workflow",
-		File:    "docs/action.md",
-	},
-	{
 		Name:    "sandbox-internals",
 		Aliases: []string{"backends", "argv"},
 		Summary: "How each backend builds its argv, and which details are load-bearing",
@@ -101,6 +95,12 @@ var docPages = []DocPage{
 		Aliases: []string{"sandbox-masked-proc", "proc"},
 		Summary: "Why a container refuses the sandbox a private /proc, and what the fallback keeps",
 		File:    "docs/sandbox-masked-proc.md",
+	},
+	{
+		Name:    "embedding",
+		Aliases: []string{"embed", "consumers", "build-tool"},
+		Summary: "What a repository whose build tool links dats can rely on: layout, handoff dir, sandbox, goldens",
+		File:    "docs/embedding.md",
 	},
 }
 
