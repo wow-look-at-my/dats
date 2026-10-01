@@ -632,7 +632,8 @@ func TestSandboxPlanDescribeSeatbelt(t *testing.T) {
 }
 
 func TestResolvConfTargetIsAFileOutsideTheToolTree(t *testing.T) {
-	target, ok := resolvConfTarget()
+	// Not the resolvConfTarget var, which a neighbouring test swaps for a stub.
+	target, ok := resolvConfTargetFS()
 	if !ok {
 		// A host whose /etc/resolv.conf is a regular file needs no extra bind: /etc is already in the tool tree.
 		return
@@ -644,6 +645,7 @@ func TestResolvConfTargetIsAFileOutsideTheToolTree(t *testing.T) {
 }
 
 func TestBwrapBindsTheResolvConfTargetAndBackendsStayEqual(t *testing.T) {
+	t.Serial()
 	orig := resolvConfTarget
 	t.Cleanup(func() { resolvConfTarget = orig })
 	const stub = "/run/systemd/resolve/stub-resolv.conf"

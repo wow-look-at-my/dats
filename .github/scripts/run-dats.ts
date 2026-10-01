@@ -7,10 +7,14 @@
 const bin = process.env.DATS_BIN;
 if (!bin) throw new Error('DATS_BIN is not set');
 
-const workdir = inputs['working-directory'] || '.';
+// An action input arrives as text, but the typescript action types the whole
+// `inputs` record as string | number | boolean, so a YAML scalar the workflow
+// wrote unquoted is a number to the type-checker. String() is what makes the
+// value the string this file has always treated it as.
+const workdir = String(inputs['working-directory'] ?? '') || '.';
 process.chdir(workdir);
 
-const raw = (inputs.tests ?? '').split(/\s+/).filter(Boolean);
+const raw = String(inputs.tests ?? '').split(/\s+/).filter(Boolean);
 if (raw.length === 0) throw new Error('tests is required: list .dats files and/or directories');
 
 const tests: string[] = [];
@@ -31,7 +35,8 @@ for (const entry of raw) {
 	const files = fs
 		.readdirSync(entry)
 		.filter((f) => f.endsWith('.dats'))
-		.map((f) => path.join(entry, f));
+		// posix: an NT path with backslashes loses them on the way into WSL.
+		.map((f) => path.posix.join(entry.replace(/\\/g, "/"), f));
 	if (files.length === 0) throw new Error(`no .dats files in directory "${entry}"`);
 	tests.push(...files);
 }

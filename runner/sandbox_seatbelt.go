@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 func probeSeatbelt() error {
@@ -38,9 +39,40 @@ func (p *sandboxPlan) seatbeltArgv(cmd string) []string {
 	return append(argv, "bash", "-c", cmd)
 }
 
+// systemTempDirs are where a shell puts a scratch file it was never told to put anywhere.
+var systemTempDirs = []string{"/tmp", "/var/tmp"}
+
+// darwinUserTempDir returns the per-user temp directory from
+// confstr(_CS_DARWIN_USER_TEMP_DIR), or "" when it cannot be read.
+var darwinUserTempDir = sync.OnceValue(func() string {
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "getconf", "DARWIN_USER_TEMP_DIR").Output()
+	if err != nil {
+		return ""
+	}
+	dir := strings.TrimSpace(string(out))
+	if dir == "" {
+		return ""
+	}
+	// getconf reports the directory with a trailing slash, which no SBPL subpath matches.
+	return filepath.Clean(dir)
+})
+
 // seatbeltWritablePaths returns the writable set with symlinks resolved.
+//
+// The temp directories join it because a command reaches them without asking:
+// Apple's /bin/sh writes a here-document's scratch file under systemTempDirs
+// and mktemp writes under darwinUserTempDir, and neither consults TMPDIR, so
+// leaving them out kills a script at `cat <<EOF` with an errno naming no path.
+// bwrap answers the same need with a private tmpfs; sandbox-exec cannot mount,
+// so seatbelt allows the host's own.
 func (p *sandboxPlan) seatbeltWritablePaths() []string {
 	paths := p.writablePaths()
+	paths = append(paths, systemTempDirs...)
+	if dir := darwinUserTempDir(); dir != "" {
+		paths = append(paths, dir)
+	}
 	resolved := make([]string, 0, len(paths))
 	for _, path := range paths {
 		if real, err := filepath.EvalSymlinks(path); err == nil {
@@ -67,11 +99,14 @@ func seatbeltProfile(writable []string, network bool) string {
 		fmt.Fprintf(&b, "    (subpath %s)\n", sbplString(path))
 	}
 	// Writable device nodes: the shell's own plumbing, not host state.
+	// Opening /dev/ptmx allocates a fresh terminal pair rather than reaching
+	// an existing one.
 	b.WriteString(`    (literal "/dev/null")
     (literal "/dev/zero")
     (literal "/dev/random")
     (literal "/dev/urandom")
     (literal "/dev/dtracehelper")
+    (literal "/dev/ptmx")
     (subpath "/dev/fd")
     (regex #"^/dev/tty")
 )

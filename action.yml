@@ -27,6 +27,12 @@ runs:
       with:
         project: dats
 
+    # cached-apt restores bwrap from the cache instead of running apt -- docs/action.md.
+    - name: Install bubblewrap (Linux)
+      uses: wow-look-at-my/actions@cached-apt#latest
+      with:
+        packages: bubblewrap
+
     # A caller must never need --no-sandbox to work around us -- docs/action.md.
     - name: Install the sandbox backend
       shell: bash
