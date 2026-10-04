@@ -11,6 +11,20 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: wow-look-at-my/actions@no-all-builds-job#latest
+      - uses: wow-look-at-my/slopfix@master
+      - uses: wow-look-at-my/actions@no-tests-in-yaml#latest
+      - uses: wow-look-at-my/actions@push-excludes-tags#latest
+      - uses: wow-look-at-my/actions@ste-lint#latest
+
   test:
     runs-on: ubuntu-latest
     permissions:
