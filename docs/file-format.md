@@ -19,16 +19,16 @@ A file must contain exactly one YAML document. A second `---` document is a pars
 
 ## YAML Dialect
 
-`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML library, and it enforces one convention plus two capability gaps every existing file must satisfy:
+`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML library, and it enforces one convention plus capability gaps. Every existing file must satisfy:
 
-- **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be used for indentation; indent with tabs`); spaces are only valid to ALIGN past a tab, e.g. a sequence item's own mapping keys continuing past its `- ` marker. The [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>` command reindents an existing space-indented file (it does not preserve comments).
+- **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be used for indentation; indent with tabs`). Spaces are only valid to ALIGN past a tab, e.g. a sequence item's own mapping keys continuing past its `- ` marker. The [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>` command reindents an existing space-indented file (it does not preserve comments).
 - **No anchors or aliases.** `&name`/`*name` are not a YAML feature here — they parse as literal scalar text, not a reference. Duplicate a value instead of anchoring it.
-- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`, `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser would have needed `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
+- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`, `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser will have needed `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
 - **Scalars reformat to their canonical spelling**, not the source text: a float like `1.50` round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an error message.
 
 ## File-Level Setup, Teardown, and Shared Fixtures
 
-Three optional top-level keys run commands and materialize fixture files once per **file** (backwards compatible for existing files — see [Backwards Compatibility](#backwards-compatibility) for the one caveat):
+Optional top-level keys run commands and materialize fixture files once per **file** (backwards compatible for existing files — see [Backwards Compatibility](#backwards-compatibility) for the caveat):
 
 ```yaml
 shared:
@@ -58,37 +58,37 @@ setup:
 	- echo plain strings still work
 ```
 
-`env` values expand `{shared.X}` only, same as `cmd`, and are added on top of the inherited environment (and any run-wide entries a library caller set via `Options.Env`) — scoped to that one command, not inherited by later hooks or tests. `stdin_file` names a host file piped to the command's stdin verbatim (unexpanded); a relative path resolves against the directory holding this `.dats` file, like `inputs.copy`. `timeout` bounds the command and must be greater than 0 — unlike a test's `timeout` (0/omitted = unbounded), a hook command always has a bound, defaulting to 30s when unstated.
+`env` values expand `{shared.X}` only, same as `cmd`, and are added on top of the inherited environment (and any run-wide entries a library caller set via `Options.Env`) — scoped to that command. This is not inherited by later hooks or tests. `stdin_file` names a host file piped to the command's stdin verbatim (unexpanded). A relative path resolves against the directory holding this `.dats` file, like `inputs.copy`. `timeout` bounds the command and must be greater than 0. Unlike a test's `timeout` (0/omitted = unbounded), a hook command always has a bound, defaulting to 30s when unstated.
 
-Blank commands, non-string/non-mapping entries, an entry missing `cmd`, an unknown mapping key, and empty lists are all parse errors (`setup: must list at least one command`). `shared` must declare at least one fixture across `files` and `copy` combined (`shared: must declare at least one file under files or copy`) — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`. File names in either map follow the same locality rule as `inputs.files` names — relative paths that stay inside the shared directory, nested names like `sub/file.txt` allowed — and a name may appear in only one of the two maps.
+Blank commands, non-string/non-mapping entries, an entry missing `cmd`, an unknown mapping key, and empty lists are all parse errors (`setup: must list at least one command`). `shared` must declare at least one fixture across `files` and `copy` combined (`shared: must declare at least one file under files or copy`) — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy) for `copy`. File names in either map follow the same locality rule as `inputs.files` names. Relative paths that stay inside the shared directory, nested names like `sub/file.txt` allowed — and a name may appear in only one of the maps.
 
 ### `{shared.X}` Placeholders
 
-`{shared.<filename>}` expands to a path under the file's `shared/` directory, e.g. `/tmp/dats-xxxxxx/shared/<filename>`. Like `{outputs.X}`, the name does not need to be declared — any **local relative** name resolves, and a non-local name (one containing `..` or an absolute path) is left verbatim, so a placeholder can never address a path outside the shared directory.
+`{shared.<filename>}` expands to a path under the file's `shared/` directory, e.g. `/tmp/dats-xxxxxx/shared/<filename>`. Like `{outputs.X}`, the name does not need to be declared — any **local relative** name resolves, and a non-local name (one containing `..` or an absolute path) is left verbatim. As a result, a placeholder can never address a path outside the shared directory.
 
-`{shared.X}` expands everywhere `{inputs.X}`/`{outputs.X}` already expand: the command, `inputs.files` contents, and `inputs.env` values (`inputs.stdin` stays unexpanded, as always). It additionally expands — as the **only** namespace — in setup commands, teardown commands, and `shared.files` contents; `{inputs.X}` and `{outputs.X}` are per-test namespaces and pass through verbatim there.
+`{shared.X}` expands everywhere `{inputs.X}`/`{outputs.X}` already expand: the command, `inputs.files` contents, and `inputs.env` values (`inputs.stdin` stays unexpanded, as always). It additionally expands — as the **only** namespace — in setup commands, teardown commands, and `shared.files` contents. `{inputs.X}` and `{outputs.X}` are per-test namespaces and pass through verbatim there.
 
 ### Execution Order and Failure Semantics
 
 Per file, the runner:
 
-1. Creates the `shared/` directory (alongside the per-test directories; preserved by `--keep-temp`).
+1. Creates the `shared/` directory (alongside the per-test directories. Preserved by `--keep-temp`).
 2. Writes the `shared.files` fixtures into it.
-3. Runs the `setup` commands in declared order — through the same `bash -c` path as test commands, in the working directory of the `dats` invocation, with the inherited environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, plus the entry's own `env`), the entry's `stdin_file` content on stdin (or none), and bounded by the entry's `timeout` (30s when unstated), capturing stdout and stderr. On timeout, the command's process group is killed and the entry fails with `command timed out after <duration>`. Teardown commands run the same way.
+3. Runs the `setup` commands in declared order. Through the same `bash -c` path as test commands, in the working directory of the `dats` invocation, with the inherited environment (plus `GOCOVERDIR` under `--coverdir`, exactly like test commands, plus the entry's own `env`), the entry's `stdin_file` content. This is on stdin (or none), and bounded by the entry's `timeout` (30s when unstated), capturing stdout and stderr. On timeout, the command's process group is killed and the entry fails with `command timed out after <duration>`. Teardown commands run the same way.
 4. Runs the tests.
 5. Always runs **all** `teardown` commands in declared order — after the tests, after test failures, and even when setup failed. One failing teardown command does not stop the rest. (Teardown does not apply to files that fail to parse: nothing ran.)
 
-If a setup command fails (non-zero exit or signal death), the remaining setup commands are skipped, the file's tests do **not** run, and every test is reported as a normal failure with reason `file setup failed` — loudly, never as "skipped" — after a file-level diagnostic naming the failing command, its exit status, and its captured output. The run exits 1.
+If a setup command fails (non-zero exit or signal death), the remaining setup commands are skipped, the file's tests do **not** run. Every test is reported as a normal failure with reason `file setup failed` — loudly, not as "skipped" — after a file-level diagnostic naming the failing command. This is its exit status, and its captured output. The run exits 1.
 
-If a teardown command fails, a file-level diagnostic is printed and the **file** is marked failed — the run exits 1 even when every test passed — with the summary line annotated `teardown failed`. Individual test lines stay as they ran.
+If a teardown command fails, a file-level diagnostic is printed and the **file** is marked failed. The run exits 1 even when every test passed — with the summary line annotated `teardown failed`. Individual test lines stay as they ran.
 
 ### Concurrency Contract
 
-Setup and teardown are per-file barriers: a future parallel mode (`-j`) may run tests concurrently within and across files, but no test in a file starts before that file's setup completes, and teardown starts only after the file's last test finishes. Tests should treat the shared directory as **read-only**; tests that mutate shared state are undefined under parallelism. Setup/teardown of different files may overlap in parallel mode — do not assume exclusive access to global resources.
+Setup and teardown are per-file barriers: a future parallel mode (`-j`) may run tests concurrently within and across files. However, no test in a file starts before that file's setup completes, and teardown starts only after the file's last test finishes. Tests must treat the shared directory as **read-only**. Tests that mutate shared state are undefined under parallelism. Setup/teardown of different files may overlap in parallel mode — do not assume exclusive access to global resources.
 
 ## Sandbox
 
-Test commands are sandboxed by default (`--sandbox=auto`: the platform's native sandbox — bubblewrap on Linux, `sandbox-exec` on macOS — falling back to docker; see [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The optional file-level `sandbox` key narrows that for one file:
+Test commands are sandboxed by default (`--sandbox=auto`: the platform's native sandbox — bubblewrap on Linux, `sandbox-exec` on macOS — falling back to docker. See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The optional file-level `sandbox` key narrows that for one file:
 
 ```yaml
 sandbox:
@@ -98,22 +98,22 @@ sandbox:
 		# seatbelt, which use the host's own filesystem
 ```
 
-**A file cannot turn its own sandbox off.** There is no `sandbox: false` and no `enabled` key; both are parse errors that name `--no-sandbox` instead. Running a `.dats` file means running commands somebody else wrote, and the isolation that makes that safe belongs to whoever types the command — a file that could switch it off would take it away silently, from the one person who never agreed to that. `--no-sandbox` is the whole opt-out, and it is visible in the shell history of the person it affects.
+**A file cannot turn its own sandbox off.** There is no `sandbox: false` and no `enabled` key. Both are parse errors that name `--no-sandbox` instead. Running a `.dats` file means running commands somebody else wrote, and the isolation that makes that safe belongs to whoever types the command. A file that can switch it off will take it away silently, from the person who never agreed to that. `--no-sandbox` is the whole opt-out. It is visible in the shell history of the person it affects.
 
-There is no key for extra writable host paths either, and for the same reason. Somewhere to write is the file's temp directory, which every backend gives you; a per-path hole is invisible to the person reading the file, and enough of them add up to no sandbox at all. To bring an *existing* host file into that writable temp directory — not a new path on the host, a copy inside the sandbox's own writable area — use `inputs.copy`/`shared.copy`; see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
+There is no key for extra writable host paths either, and for the same reason. Somewhere to write is the file's temp directory, which every backend gives you. A per-path hole is invisible to the person reading the file, and enough of them add up to no sandbox at all. To bring an *existing* host file into that writable temp directory — not a new path on the host. This is a copy inside the sandbox's own writable area — use `inputs.copy`/`shared.copy`. See [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
-The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks alike. It is file-level, not per-test: one file's commands share one temp directory, one shared directory, and one hook lifecycle, so a per-test sandbox would make those shared paths mean different things to different tests.
+The block covers **every** command in the file — its tests and its `setup`/`teardown` hooks alike. It is file-level, not per-test. One file's commands share one temp directory, one shared directory, and one hook lifecycle. As a result, a per-test sandbox will make those shared paths mean different things to different tests.
 
-The CLI's choice is the outer bound. A file can narrow it (cut the network) or adjust it (image), never widen it: under `--no-sandbox` the whole block is inert, and a `--sandbox-image` the operator typed outranks the file's `image:` — the run then says so on its `# sandbox:` line (`docker pinned:tag (--sandbox-image; file asked for other:tag)`) rather than leaving the file to fail somewhere that never mentions images. Choosing which image gets pulled and run is the operator's call for the same reason the sandbox itself is.
+The CLI's choice is the outer bound. A file can narrow it (cut the network) or adjust it (image), not widen it. Under `--no-sandbox` the whole block is inert, and a `--sandbox-image` the operator typed outranks the file's `image:`. The run then says so on its `# sandbox:` line (`docker pinned:tag (--sandbox-image; file asked for other:tag)`) rather than leaving the file to fail somewhere that never mentions images. Choosing which image gets pulled and run is the operator's call for the same reason the sandbox itself is.
 
-The block is validated strictly: unknown or duplicate keys, a non-boolean `network`, an empty `image`, an empty mapping, and any non-mapping value are all parse errors — a misspelled key must never silently disable isolation. `sandbox:` with no value at all is the same as omitting it. `{matrix.X}` is rejected in `image`: the sandbox is resolved once per file, before any matrix instance exists.
+The block is validated strictly: unknown or duplicate keys, a non-boolean `network`, an empty `image`, an empty mapping. Any non-mapping value are all parse errors. A misspelled key must never silently disable isolation. `sandbox:` with no value at all is the same as omitting it. `{matrix.X}` is rejected in `image`: the sandbox is resolved once per file, before any matrix instance exists.
 
 ### What a sandboxed file can rely on
 
 - Fixtures, `{inputs.X}`, `{outputs.X}`, `{shared.X}`, `inputs.env`, `inputs.stdin`, output files and snapshots all work unchanged — the file's temp directory is writable inside the sandbox.
 - Writes anywhere else fail (bwrap, seatbelt) or vanish with the container (docker). A test with something to write puts it in the temp directory (`{outputs.X}`, `{shared.X}`, or its own `mktemp -d` under the private /tmp).
-- Under bwrap and docker a host path outside the working directory is not READABLE either: those backends expose the same confined set. Commands that have to reach the rest of the machine need a `--no-sandbox` run — a decision whoever runs them makes, rather than a list of paths in the file that quietly adds up to the same thing.
-- Under the docker backend the command runs inside the image, so the tools available are the image's, not the host's, and only `inputs.env` values and `GOCOVERDIR` are carried in.
+- Under bwrap and docker a host path outside the working directory is not READABLE either: those backends expose the same confined set. Commands that have to reach the rest of the machine need a `--no-sandbox` run — a decision whoever runs them makes. This is rather than a list of paths in the file that quietly adds up to the same thing.
+- Under the docker backend the command runs inside the image, so the tools available are the image's, not the host's, and only `inputs.env` values. `GOCOVERDIR` are carried in.
 
 ## SSH
 
@@ -126,7 +126,7 @@ tests:
 	  cmd: uname -a
 ```
 
-**It is a request, not a decision.** A `.dats` file arrives from somewhere, and a file able to dial out on its own would spend the reader's ssh credentials before they knew it had asked. So the pair — this file, this host — has to be approved once:
+**It is a request, not a decision.** A `.dats` file arrives from somewhere, and a file able to dial out on its own will spend the reader's ssh credentials before they knew. It had asked. So the pair — this file, this host — has to be approved once:
 
 ```sh
 dats trust add suite.dats build@box   # or answer the prompt on a terminal
@@ -134,15 +134,15 @@ dats trust list
 dats trust remove suite.dats build@box
 ```
 
-Without an approval the file fails, naming the command that grants one. With nobody at a terminal (CI) it fails rather than waiting at a prompt no pipeline can answer. A target the operator types themselves (`dats --ssh build@box`) needs no approval — typing it *is* the approval — and it outranks the file's, which the run announces on the file's header line rather than swapping silently.
+Without an approval the file fails, naming the command that grants one. With nobody at a terminal (CI) it fails rather than waiting at a prompt no pipeline can answer. A target the operator types themselves (`dats --ssh build@box`) needs no approval — typing it *is* the approval. It outranks the file's, which the run announces on the file's header line rather than swapping silently.
 
-The approval is keyed on the file's PATH, not its contents. A suite under development changes every few seconds, and re-approving on each edit would make the key unusable. So an approval says "this file may reach this host", never "these commands may".
+The approval is keyed on the file's PATH, not its contents. A suite under development changes every few seconds, and re-approving on each edit will make the key unusable. So an approval says "this file may reach this host", not "these commands may".
 
-`ssh: false` is a parse error, and the direction surprises people: running remotely is not a protection the file is waiving. The operator's own machine is the MORE privileged place, so a file saying "run this one here" is reaching for something it was never given — the same harm `sandbox: false` prevents, arriving through a different door. For `sandbox` a file may only **narrow**; for `ssh` a file may only **propose**.
+`ssh: false` is a parse error, and the direction surprises people: running remotely is not a protection the file is waiving. The operator's own machine is the MORE privileged place, so a file saying "run this one here" is reaching for something it was never given. The same harm `sandbox: false` prevents, arriving through a different door. For `sandbox` a file may only **narrow**. For `ssh` a file may only **propose**.
 
-There is deliberately no `port`, `identity`, or `options` key. Connection policy is spent from the reader's own credentials, so it belongs in their `~/.ssh/config`, where they can see it; a non-default port is a `Host` alias away.
+There is deliberately no `port`, `identity`, or `options` key. Connection policy is spent from the reader's own credentials, so it belongs in their `~/.ssh/config`, where they can see it. A non-default port is a `Host` alias away.
 
-A remote run has **no sandbox** — the remote shell is the boundary — and the working directory does not travel, so a command using a relative path outside its fixtures fails there. See [cli.md](cli.md#remote-execution---ssh) for both, and for what does travel.
+A remote run has **no sandbox** — the remote shell is the boundary. The working directory does not travel, so a command using a relative path outside its fixtures fails there. See [cli.md](cli.md#remote-execution---ssh) for both, and for what does travel.
 
 ### Per-test override
 
@@ -160,12 +160,12 @@ tests:
 
 The file's target is the **home** target, and the rules follow from that:
 
-- **A per-test `ssh` needs a file-level `ssh` too**, and it is a parse error without one. A per-test target may only move a command between remote hosts. Allowing one on a local file would let a file leave the rest of its tests on the reader's own machine by omission — exactly what the file-level key may not do outright.
-- **Each overriding target is approved separately.** A file naming two hosts needs two approvals, since the approval is a (file, host) pair.
+- **A per-test `ssh` needs a file-level `ssh` too**. It is a parse error without one. A per-test target may only move a command between remote hosts. Allowing one on a local file will let a file leave the rest of its tests on the reader's own machine by omission. Exactly what the file-level key may not do outright.
+- **Each overriding target is approved separately.** A file naming hosts needs approvals, since the approval is a (file, host) pair.
 - **`setup`, `teardown` and `shared/` always run on the home target.** An overriding test gets its own temp directory on its own host, plus a push-only mirror of `shared/`, so `{shared.X}` still resolves. Writes it makes there are lost, which `shared/` already calls undefined.
-- **The wrinkle worth stating plainly: setup prepares only the home host.** A file whose setup starts a service or installs a package has prepared host X; a test overriding to host Y runs against an unprepared machine, and dats cannot detect that. Running setup once per distinct target would be worse — it silently redefines "once per file" and breaks every non-idempotent setup.
+- **The wrinkle worth stating plainly: setup prepares only the home host.** A file whose setup starts a service or installs a package has prepared host X. A test overriding to host Y runs against an unprepared machine, and dats cannot detect that. Running setup once per distinct target will be worse — it silently redefines "once per file" and breaks every non-idempotent setup.
 
-`{matrix.X}` substitutes into a per-test target, so one test fans across a fleet — connections are established per target on demand, so the hosts nothing uses are never dialed:
+`{matrix.X}` substitutes into a per-test target, so one test fans across a fleet. Connections are established per target on demand, so the hosts nothing uses are never dialed:
 
 ```yaml
 ssh: build@box
@@ -181,7 +181,7 @@ It is rejected in the FILE-level target for the opposite reason: that one resolv
 
 ## Copy Fixtures: `inputs.copy` and `shared.copy`
 
-`inputs.files`/`shared.files` author a fixture's content inline as YAML text. `copy` is the other way to get a file into the writable temp directory: instead of content, it names an **existing host file** to copy in.
+`inputs.files`/`shared.files` author a fixture's content inline as YAML text. `copy` is the other way to get a file into the writable temp directory. Instead of content, it names an **existing host file** to copy in.
 
 ```yaml
 shared:
@@ -196,11 +196,11 @@ tests:
 	  cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
 ```
 
-Each is a map of **destination filename** (addressed the same way as a `files` entry — `{inputs.X}`/`{shared.X}`) to a **host source path**. A relative source resolves against the directory holding the `.dats` file being run, so a copy source is portable regardless of dats' own working directory; an absolute source is used as-is. The copy runs on the host, before the sandbox starts — the destination lands in the same writable temp directory as every other fixture, so a sandboxed command can modify its own copy freely without touching the original.
+Each is a map of **destination filename** (addressed the same way as a `files` entry — `{inputs.X}`/`{shared.X}`) to a **host source path**. A relative source resolves against the directory holding the `.dats` file being run. As a result, a copy source is portable regardless of dats' own working directory. An absolute source is used as-is. The copy runs on the host, before the sandbox starts — the destination lands in the same writable temp directory as every other fixture. As a result, a sandboxed command can modify its own copy freely without touching the original.
 
-This is the read-write counterpart of the sandbox's read-only bind mount of the working directory (see [Sandbox](#sandbox) above): reach for `copy` when a test needs to *mutate* a real fixture, or when the fixture is too large or too binary to spell out as YAML text under `files`. The copy preserves the source's permission bits, so a script pulled in this way keeps its executable bit.
+This is the read-write counterpart of the sandbox's read-only bind mount of the working directory (see [Sandbox](#sandbox) above). This is reach for `copy` when a test needs to *mutate* a real fixture, or when the fixture is too large or too binary. This is to spell out as YAML text under `files`. The copy preserves the source's permission bits, so a script pulled in this way keeps its executable bit.
 
-A destination name follows the same locality rule as a `files` name (relative, no `..`, no absolute paths — rejected at parse time) and may not also appear under `files` in the same block (`"X" is declared under both files and copy`); an empty source path is also a parse error. `inputs.copy` is inside the matrix substitution scope — `{matrix.X}` substitutes into the **source** path first, so a copy source can vary per instance:
+A destination name follows the same locality rule as a `files` name (relative, no `..`, no absolute paths — rejected at parse time) and may not also appear under `files` in the same block (`"X" is declared under both files and copy`). An empty source path is also a parse error. `inputs.copy` is inside the matrix substitution scope — `{matrix.X}` substitutes into the **source** path first. As a result, a copy source can vary per instance:
 
 ```yaml
 tests:
@@ -226,9 +226,9 @@ test 1: cmd: must not use a shell heredoc (<<WORD) -- write the file and pull it
 test 1: cmd: must not use a shell herestring (<<<) -- use inputs.stdin (or a pipe within cmd) instead of redirecting from the end of the line
 ```
 
-A heredoc embeds a file's content inline in a single shell string — exactly what `files` and `copy` exist to do declaratively, with names dats can address via `{inputs.X}`/`{shared.X}`, validate for locality, and normalize in snapshot goldens. A heredoc bypasses all of that: it is invisible to every mechanism above. If you want a file, write the file and copy or bind mount it in.
+A heredoc embeds a file's content inline in a single shell string — exactly what `files` and `copy` exist to do declaratively. This is with names dats can address via `{inputs.X}`/`{shared.X}`, validate for locality, and normalize in snapshot goldens. A heredoc bypasses all of that: it is invisible to every mechanism above. If you want a file, write the file and copy or bind mount it in.
 
-A herestring is a different construct — `cmd <<< "text"` feeds `text` to `cmd`'s stdin on one line, no multi-line delimiter involved — but it is banned for a related reason: it puts the data source at the *end* of the line, working against bash's normal left-to-right flow (`producer | consumer`), and duplicates what `inputs.stdin` (declarative, placeholder-expanded, readable in the test's own block) or an ordinary pipe already does inside `cmd`. Use one of those instead: `inputs: {stdin: "text"}` with `cmd: cat`, or `cmd: echo text | cat`.
+A herestring is a different construct — `cmd <<< "text"` feeds `text` to `cmd`'s stdin on one line, no multi-line delimiter involved. However, it is banned for a related reason. It puts the data source at the *end* of the line, working against bash's normal left-to-right flow (`producer | consumer`). This is duplicates what `inputs.stdin` (declarative, placeholder-expanded, readable in the test's own block) or an ordinary pipe already does inside `cmd`. Use one of those instead: `inputs: {stdin: "text"}` with `cmd: cat`, or `cmd: echo text | cat`.
 
 ## Test Object
 
@@ -284,7 +284,7 @@ tests:
 
 ## Matrix (Parameterized) Tests
 
-A test may declare `matrix:` — a mapping of variable name to a list of scalar values — expanding the test into one instance per **combination** of values (cartesian product):
+A test may declare `matrix:` — a mapping of variable name to a list of scalar values. This is expanding the test into one instance per **combination** of values (cartesian product):
 
 ```yaml
 tests:
@@ -298,7 +298,7 @@ tests:
 			- "{matrix.greeting}, {matrix.name}!"
 ```
 
-This runs as 4 tests. **Every instance always runs** — dats has no test filtering or selection by design; the expanded list IS the plan, and a matrix test cannot run "some" of its combinations.
+This runs as multiple tests. **Every instance always runs** — dats has no test filtering or selection by design. The expanded list IS the plan, and a matrix test cannot run "some" of its combinations.
 
 ### Expansion Order and Instance Names
 
@@ -311,11 +311,11 @@ ok 3 - greets [greeting=howdy, name=alice]
 ok 4 - greets [greeting=howdy, name=bob]
 ```
 
-Each instance's reported name is the test's `desc` (or its `cmd`, after substitution, when no desc is set) followed by the label ` [k=v, k2=v2]` — assignments in declaration order. The label appears on every reported line, including single-value matrices (`[k=v]`) and the `file setup failed` lines when file-level setup fails, so a failing instance is always identifiable. Instances count as ordinary tests everywhere: the file header's `(N tests)`, the summary counts, and the exit code all see the expanded list, and each instance gets its own private `test-<index>/` fixture directory (identical fixture names across instances never collide).
+Each instance's reported name is the test's `desc` (or its `cmd`, after substitution, when no desc is set) followed by the label ` [k=v, k2=v2]` — assignments in declaration order. The label appears on every reported line, including single-value matrices (`[k=v]`) and the `file setup failed` lines when file-level setup fails. As a result, a failing instance is always identifiable. Instances count as ordinary tests everywhere. The file header's `(N tests)`, the summary counts, and the exit code all see the expanded list. Each instance gets its own private `test-<index>/` fixture directory (identical fixture names across instances never collide).
 
 ### Variables and Values
 
-Variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Each variable lists at least one **scalar** value — string, number, or boolean. A value is substituted as its literal YAML text: `1.50` stays `1.50` (never reformatted), `true` stays `true`, and a quoted string contributes its content. Because values are compared after this stringification, `[1.50, "1.50"]` is a duplicate — and duplicates, which could only produce byte-identical instances, are parse errors.
+Variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Each variable lists at least one **scalar** value — string, number, or boolean. A value is substituted as its literal YAML text: `1.50` stays `1.50` (never reformatted), `true` stays `true`, and a quoted string contributes its content. Because values are compared after this stringification, `[1.50, "1.50"]` is a duplicate — and duplicates, which can only produce byte-identical instances, are parse errors.
 
 ### Substitution Scope
 
@@ -334,7 +334,7 @@ NOT substituted (always literal): fixture file **names** (the keys under `inputs
 
 ### Layering with `{inputs.X}`/`{outputs.X}`/`{shared.X}`
 
-Matrix substitution is a separate, earlier layer: it happens once per instance at expansion time, before any runtime placeholder expansion. That is why `inputs.stdin` gets matrix substitution even though it never gets runtime expansion. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}` — after substitution the text behaves like any other text in that position, expanding where those namespaces normally expand:
+Matrix substitution is a separate, earlier layer: it happens once per instance at expansion time, before any runtime placeholder expansion. That is why `inputs.stdin` gets matrix substitution even though it never gets runtime expansion. A matrix value may itself contain `{inputs.X}`/`{outputs.X}`/`{shared.X}`. After substitution the text behaves like any other text in that position, expanding where those namespaces normally expand:
 
 ```yaml
 tests:
@@ -344,7 +344,7 @@ tests:
 		path: ["{shared.config.json}"]
 ```
 
-Substitution is a **single pass**: substituted text is never re-scanned, so a matrix value containing a literal `{matrix.y}` stays literal — it is not expanded again.
+Substitution is a **single pass**: substituted text is never re-scanned, so a matrix value containing a literal `{matrix.y}` stays literal. It is not expanded again.
 
 ### Strict Errors
 
@@ -367,22 +367,22 @@ All of these are parse errors (so `dats syntax` catches them without running any
 | `{matrix.X}` in `shared.files` contents | `shared file "config.json": {matrix.x} is not available outside tests` |
 | `{matrix.X}` in `shared.copy` sources | `shared copy "fixture.bin": {matrix.x} is not available outside tests` |
 
-The reference check scans exactly the substitution scope above: every `{matrix.X}` there must name a variable declared by **that** test's matrix. Setup and teardown commands and shared file contents run once per file, where no matrix instance exists, so matrix placeholders are rejected there even when some test declares the variable. `matrix:` with an explicit null value is treated as an absent key (like `shared:`).
+The reference check scans exactly the substitution scope above: every `{matrix.X}` there must name a variable declared by **that** test's matrix. Setup and teardown commands and shared file contents run once per file, where no matrix instance exists. As a result, matrix placeholders are rejected there even when some test declares the variable. `matrix:` with an explicit null value is treated as an absent key (like `shared:`).
 
 ---
 
 ## Backwards Compatibility
 
-Files that use none of the new keys (`shared`, `setup`, `teardown`, `matrix`) parse and behave identically, with one caveat: literal text shaped like the two new placeholder namespaces changes meaning.
+Files that use none of the new keys (`shared`, `setup`, `teardown`, `matrix`) parse and behave identically, with one caveat. This is literal text shaped like the new placeholder namespaces changes meaning.
 
-- `{shared.<name>}` with a local relative `<name>` previously passed through as literal text; it now expands to a path under the file's `shared/` directory wherever placeholders expand (`cmd`, `inputs.files` contents, `inputs.env` values).
+- `{shared.<name>}` with a local relative `<name>` previously passed through as literal text. It now expands to a path under the file's `shared/` directory wherever placeholders expand (`cmd`, `inputs.files` contents, `inputs.env` values).
 - `{matrix.<name>}` anywhere in the matrix substitution scope is now validated: in a test without a `matrix` block it is a parse error (`test N: {matrix.<name>} is used but the test declares no matrix`). Such a file previously ran with the text kept literal.
 
-Text that only *resembles* a placeholder without being one — a non-local name like `{shared.../x}`, an empty reference in a namespace that never validates (`{shared.}`), or any other brace construct — still passes through verbatim.
+Text that only *resembles* a placeholder without being one — a non-local name like `{shared.../x}`, an empty reference in a namespace that never validates. This is (`{shared.}`), or any other brace construct — still passes through verbatim.
 
-A `cmd`, `setup`, or `teardown` string containing a shell heredoc (`<<WORD`) or herestring (`<<<`) now fails to parse (see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy)) — the one genuinely backwards-incompatible change here, since such a file previously ran either as ordinary shell. Rewrite a heredoc with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy`, and a herestring with `inputs.stdin` or a pipe.
+A `cmd`, `setup`, or `teardown` string containing a shell heredoc (`<<WORD`) or herestring (`<<<`) now fails to parse (see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy)). This is the one genuinely backwards-incompatible change here, since such a file previously ran either as ordinary shell. Rewrite a heredoc with `inputs.files`/`inputs.copy` or `shared.files`/`shared.copy`, and a herestring with `inputs.stdin` or a pipe.
 
-Sandboxing changes runtime behavior rather than parsing, and it applies to files that declare nothing: commands that used to write anywhere on the host now write only inside their temp directory, and a machine with neither backend installed fails the run instead of executing it. Existing files keep passing as long as their commands stay inside `{outputs.X}` /`{shared.X}` (the whole point of those placeholders). Commands that legitimately need the host need a run that opted out with `--no-sandbox`; a file cannot opt itself out.
+Sandboxing changes runtime behavior rather than parsing. It applies to files that declare nothing: commands that used to write anywhere on the host now write only inside their temp directory. A machine with neither backend installed fails the run instead of executing it. Existing files keep passing as long as their commands stay inside `{outputs.X}` /`{shared.X}` (the whole point of those placeholders). Commands that legitimately need the host need a run that opted out with `--no-sandbox`. A file cannot opt itself out.
 
 ---
 
@@ -403,9 +403,9 @@ cmd: cat {inputs.data.txt}
 
 ### Output Placeholders
 
-`{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the command should write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path is provided; the command is responsible for creating the file. The name does not need to appear under `outputs.files` — any **local relative** name resolves. A non-local name (one containing `..` or an absolute path, e.g. `{outputs.../escape}`) is left verbatim, so a placeholder can never address a path outside the test directory.
+`{outputs.<filename>}` expands to a path under the test's `outputs/` directory where the command must write output, e.g. `/tmp/dats-xxxxxx/test-<index>/outputs/<filename>`. The path is provided. The command is responsible for creating the file. The name does not need to appear under `outputs.files` — any **local relative** name resolves. A non-local name (one containing `..` or an absolute path, e.g. `{outputs.../escape}`) is left verbatim. As a result, a placeholder can never address a path outside the test directory.
 
-Names that DO appear under `files`/`!files` get their parent directories created before the command runs, so a command can write a declared nested output like `{outputs.sub/report.txt}` directly. For undeclared nested names, the command must create the intermediate directories itself.
+Names that DO appear under `files`/`!files` get their parent directories created before the command runs. As a result, a command can write a declared nested output like `{outputs.sub/report.txt}` directly. For undeclared nested names, the command must create the intermediate directories itself.
 
 ```yaml
 cmd: process -o {outputs.result.bin}
@@ -450,7 +450,7 @@ outputs:
 
 ### Integer Values (0-255)
 
-Bare and quoted integers are equivalent; the 0-255 range is enforced either way:
+Bare and quoted integers are equivalent. The 0-255 range is enforced either way:
 
 ```yaml
 exit: 0      # success
@@ -463,7 +463,7 @@ Floats are rejected at parse time (`exit: 1.5` is an error, as is an integral fl
 
 ### Variable Names
 
-Exactly two names are recognized (any other `EXIT_*` name is rejected at parse time, since the runner could never resolve it):
+Names are recognized (any other `EXIT_*` name is rejected at parse time, since the runner can never resolve it):
 
 - `EXIT_SUCCESS` = 0
 - `EXIT_FAILURE` = 1
@@ -475,7 +475,7 @@ exit: EXIT_SUCCESS
 
 ### Signal Deaths
 
-A command terminated by a signal has no normal exit code; it surfaces as `-1` with the signal named in the failure message:
+A command terminated by a signal has no normal exit code. It surfaces as `-1` with the signal named in the failure message:
 
 ```
 # expected exit code 0, got -1 (killed by signal: killed)
@@ -494,11 +494,11 @@ timeout: 5       # 5 seconds
 # timeout: 1m30s   # 90 seconds
 ```
 
-Floats are rejected at parse time — `timeout: 0.9` is an error, not 0 seconds; write fractional seconds as a duration string like `900ms` or `1.5s`.
+Floats are rejected at parse time — `timeout: 0.9` is an error, not a couple of seconds. Write fractional seconds as a duration string like `900ms` or `1.5s`.
 
-When the deadline elapses, the command's **whole process group** is killed — background children included, not just the direct `bash` process. The test then fails with only a `command timed out after <duration>` message; every other assertion is skipped, since checking partial output or missing files would bury the real cause under secondary failures. The stdout/stderr captured before the kill are still shown in verbose mode.
+When the deadline elapses, the command's **whole process group** is killed — background children included, not just the direct `bash` process. The test then fails with only a `command timed out after <duration>` message. Every other assertion is skipped, since checking partial output or missing files will bury the real cause under secondary failures. The stdout/stderr captured before the kill are still shown in verbose mode.
 
-A command that leaves orphaned background processes holding its stdout/stderr open cannot block the runner indefinitely: the pipes are force-closed about 1 second after the main process exits (timeout or not). Output written by such stragglers after that point is not captured.
+A command that leaves orphaned background processes holding its stdout/stderr open cannot block the runner indefinitely. The pipes are force-closed about 1 second after the main process exits (timeout or not). Output written by such stragglers after that point is not captured.
 
 ---
 
@@ -532,9 +532,9 @@ cmd: grep hello
 
 ### `files`
 
-Map of filename to content. Each file is created before the test runs; reference it in the command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported. Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see [Placeholders in Input File Contents](#placeholders-in-input-file-contents).
+Map of filename to content. Each file is created before the test runs. Reference it in the command with `{inputs.<filename>}`. Nested paths (e.g. `sub/dir/file.txt`) are supported. Contents go through `{inputs.X}`/`{outputs.X}` placeholder expansion — see [Placeholders in Input File Contents](#placeholders-in-input-file-contents).
 
-File names must be relative paths that stay inside the test directory — `..` traversal and absolute paths are rejected at parse time (so `dats syntax` catches them) and again at fixture-setup time. The same rule applies to the names under `outputs.files` and `outputs.!files`.
+File names must be relative paths that stay inside the test directory — `..` traversal. Absolute paths are rejected at parse time (so `dats syntax` catches them) and again at fixture-setup time. The same rule applies to the names under `outputs.files` and `outputs.!files`.
 
 ```yaml
 inputs:
@@ -643,7 +643,7 @@ outputs:
 				- "should not contain"
 ```
 
-File names must be relative paths that stay inside the test directory (`..` and absolute paths are rejected at parse time). Nested names like `sub/report.txt` are allowed; parent directories of every file declared under `files`/`!files` are created before the command runs. When several file checks fail, the failures are reported in sorted-by-name order.
+File names must be relative paths that stay inside the test directory (`..` and absolute paths are rejected at parse time). Nested names like `sub/report.txt` are allowed. Parent directories of every file declared under `files`/`!files` are created before the command runs. When several file checks fail, the failures are reported in sorted-by-name order.
 
 ### Fields
 
@@ -655,7 +655,7 @@ File names must be relative paths that stay inside the test directory (`..` and 
 
 ### Empty Checks Are Implicit Existence Assertions
 
-A check with none of the three fields — written `{}` or left null — asserts existence rather than passing vacuously. Under `files` the file must exist; under `!files` it must NOT exist:
+A check with none of the fields — written `{}` or left null — asserts existence rather than passing vacuously. Under `files` the file must exist. Under `!files` it must NOT exist:
 
 ```yaml
 outputs:
@@ -708,7 +708,7 @@ tests:
 
 Comparison rules:
 
-- Object keys are **order-insensitive**; arrays are **order-sensitive**.
+- Object keys are **order-insensitive**. Arrays are **order-sensitive**.
 - Numbers compare by value (`2` equals `2.0`).
 - The expected value may be any JSON value — object, array, string, number, bool, or `null` (`json_output: null` asserts stdout is exactly the JSON `null`).
 - Stdout must contain exactly one JSON value (trailing whitespace is fine, trailing data is not). Non-JSON stdout fails the assertion.
@@ -724,7 +724,7 @@ On mismatch the failure lists each difference with its JSONPath-style location:
 
 ## Snapshot Assertions (outputs.snapshot)
 
-`snapshot` asserts that captured output byte-matches a stored **golden file**, so a test can pin an entire output verbatim without spelling it out in YAML. Two forms:
+`snapshot` asserts that captured output byte-matches a stored **golden file**. As a result, a test can pin an entire output verbatim without spelling it out in YAML. Forms:
 
 ```yaml
 tests:
@@ -741,7 +741,7 @@ tests:
 			stderr: true
 ```
 
-`snapshot: false` is the documented toggle-off — identical to omitting the key, handy for temporarily disabling a snapshot without deleting the block. The per-stream mapping must enable at least one stream; a mapping that enables neither (empty, or explicit falses), an unknown key, a non-boolean value, and a duplicate key are all parse errors.
+`snapshot: false` is the documented toggle-off — identical to omitting the key, handy for temporarily disabling a snapshot without deleting the block. The per-stream mapping must enable at least one stream. A mapping that enables neither (empty, or explicit falses), an unknown key, a non-boolean value, and a duplicate key are all parse errors.
 
 ### Golden Storage and Naming
 
@@ -751,11 +751,11 @@ Goldens live in a `.snapshots` directory next to the `.dats` file — `examples/
 <file>.snapshots/NNN-<slug>.<stream>.golden
 ```
 
-- `NNN` is the canonical **1-based instance number** — the same number the CLI prints in `ok N -` and the JSON report's `index` — zero-padded to three digits.
-- `<slug>` derives from the instance's display name (desc — or the command when there is no desc — plus the matrix label): lowercased, runs of characters outside `[a-z0-9]` become single dashes, trimmed, truncated to 60 characters, with `test` as the fallback for a name that slugs to nothing.
+- `NNN` is the canonical **1-based instance number** — the same number the CLI prints in `ok N -` and the JSON report's `index` — zero-padded to multiple digits.
+- `<slug>` derives from the instance's display name (desc — or the command when there is no desc — plus the matrix label): lowercased, runs of characters outside `[a-z0-9]` become single dashes, trimmed, truncated to many characters. This is with `test` as the fallback for a name that slugs to nothing.
 - `<stream>` is `stdout` or `stderr`.
 
-Names derive from position and name, so **renaming, reordering, or removing tests changes the expected golden names** — re-bless with `--update`, which writes the new files and prunes the now-stale ones.
+Names derive from position and name, so **renaming, reordering, or removing tests changes the expected golden names** — re-bless with `--update`. This writes the new files and prunes the now-stale ones.
 
 A **matrix** test snapshots per instance: every combination gets its own golden (the matrix label is part of the slug), e.g. `003-greets-who-alice.stdout.golden` and `004-greets-who-bob.stdout.golden`.
 
@@ -789,17 +789,17 @@ Like every other assertion, snapshots are skipped when the command did not run t
 
 `dats --update <files>` rewrites goldens from actual output instead of failing:
 
-- A golden is written only when it is **missing or differs**; an up-to-date golden is not rewritten (no mtime churn) and not listed.
-- Goldens **never update from a failing instance**: if the instance has any other failure (wrong exit code, a failed pattern check, ...), its goldens are neither written nor compared — fix the test first.
-- Stale `*.golden` files in the file's snapshot directory — instances or streams that no longer exist — are **pruned** (after a clean file setup only), and the directory itself is removed when pruning empties it. Non-`.golden` files are never touched.
+- A golden is written only when it is **missing or differs**. An up-to-date golden is not rewritten (no mtime churn) and not listed.
+- Goldens **never update from a failing instance**: if the instance has any other failure (wrong exit code, a failed pattern check, ...). Its goldens are neither written nor compared — fix the test first.
+- Stale `*.golden` files in the file's snapshot directory — instances or streams that no longer exist — are **pruned** (after a clean file setup only), and the directory itself is removed. This is when pruning empties it. Non-`.golden` files are never touched.
 - Every write and prune is listed on stdout (`# updated golden: ...`, `# pruned stale golden: ...`), with an end-of-run summary line (`Updated 2 golden file(s), pruned 1 stale`).
 
 See [CLI Usage](cli.md#updating-snapshots---update) for a worked example.
 
 ### Scope Notes
 
-- Only the two output **streams** can be snapshotted. A `files` variant is deliberately rejected for v1: `outputs.files` `match`/`notMatch` already asserts file contents, and a files variant would multiply the naming scheme (per instance × per declared file) — revisit if demanded.
-- Snapshots compose with `-j` — golden files are per-instance unique, results are deterministic, and output stays byte-identical to a serial run — and appear in `--report-junit`/`--report-json` as ordinary assertion failures (no report format change).
+- Only the output **streams** can be snapshotted. A `files` variant is deliberately rejected for v1: `outputs.files` `match`/`notMatch` already asserts file contents. A files variant will multiply the naming scheme (per instance × per declared file) — revisit if demanded.
+- Snapshots compose with `-j`. Golden files are per-instance unique, results are deterministic, and output stays byte-identical to a serial run — and appear in `--report-junit`/`--report-json`. This is as ordinary assertion failures (no report format change).
 
 ---
 

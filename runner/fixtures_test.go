@@ -34,7 +34,6 @@ func TestSetupFixtures(t *testing.T) {
 	require.Nil(t, err)
 	assert.Equal(t, "hello", string(content))
 
-	// Output path should be set but file should not exist yet
 	assert.Contains(t, ctx.OutputPaths["output.txt"], "outputs/output.txt")
 	_, err = os.Stat(ctx.OutputPaths["output.txt"])
 	assert.True(t, os.IsNotExist(err))
