@@ -1,48 +1,16 @@
 #!/usr/bin/env bash
-# Run the sandbox suite inside an unprivileged container whose /proc is masked
-# -- the shape the org's slim CI fleet has, built here instead of borrowed.
-#
-# WHAT THIS IS NOT: `--security-opt seccomp=unconfined` relaxes SYSCALL
-# FILTERING. It is not `--security-opt systempaths=unconfined`, which unmasks
-# /proc and hands a container root a writable /proc/sysrq-trigger, i.e. a host
-# reboot. Those two are one word apart and opposite in consequence. The fleet
-# grants the first, narrowly (docker's default profile plus an ungated allow for
-# unshare/clone/clone3/setns/mount/umount2/pivot_root -- webhook-runner's
-# `seccomp.userns`); it grants the second to nobody, and neither does this. The
-# assertions below FAIL the job if /proc ever stops being masked here, so this
-# can never quietly become a test of the easy case.
-#
-# WHY NOT THE FLEET ITSELF: it was the fleet, and a merge gate that depends on
-# another repo's DEPLOYED state is a gate that can be frozen by that repo. It
-# was: the slim runners' `seccomp.userns` opt-in sat undeployed behind a held
-# reload gate, dats could not sandbox there whatever dats did, and every dats
-# pull request was blocked on a webhooks deploy that was itself waiting on a
-# dats release. Ownership now sits where each half can be acted on -- dats
-# proves the MECHANISM here, and webhooks' own gha-runner smoke test proves the
-# IMAGE, running this same binary on the real thing.
+# Run the sandbox suite inside an unprivileged container whose /proc is masked -- the shape the org's slim CI fleet has.
 set -euo pipefail
 
 SUITE="${1:-examples/sandbox.dats}"
 IMAGE="${DATS_SANDBOX_TEST_IMAGE:-debian:stable-slim}"
 
 echo "== host: let an unprivileged process create a user namespace"
-# The setting is HOST-WIDE and a container inherits it, so bwrap fails inside
-# one for a reason the container itself cannot show. Two knobs govern it and
-# they read alike while meaning the reverse of each other, which is why one
-# shared script owns both -- see its header.
+# The setting is HOST-WIDE and a container inherits it.
 "$(dirname "$0")/allow-unprivileged-userns.sh"
 
 echo "== the container the suite will run in"
-# No --privileged and no added capability. What is relaxed is the two MAC
-# layers that refuse an unprivileged process the namespace and the mounts
-# inside it: seccomp (the axis the fleet relaxes, via `seccomp.userns`) and, on
-# an Ubuntu host, the docker-default AppArmor profile, which denies mount
-# regardless of what seccomp allows. The fleet needs only the first because its
-# hosts are not running that profile.
-#
-# Neither touches the masking. /proc stays exactly as docker leaves it, and the
-# negative control below fails the job if that ever stops being true -- which is
-# what keeps this a faithful stand-in rather than an easier test wearing its name.
+# No --privileged and no added capability.
 run_in_container() {
 	docker run --rm \
 		--security-opt seccomp=unconfined \
@@ -52,8 +20,7 @@ run_in_container() {
 }
 
 echo "== negative control: /proc must be MASKED in here"
-# If this ever passes, the container stopped being the case under test and the
-# suite below would be exercising a private procfs it can actually mount.
+# If this ever passes, the container.
 masked=$(run_in_container '
 	if [ -w /proc/sysrq-trigger ]; then echo UNMASKED; else echo masked; fi
 ')
