@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// The prose documentation ships INSIDE the binary. A user who has the
-// executable and nothing else -- no checkout, no network -- can read the
-// complete reference with `dats docs <topic>`.
-//
-// The pages are embedded verbatim from docs/, so no extra copy of the
-// reference exists to keep in sync with the source.
-//
 //go:embed docs/*.md
 var docsFS embed.FS
 

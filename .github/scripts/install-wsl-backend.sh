@@ -1,23 +1,16 @@
 #!/usr/bin/env bash
-# Puts bubblewrap on an NT runner, inside WSL, and names the distro that holds
-# it. NT can host no sandbox backend directly. See docs/action.md.
+# Puts bubblewrap on an NT runner, inside WSL, and names the distro that holds it.
 set -euo pipefail
 
 DISTRO="${DATS_WSL_DISTRO:-Ubuntu}"
 ROOTFS_URL="${DATS_WSL_ROOTFS_URL:-https://cloud-images.ubuntu.com/wsl/releases/24.04/current/ubuntu-noble-wsl-amd64-wsl.rootfs.tar.gz}"
 
-# wsl.exe writes UTF-16LE by default, which reaches bash as text split by NUL
-# bytes. WSL_UTF8 makes it write UTF-8, so its own errors stay readable here.
+# wsl.exe writes UTF-16LE by default, which reaches bash as text split by NUL bytes.
 export WSL_UTF8=1
 
 # Every wsl.exe call is bounded and reads no input. An unbounded one waits on a
 # prompt no runner can answer, and the job then dies on its own timeout with no
 # line naming the step that hung.
-#
-# Git Bash rewrites an argument that looks like a posix path into a Windows one
-# before a non-MSYS program sees it, which turns the sandbox's own `/` into
-# C:/Program Files/Git/. Only wsl.exe takes Linux paths, so only wsl.exe opts
-# out: curl and the rest are native Windows programs that need the rewrite.
 wsl_step() {
 	local seconds="$1" what="$2" status=0
 	shift 2
@@ -45,9 +38,7 @@ echo "sandbox: registered distributions"
 wsl_step 60 "wsl --list" --list --quiet || true
 
 if ! timeout 60 wsl.exe --list --quiet </dev/null | tr -d '\r' | grep -qi "^${DISTRO}$"; then
-	# A pinned rootfs, imported directly. `wsl --install` fetches through the
-	# Microsoft Store, which hangs unpredictably on a hosted runner, and a gate
-	# that flakes is one a reader learns to ignore.
+	# A pinned rootfs, imported directly.
 	work="$(cygpath -u "${RUNNER_TEMP:-/tmp}")/dats-wsl"
 	mkdir -p "$work/root"
 	echo "sandbox: downloading the ${DISTRO} rootfs"
@@ -61,8 +52,7 @@ echo "sandbox: installing bubblewrap inside ${DISTRO}"
 wsl_step 600 "installing bubblewrap" --distribution "$DISTRO" --user root -- \
 	env DEBIAN_FRONTEND=noninteractive sh -c 'apt-get update && apt-get install -y bubblewrap'
 
-# The install is this step's whole job, so a bwrap that cannot build a sandbox
-# fails here rather than as a confusing "no usable sandbox backend" later.
+# The install is this step's whole job.
 echo "sandbox: exercising bubblewrap inside ${DISTRO}"
 wsl_step 120 "exercising bubblewrap" --distribution "$DISTRO" --user root -- \
 	bwrap --ro-bind / / --unshare-user --unshare-pid --dev /dev --proc /proc \

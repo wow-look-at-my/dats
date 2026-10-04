@@ -177,10 +177,10 @@ Same interface, different behavior:
 
 ## Verification
 
-1. Run `dats run examples/example.dats` - should execute all tests
+1. Run `dats run examples/example.dats` - must execute all tests
 2. Verify exit code 0 when all tests pass, non-zero when any fail
 3. Verify verbose mode shows useful debugging info
-4. Verify fixture cleanup happens (or doesn't with debug flag)
+4. Verify fixture cleanup happens (or does not with debug flag)
 5. Compare behavior against current BATS-based execution for same .dats files
 
 ## Migration Notes

@@ -60,13 +60,6 @@ var darwinUserTempDir = sync.OnceValue(func() string {
 })
 
 // seatbeltWritablePaths returns the writable set with symlinks resolved.
-//
-// The temp directories join it because a command reaches them without asking:
-// Apple's /bin/sh writes a here-document's scratch file under systemTempDirs
-// and mktemp writes under darwinUserTempDir, and neither consults TMPDIR, so
-// leaving them out kills a script at `cat <<EOF` with an errno naming no path.
-// bwrap answers the same need with a private tmpfs; sandbox-exec cannot mount,
-// so seatbelt allows the host's own.
 func (p *sandboxPlan) seatbeltWritablePaths() []string {
 	paths := p.writablePaths()
 	paths = append(paths, systemTempDirs...)
