@@ -24,7 +24,7 @@ So on an NT host a suite needs `--no-sandbox` today. WSL2 runs a real kernel and
 
 **Scratch space is where the backends had to be made to agree.** bwrap mounts a private writable `/tmp` (`--tmpfs /tmp`), so a command that writes through. `TMPDIR` just works. Seatbelt mounts nothing. Its profile denies every write outside `writablePaths`, so the host's `TMPDIR` -- which is outside that set -- left a command with nowhere to write at all. A seatbelt plan therefore creates `<work>/.dats-tmp` (`sandboxTmpDirName`) and runs the command under `env TMPDIR=... TMP=... TEMP=...`. It needs no profile rule of its own, because `work` already covers it. The symptom this removes is the worst kind: a suite that passes on linux and fails on darwin. This is for a reason that is in neither the suite nor the command. `examples/sandbox.dats` asserts the property. The `native-backends` job runs that file under bwrap and under seatbelt. As a result, the assertion is checked where the backends actually differ. That job runs THIS commit's binary, not the published one: `action-every-host` downloads what buildhost already serves, so a runner-side sandbox change cannot be proven. This is by it in the pull request that makes the change.
 
-Auto order is bwrap -> seatbelt -> docker: the native backends are platform-exclusive, so this reads as "the native sandbox for this OS, else docker".
+Auto order is bwrap -> seatbelt -> docker: the native backends are platform-exclusive. As a result, this reads as "the native sandbox for this OS, else docker".
 
 ## `sandbox_seatbelt.go`
 
