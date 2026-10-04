@@ -164,7 +164,7 @@ An explicitly requested backend never falls back either: `--sandbox=bwrap` gets 
 
 (`--ssh` also runs commands unsandboxed, on another machine — see [Remote Execution](#remote-execution---ssh).)
 
-`--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats` file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file that writes. Either one fails to parse with a message naming this flag.
+`--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats` file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file that writes either one fails to parse with a message naming this flag.
 
 That asymmetry is the point. Running a file means running commands you did not write, and the person typing `dats` is the one who pays for the sandbox coming down. So they are the one who takes it down, in a flag they can see. What a file *can* do is narrow its own sandbox (cut the network, pick the docker image) — see [file-format.md](file-format.md#sandbox).
 
@@ -172,8 +172,8 @@ The flag is the outer bound: a file can narrow what the CLI selected, not widen 
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare additional writable HOST paths. Something to write is the temp directory — a real filesystem inside every backend — and a command that genuinely needs. The host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE. Copy it into the temp directory and run it from there, or run the file unsandboxed. To pull an *existing* host file into the temp directory so a command can modify a copy of it. Use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)) — the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
-- **Reads are confined under bwrap and docker**. A command sees the OS tool tree, the working directory, and the paths the file declared — not `$HOME`, not `/var`, not another checkout. This is on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose entirely different filesystems.
+- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare additional writable HOST paths. Something to write is the temp directory — a real filesystem inside every backend — and a command that genuinely needs the host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE. Copy it into the temp directory and run it from there, or run the file unsandboxed. To pull an *existing* host file into the temp directory so a command can modify a copy of it, use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)) — the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
+- **Reads are confined under bwrap and docker**. A command sees the OS tool tree, the working directory, and the paths the file declared — not `$HOME`, not `/var`, not another checkout on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose entirely different filesystems.
 - **seatbelt (macOS) still does not restrict reads**: its profile denies writes only, so on a mac the host filesystem stays readable. That is a known gap, not the contract.
 - **The network is shared** unless a file sets `network: false`.
 - A command killed by a signal inside bwrap is reported as exit `128+N` rather than as a signal death. This is because bwrap exits that way on its child's behalf. Timeouts are unaffected — they kill through the sandbox and still report as timeouts.
@@ -187,7 +187,7 @@ The flag is the outer bound: a file can narrow what the CLI selected, not widen 
 dats --ssh build@box tests/
 ```
 
-**A target replaces the sandbox. It does not nest inside one.** dats installs nothing on the far side. As a result. The remote shell is the whole boundary — and because that is a reduction, it is announced rather than inferred: every file's header line reads `# sandbox: none -- ssh build@box (commands run on the remote host)`. Pairing a target with a backend you TYPED (`--sandbox=bwrap`) is an error, not a quiet downgrade. Under the default `--sandbox=auto` the target wins, and a file's `sandbox:` block goes inert exactly as it does under `--no-sandbox`.
+**A target replaces the sandbox. It does not nest inside one.** dats installs nothing on the far side. As a result, the remote shell is the whole boundary — and because that is a reduction, it is announced rather than inferred. Every file's header line reads `# sandbox: none -- ssh build@box (commands run on the remote host)`. Pairing a target with a backend you TYPED (`--sandbox=bwrap`) is an error, not a quiet downgrade. Under the default `--sandbox=auto` the target wins, and a file's `sandbox:` block goes inert exactly as it does under `--no-sandbox`.
 
 ### What travels, and what does not
 
@@ -235,7 +235,7 @@ dats runs test commands concurrently by default — one per logical CPU. There i
 
 ### Output and determinism
 
-Output is buffered and printed in canonical. This is order — files in the order given on the command line (or discovered), instances in expansion order within each file — regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run. A `-j64` run of the same corpus produce identical output whenever the outcomes are equal, and summary counts. The process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
+Output is buffered and printed in canonical order — files in the order given on the command line (or discovered), instances in expansion order within each file — regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run and a `-j64` run of the same corpus produce identical output whenever the outcomes are equal, and summary counts and the process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
 
 ### Priority
 
@@ -294,13 +294,13 @@ dats watch               # everything under the current directory
 
 - The **resolved `.dats` files** (via their parent directories, so editors that save by rename-replace still trigger).
 - Each resolved file's **`.snapshots/` golden directory** (when it exists) — goldens are test inputs, so editing one re-runs.
-- Every **directory argument** (and the current directory in no-arg mode), recursively — with the same hidden-directory skip rules as discovery — so newly created `.dats` files. New subdirectories are picked up and join the scope.
+- Every **directory argument** (and the current directory in no-arg mode), recursively — with the same hidden-directory skip rules as discovery. So newly created `.dats` files and new subdirectories are picked up and join the scope.
 
 Changes are **debounced** (250ms after the last event), so an editor's save burst causes one re-run. Changes landing while a run is in flight coalesce into exactly one follow-up run. Chmod-only events are ignored.
 
 ### The complete scope re-runs, every time
 
-Each re-run executes the **complete original argument scope**, not a subset. dats has. No test filtering or selection by design — every instance always runs — and `watch` adds no narrowing flags. The obvious alternative (re-running only the changed file) was considered and rejected: it is test selection through the back door. Cross-file signals like the combined total will silently stop covering the scope you asked for. Runs are cheap and complete beats clever.
+Each re-run executes the **complete original argument scope**, not a subset. dats has no test filtering or selection by design. Every instance always runs — and `watch` adds no narrowing flags. The obvious alternative (re-running only the changed file) was considered and rejected: it is test selection through the back door. Cross-file signals like the combined total will silently stop covering the scope you asked for. Runs are cheap and complete beats clever.
 
 A run that fails — including a `.dats` file made temporarily unparseable mid-edit — never kills the watch: the error is reported and watching continues. Fixing the file triggers the next run.
 
