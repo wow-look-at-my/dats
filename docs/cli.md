@@ -164,7 +164,7 @@ An explicitly requested backend never falls back either: `--sandbox=bwrap` gets 
 
 (`--ssh` also runs commands unsandboxed, on another machine — see [Remote Execution](#remote-execution---ssh).)
 
-`--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats` file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file that writes either one fails to parse. This is with a message naming this flag.
+`--no-sandbox` (or `--sandbox=none`), for a whole run, is the **only** way out. A `.dats` file cannot opt itself out: `sandbox: false` and `sandbox.enabled` do not exist, and a file that writes. Either one fails to parse with a message naming this flag.
 
 That asymmetry is the point. Running a file means running commands you did not write, and the person typing `dats` is the one who pays for the sandbox coming down. So they are the one who takes it down, in a flag they can see. What a file *can* do is narrow its own sandbox (cut the network, pick the docker image) — see [file-format.md](file-format.md#sandbox).
 
@@ -172,8 +172,8 @@ The flag is the outer bound: a file can narrow what the CLI selected, not widen 
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare additional writable HOST paths: something to write is the temp directory — a real filesystem inside every backend. This is a command that genuinely needs the host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE: copy it into the temp directory and run it. This is from there, or run the file unsandboxed. To pull an *existing* host file into the temp directory so a command can modify a copy of it. Use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)). This is the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
-- **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the working directory, and the paths the file declared — not `$HOME`. This is not `/var`, not another checkout on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose entirely different filesystems.
+- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare additional writable HOST paths: something to write is the temp directory. A real filesystem inside every backend — and a command that genuinely needs the host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE. Copy it into the temp directory and run it from there, or run the file unsandboxed. To pull an *existing* host file into the temp directory so a command can modify a copy of it. Use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)) — the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
+- **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the working directory, and the paths. The file declared — not `$HOME`, not `/var`, not another checkout on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose entirely different filesystems.
 - **seatbelt (macOS) still does not restrict reads**: its profile denies writes only, so on a mac the host filesystem stays readable. That is a known gap, not the contract.
 - **The network is shared** unless a file sets `network: false`.
 - A command killed by a signal inside bwrap is reported as exit `128+N` rather than as a signal death. This is because bwrap exits that way on its child's behalf. Timeouts are unaffected — they kill through the sandbox and still report as timeouts.
@@ -235,7 +235,7 @@ dats runs test commands concurrently by default — one per logical CPU. There i
 
 ### Output and determinism
 
-Output is buffered and printed in canonical order — files in the order given on the command line (or discovered), instances in expansion order within each file. This is regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run. A `-j64` run of the same corpus produce identical output whenever the outcomes are equal, and summary counts. The process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
+Output is buffered and printed in canonical order — files in the order given on the command line (or discovered), instances in expansion order within each file. Regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run. A `-j64` run of the same corpus produce identical output whenever the outcomes are equal, and summary counts. The process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
 
 ### Priority
 
