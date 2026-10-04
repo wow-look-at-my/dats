@@ -79,7 +79,7 @@ func maskedProcChild(t *testing.T) {
 	require.Nil(t, err, "the probe must still find a usable sandbox, not give up")
 	require.Equal(t, procShared, proc, "it must be the read-only-bind shape")
 
-	// And the sandbox it builds has to actually work, and still be a sandbox.
+	// And the sandbox it builds has to work, and still be a sandbox.
 	plan := &sandboxPlan{backend: SandboxBwrap, proc: procShared, network: true, work: t.TempDir()}
 	run := func(cmd string) (string, error) {
 		argv := plan.bwrapArgv(cmd)

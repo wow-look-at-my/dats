@@ -197,7 +197,7 @@ func (r *Runner) pruneStaleGoldens(fileResult *FileResult, instances []schema.Te
 	}
 	sort.Strings(fileResult.PrunedGoldens)
 	if remaining == 0 {
-		// Ignore errors: a concurrent write or an unremovable directory just leaves the empty directory behind.
+		// Ignore errors: a concurrent write or an unremovable directory leaves the empty directory behind.
 		_ = os.Remove(dir)
 	}
 }

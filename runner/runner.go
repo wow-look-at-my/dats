@@ -42,7 +42,7 @@ type Runner struct {
 	// remoteBase mirrors the current file's temp directory on the target.
 	remoteBase string
 
-	// datsPath is the file currently being run, for a per-test approval.
+	// datsPath is the file being run, for a per-test approval.
 	datsPath string
 
 	// altScopes holds the hosts tests overrode to; the file's target stays home.

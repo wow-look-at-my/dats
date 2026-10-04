@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Installs the sandbox backend dats needs on this runner, so a caller never has
-# to reach for --no-sandbox to work around infrastructure. See docs/action.md.
+# Installs the sandbox backend dats needs on this runner.
 set -euo pipefail
 
 case "${RUNNER_OS:-Linux}" in
@@ -14,10 +13,7 @@ case "${RUNNER_OS:-Linux}" in
 		exit 1
 		;;
 	Windows)
-		# NT has no backend of its own: bwrap is Linux, seatbelt is macOS, and the
-		# runner's docker daemon serves windows containers. WSL is the Linux this
-		# host does have, so the backend goes there and the APE runs its Linux
-		# payload inside it. run-dats.ts reads the distro name this writes.
+		# NT has no backend of its own: bwrap is Linux, seatbelt is macOS.
 		exec bash "$(dirname "$0")/install-wsl-backend.sh"
 		;;
 esac
@@ -27,8 +23,7 @@ if command -v bwrap >/dev/null 2>&1; then
 	exit 0
 fi
 
-# A container job usually runs as root with no sudo binary at all, so asking for
-# sudo unconditionally fails an install plain apt-get would have completed.
+# A container job usually runs as root with no sudo binary at all.
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
 	if ! command -v sudo >/dev/null 2>&1; then
@@ -52,8 +47,7 @@ else
 	exit 1
 fi
 
-# The install is the step's whole job, so a bwrap that is still missing is a
-# failure here rather than a confusing "no usable sandbox backend" later.
+# The install is the step's whole job.
 if ! command -v bwrap >/dev/null 2>&1; then
 	echo "sandbox: the package installed but bwrap is still not on PATH" >&2
 	exit 1

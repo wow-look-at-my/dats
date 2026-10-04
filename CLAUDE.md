@@ -1,10 +1,14 @@
+@AGENTS.md
+
+> **Merge note (PR #73):** master moved the canonical agent guide into `AGENTS.md` (imported above). The guide below is this PR's updated copy of it, kept in `CLAUDE.md` because it carries the documentation of the in-progress XML migration (`schema/dats.xsd`, `internal/schema/`, `internal/runner/` — not yet wired into the CLI, so the active runtime still parses the YAML format). `AGENTS.md` is not part of this merge's conflict set, so the XML sections could not be folded into it here; when the migration lands, move them into `AGENTS.md` and shrink this file back to the import.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative XML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
+DATS (Declarative Automated Testing System) is a Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
 ## Build Commands
 
@@ -253,3 +257,4 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push, with a job pe
 ## JSON Schema
 
 `schema.json` provides IDE validation for `.dats` files. Can be used with YAML language servers.
+
