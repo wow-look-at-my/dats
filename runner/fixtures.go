@@ -34,9 +34,9 @@ type TestContext struct {
 	BaseDir     string            // Temp directory for this test file
 	TestIndex   int               // Index of this test
 	InputPaths  map[string]string // input name -> absolute path
-	OutputsDir  string            // Directory {outputs.X} placeholders resolve into
+	OutputsDir  string
 	OutputPaths map[string]string // output name -> absolute path
-	SharedDir   string            // File-wide directory {shared.X} placeholders resolve into
+	SharedDir   string
 
 	// RemoteBase mirrors BaseDir on the ssh target; only expansion rewrites onto it.
 	RemoteBase string

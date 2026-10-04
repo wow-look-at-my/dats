@@ -188,11 +188,11 @@ tests:
 			- "generated at setup"
 
 	# Matrix (parameterized) test: expands into one instance per combination
-	# of the declared variables (cartesian product) -- this one runs 4 times,
-	# reported as "greets [greeting=hello, name=alice]" and so on, declaration
-	# order preserved and the last variable varying fastest. {matrix.X}
-	# substitutes in the cmd AND in output patterns (also desc, stdin, file
-	# contents, and env values).
+	# of the declared variables (cartesian product) -- this one runs a few
+	# times, reported as "greets [greeting=hello, name=alice]" and so on,
+	# declaration order preserved and the last variable varying fastest.
+	# {matrix.X} substitutes in the cmd AND in output patterns (also desc,
+	# stdin, file contents, and env values).
 	- desc: greets
 	  cmd: echo "{matrix.greeting}, {matrix.name}!"
 	  matrix:

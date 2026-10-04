@@ -144,7 +144,7 @@ func (w *watchSession) cycle(ctx context.Context, changed []string) {
 	w.files = files
 
 	if err := w.rebuildWatches(); err != nil {
-		// Keep the previous watcher; watching degrades, the run still counts.
+		// Keep the watcher; watching degrades, the run still counts.
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	}
 
