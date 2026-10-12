@@ -15,15 +15,15 @@ tests:
 	- # test 2
 ```
 
-A file must contain exactly one YAML document. A second `---` document is a parse error (`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys anywhere in the file are also parse errors, so a misspelled field cannot silently disable its assertion.
+A file must contain exactly one YAML document. A second `---` document is a parse error (`multiple YAML documents are not supported`) rather than being silently dropped. Unknown keys anywhere in the file are also parse errors. A misspelled field cannot silently disable its assertion.
 
 ## YAML Dialect
 
-`.dats` files are parsed by [yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed), not a general-purpose YAML library, and it enforces one convention plus capability gaps. Every existing file must satisfy:
+[yaml-fixed](https://github.com/wow-look-at-my/yaml-fixed) parses .dats` files, not a general-purpose YAML library, and it enforces one convention plus capability gaps. Every existing file must satisfy:
 
 - **Indentation is tabs only.** Spaces are rejected as leading indentation (`spaces cannot be used for indentation; indent with tabs`). Spaces are only valid to ALIGN past a tab, e.g. a sequence item's own mapping keys continuing past its `- ` marker. The [yaml-fixed CLI](https://github.com/wow-look-at-my/yaml-fixed)'s `yaml migrate <file>` command reindents an existing space-indented file (it does not preserve comments).
 - **No anchors or aliases.** `&name`/`*name` are not a YAML feature here — they parse as literal scalar text, not a reference. Duplicate a value instead of anchoring it.
-- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`, `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser will have needed `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
+- **No tags, so `!` is an ordinary character.** The negated keys are written bare — `!stdout:`, `!stderr:`, `!files:` — and mean exactly what a general-purpose YAML parser will needed `"!stdout":` for. The quoted spelling still parses to the same key, so older files keep working.
 - **Scalars reformat to their canonical spelling**, not the source text: a float like `1.50` round-trips as `1.5`, and `1e3` as `1000`. This affects `{matrix.X}` values (see [Matrix (Parameterized) Tests](#matrix-parameterized-tests)) and any float embedded in an error message.
 
 ## File-Level Setup, Teardown, and Shared Fixtures
@@ -88,7 +88,7 @@ Setup and teardown are per-file barriers: a future parallel mode (`-j`) may run 
 
 ## Sandbox
 
-Test commands are sandboxed by default (`--sandbox=auto`: the platform's native sandbox — bubblewrap on Linux, `sandbox-exec` on macOS — falling back to docker. See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The optional file-level `sandbox` key narrows that for one file:
+Default (`--sandbox=auto`: the platform's native sandbox — bubblewrap on Linux sandboxes Test commands, `sandbox-exec` on macOS — falling back to docker. See [cli.md](cli.md#sandboxing---sandbox) for what each backend isolates). The optional file-level `sandbox` key narrows that for one file:
 
 ```yaml
 sandbox:
@@ -98,7 +98,9 @@ sandbox:
 		# seatbelt, which use the host's own filesystem
 ```
 
-**A file cannot turn its own sandbox off.** There is no `sandbox: false` and no `enabled` key. Both are parse errors that name `--no-sandbox` instead. Running a `.dats` file means running commands somebody else wrote, and the isolation that makes that safe belongs to whoever types the command. A file that can switch it off will take it away silently, from the person who never agreed to that. `--no-sandbox` is the whole opt-out. It is visible in the shell history of the person it affects.
+**A file cannot turn its own sandbox off.** There is no `sandbox: false` and no `enabled` key. Both are parse errors that name `--no-sandbox` instead. Running a `.dats` file means running commands somebody else wrote, and the isolation that makes that safe belongs to whoever types the command. A file that can switch it off will take it away silently, from the person who never agreed to that. `--no-sandbox` is the whole opt-out.
+
+It is visible in the shell history of the person it affects.
 
 There is no key for extra writable host paths either, and for the same reason. Somewhere to write is the file's temp directory, which every backend gives you. A per-path hole is invisible to the person reading the file, and enough of them add up to no sandbox at all. To bring an *existing* host file into that writable temp directory — not a new path on the host. This is a copy inside the sandbox's own writable area — use `inputs.copy`/`shared.copy`. See [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
@@ -126,7 +128,7 @@ tests:
 	  cmd: uname -a
 ```
 
-**It is a request, not a decision.** A `.dats` file arrives from somewhere, and a file able to dial out on its own will spend the reader's ssh credentials before they knew. It had asked. So the pair — this file, this host — has to be approved once:
+**It is a request, not a decision.** A `.dats` file arrives from somewhere, and a file able to dial out on its own will spend the reader's ssh credentials before they knew. It asked. So the pair — this file, this host — has to be approved once:
 
 ```sh
 dats trust add suite.dats build@box   # or answer the prompt on a terminal
@@ -163,7 +165,7 @@ The file's target is the **home** target, and the rules follow from that:
 - **A per-test `ssh` needs a file-level `ssh` too**. It is a parse error without one. A per-test target may only move a command between remote hosts. Allowing one on a local file will let a file leave the rest of its tests on the reader's own machine by omission. Exactly what the file-level key may not do outright.
 - **Each overriding target is approved separately.** A file naming hosts needs approvals, since the approval is a (file, host) pair.
 - **`setup`, `teardown` and `shared/` always run on the home target.** An overriding test gets its own temp directory on its own host, plus a push-only mirror of `shared/`, so `{shared.X}` still resolves. Writes it makes there are lost, which `shared/` already calls undefined.
-- **The wrinkle worth stating plainly: setup prepares only the home host.** A file whose setup starts a service or installs a package has prepared host X. A test overriding to host Y runs against an unprepared machine, and dats cannot detect that. Running setup once per distinct target will be worse — it silently redefines "once per file" and breaks every non-idempotent setup.
+- **The wrinkle worth stating plainly: setup prepares only the home host.** A file whose setup starts a service or installs a package prepared host X. A test overriding to host Y runs against an unprepared machine, and dats cannot detect that. Running setup once per distinct target will be worse — it silently redefines "once per file" and breaks every non-idempotent setup.
 
 `{matrix.X}` substitutes into a per-test target, so one test fans across a fleet. Connections are established per target on demand, so the hosts nothing uses are never dialed:
 
@@ -196,7 +198,7 @@ tests:
 	  cmd: echo patched >> {inputs.config.json}; cat {inputs.config.json}
 ```
 
-Each is a map of **destination filename** (addressed the same way as a `files` entry — `{inputs.X}`/`{shared.X}`) to a **host source path**. A relative source resolves against the directory holding the `.dats` file being run. As a result, a copy source is portable regardless of dats' own working directory. An absolute source is used as-is. The copy runs on the host, before the sandbox starts — the destination lands in the same writable temp directory as every other fixture. As a result, a sandboxed command can modify its own copy freely without touching the original.
+Each is a map of **destination filename** (addressed the same way as a `files` entry — `{inputs.X}`/`{shared.X}`) to a **host source path**. A relative source resolves against the directory holding the `.dats` file being run. As a result, a copy source is portable regardless of dats' own working directory. An absolute source is used as-is. The copy runs on the host, before the sandbox starts — the destination lands in the same writable temp directory as every other fixture. As a result, a sandboxed command can change its own copy freely without touching the original.
 
 This is the read-write counterpart of the sandbox's read-only bind mount of the working directory (see [Sandbox](#sandbox) above). This is reach for `copy` when a test needs to *mutate* a real fixture, or when the fixture is too large or too binary. This is to spell out as YAML text under `files`. The copy preserves the source's permission bits, so a script pulled in this way keeps its executable bit.
 
@@ -284,7 +286,7 @@ tests:
 
 ## Matrix (Parameterized) Tests
 
-A test may declare `matrix:` — a mapping of variable name to a list of scalar values. This is expanding the test into one instance per **combination** of values (cartesian product):
+A test may declare `matrix:` — a mapping of variable name to a list of scalar values. This expands the test into one instance per **combination** of values (cartesian product):
 
 ```yaml
 tests:
@@ -298,7 +300,7 @@ tests:
 			- "{matrix.greeting}, {matrix.name}!"
 ```
 
-This runs as multiple tests. **Every instance always runs** — dats has no test filtering or selection by design. The expanded list IS the plan, and a matrix test cannot run "some" of its combinations.
+This runs as multiple tests. **Every instance always runs** — dats has no test filtering or selection by design. The expanded list IS the plan. A matrix test cannot run "some" of its combinations.
 
 ### Expansion Order and Instance Names
 
@@ -311,11 +313,11 @@ ok 3 - greets [greeting=howdy, name=alice]
 ok 4 - greets [greeting=howdy, name=bob]
 ```
 
-Each instance's reported name is the test's `desc` (or its `cmd`, after substitution, when no desc is set) followed by the label ` [k=v, k2=v2]` — assignments in declaration order. The label appears on every reported line, including single-value matrices (`[k=v]`) and the `file setup failed` lines when file-level setup fails. As a result, a failing instance is always identifiable. Instances count as ordinary tests everywhere. The file header's `(N tests)`, the summary counts, and the exit code all see the expanded list. Each instance gets its own private `test-<index>/` fixture directory (identical fixture names across instances never collide).
+Each instance's reported name is the test's `desc` (or its `cmd`, after substitution, when no desc is set) followed by the label ` [k=v, k2=v2]` — assignments in declaration order. The label appears on every reported line, including single-value matrices (`[k=v]`) and the `file setup failed` lines when file-level setup fails. As a result, a failing instance is always identifiable. Instances count as ordinary tests everywhere. The file header's `(N tests)`, the summary counts, and the exit code all see the expanded list. Each instance gets its own private `test-<index>/` fixture directory (same fixture names across instances never collide).
 
 ### Variables and Values
 
-Variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Each variable lists at least one **scalar** value — string, number, or boolean. A value is substituted as its literal YAML text: `1.50` stays `1.50` (never reformatted), `true` stays `true`, and a quoted string contributes its content. Because values are compared after this stringification, `[1.50, "1.50"]` is a duplicate — and duplicates, which can only produce byte-identical instances, are parse errors.
+Variable names must match `^[A-Za-z_][A-Za-z0-9_]*$`. Each variable lists at least one **scalar** value — string, number, or boolean. A value is substituted as its literal YAML text: `1.50` stays `1.50` (never reformatted), `true` stays `true`, and a quoted string contributes its content. Because values are compared after this stringification, `[1.50, "1.50"]` is a duplicate — and duplicates, which can only produce byte-same instances, are parse errors.
 
 ### Substitution Scope
 
@@ -388,7 +390,7 @@ Sandboxing changes runtime behavior rather than parsing. It applies to files tha
 
 ## Command Field (`cmd`)
 
-The command is run with `bash -c` in the working directory of the `dats` invocation (the runner does not change directory). Fixture files live in a fresh per-run temp directory and are addressed by absolute path through placeholders. A shell heredoc (`<<WORD`) or herestring (`<<<`) in `cmd` is rejected at parse time — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
+The command is run with `bash -c` in the working directory of the `dats` invocation (the runner does not change directory). Absolute path through placeholders addres fixture files live in a fresh per-run temp directory and. A shell heredoc (`<<WORD`) or herestring (`<<<`) in `cmd` is rejected at parse time — see [Copy Fixtures](#copy-fixtures-inputscopy-and-sharedcopy).
 
 ### Input Placeholders
 
@@ -677,7 +679,7 @@ outputs:
 | `match: [p]` | contents must match `p` | contents must NOT match `p` (a missing file passes) |
 | `notMatch: [p]` | contents must NOT match `p` (a missing file passes) | contents must match `p` (a missing file fails) |
 
-The common use is asserting that a file must NOT exist or must NOT contain something:
+The common use asserts that a file must NOT exist or must NOT contain something:
 
 ```yaml
 outputs:
@@ -741,7 +743,7 @@ tests:
 			stderr: true
 ```
 
-`snapshot: false` is the documented toggle-off — identical to omitting the key, handy for temporarily disabling a snapshot without deleting the block. The per-stream mapping must enable at least one stream. A mapping that enables neither (empty, or explicit falses), an unknown key, a non-boolean value, and a duplicate key are all parse errors.
+`snapshot: false` is the documented toggle-off — same to omitting the key, handy for temporarily disabling a snapshot without deleting the block. The per-stream mapping must enable at least one stream. A mapping that enables neither (empty, or explicit falses), an unknown key, a non-boolean value, and a duplicate key are all parse errors.
 
 ### Golden Storage and Naming
 
@@ -790,7 +792,7 @@ Like every other assertion, snapshots are skipped when the command did not run t
 `dats --update <files>` rewrites goldens from actual output instead of failing:
 
 - A golden is written only when it is **missing or differs**. An up-to-date golden is not rewritten (no mtime churn) and not listed.
-- Goldens **never update from a failing instance**: if the instance has any other failure (wrong exit code, a failed pattern check, ...). Its goldens are neither written nor compared — fix the test first.
+- Goldens **never update from a failing instance**: if the instance has any other failure (incorrect exit code, a failed pattern check, ...). Its goldens are neither written nor compared — fix the test first.
 - Stale `*.golden` files in the file's snapshot directory — instances or streams that no longer exist — are **pruned** (after a clean file setup only), and the directory itself is removed. This is when pruning empties it. Non-`.golden` files are never touched.
 - Every write and prune is listed on stdout (`# updated golden: ...`, `# pruned stale golden: ...`), with an end-of-run summary line (`Updated 2 golden file(s), pruned 1 stale`).
 
@@ -799,7 +801,7 @@ See [CLI Usage](cli.md#updating-snapshots---update) for a worked example.
 ### Scope Notes
 
 - Only the output **streams** can be snapshotted. A `files` variant is deliberately rejected for v1: `outputs.files` `match`/`notMatch` already asserts file contents. A files variant will multiply the naming scheme (per instance × per declared file) — revisit if demanded.
-- Snapshots compose with `-j`. Golden files are per-instance unique, results are deterministic, and output stays byte-identical to a serial run — and appear in `--report-junit`/`--report-json`. This is as ordinary assertion failures (no report format change).
+- Snapshots compose with `-j`. Golden files are per-instance unique, results are deterministic, and output stays byte-same to a serial run — and appear in `--report-junit`/`--report-json`. This is as ordinary assertion failures (no report format change).
 
 ---
 

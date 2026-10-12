@@ -75,7 +75,6 @@ func TestRefuteFileExists(t *testing.T) {
 	assert.NotNil(t, RefuteFileExists(existing))
 }
 
-// symlinkLoopPath creates a path whose os.Stat fails with ELOOP (an error that is NOT ErrNotExist).
 func symlinkLoopPath(t *testing.T) string {
 	t.Helper()
 	tmp := t.TempDir()

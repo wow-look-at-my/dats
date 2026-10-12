@@ -35,9 +35,9 @@ func probeAlways(err error) func(SandboxMode) (procMode, error) {
 	return func(SandboxMode) (procMode, error) { return procFresh, err }
 }
 
-// An NT host has no backend to install: the marker is what lets a library
-// caller say so and run on the host, while a missing bwrap on linux stays the
-// ordinary error a caller must not paper over.
+// An NT host has no backend to install. The marker is what lets a library
+// caller say so and run on the host, while a missing bwrap. On linux stays
+// the ordinary error a caller must not paper over.
 func TestSandboxBackendMarksAHostThatCanNeverSandbox(t *testing.T) {
 	t.Run("an NT host carries the marker", func(t *testing.T) {
 		forceHostGOOS(t, "windows")
@@ -57,7 +57,7 @@ func TestSandboxBackendMarksAHostThatCanNeverSandbox(t *testing.T) {
 	})
 
 	// A nested seatbelt sandbox refuses to apply a new profile: seatbelt is
-	// FOUND, not missing, so no install fixes this -- the same shape as an NT
+	// FOUND, not missing. No install fixes this -- the same shape as an NT
 	// host with no backend at all.
 	t.Run("a darwin host where seatbelt was found but refused carries the marker", func(t *testing.T) {
 		forceHostGOOS(t, "darwin")
