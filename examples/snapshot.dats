@@ -1,10 +1,10 @@
 # Snapshot (golden-file) assertions: outputs.snapshot asserts that captured
-# stdout (and/or stderr) byte-matches a golden file stored in the
-# snapshot.snapshots/ directory next to this file (one golden per instance
-# per enabled stream, named NNN-<slug>.<stream>.golden). Create or refresh
-# the goldens with `dats --update`; framework temp paths in the output are
-# normalized to {testdir}/{shareddir}/{tmproot} tokens, so the committed
-# goldens are stable across runs and machines.
+# stdout (and/or stderr) byte-matches a golden file. That file is stored in
+# the snapshot.snapshots/ directory next to this file (one golden per
+# instance per enabled stream, named NNN-<slug>.<stream>.golden). Create or
+# refresh the goldens with `dats --update`. Framework temp paths in the
+# output are normalized to {testdir}/{shareddir}/{tmproot} tokens, so the
+# committed goldens are stable across runs and machines.
 tests:
 	# Boolean shorthand: snapshot stdout against
 	# snapshot.snapshots/001-snapshots-stdout.stdout.golden

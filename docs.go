@@ -38,8 +38,8 @@ func (p DocPage) Text() (string, error) {
 // overview at the top, then the references an author reaches for most.
 //
 // TestDocPagesCoverEmbeddedFiles pins this table to the embedded directory in
-// both directions, so a new docs/*.md file fails the build until it has a
-// topic name and a summary.
+// both directions. A new docs/*.md file fails the build until it has a topic
+// name and a summary.
 var docPages = []DocPage{
 	{
 		Name:    "overview",

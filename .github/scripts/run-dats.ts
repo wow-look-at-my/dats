@@ -45,7 +45,7 @@ if (distro) {
 	const seconds = Number(process.env.DATS_WSL_TIMEOUT_SECONDS ?? '900');
 	// Mapped here rather than by wslpath inside the distribution. wsl.exe joins
 	// its arguments into one command line that the Linux side parses again, and
-	// that parse eats the backslashes, so `D:\a\dats` arrives as `D:adats`.
+	// that parse eats the backslashes. `D:\a\dats` arrives as `D:adats`.
 	const toWsl = (p: string) => {
 		const drive = /^([A-Za-z]):[\\/](.*)$/.exec(p);
 		if (!drive) throw new Error(`cannot map "${p}" into WSL: expected a drive-letter path`);

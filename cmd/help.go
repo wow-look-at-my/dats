@@ -10,7 +10,7 @@ import (
 
 // helpCmd replaces cobra's built-in help command so `dats help <topic>`
 // reaches the embedded documentation. Cobra's own version answers anything it
-// does not recognize with the root command's usage, which sends a reader
+// does not recognize with the root command's usage. Which sends a reader
 // looking for the .dats file reference back to a list of flags.
 var helpCmd = &cobra.Command{
 	Use:   "help [command | topic]",
@@ -30,7 +30,7 @@ this binary.
 }
 
 // runHelp resolves the argument as a command before it resolves the argument
-// as a documentation topic, so a subcommand name never loses to a topic alias.
+// as a documentation topic. A subcommand name never loses to a topic alias.
 func runHelp(cmd *cobra.Command, args []string) error {
 	root := cmd.Root()
 	if len(args) == 0 {

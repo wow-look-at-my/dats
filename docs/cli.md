@@ -28,7 +28,7 @@ dats version
 - A **file** argument must have the `.dats` extension. Explicitly named files are always accepted, even hidden ones (leading `.`).
 - A **directory** argument (symlinks to directories included) is searched recursively with the same rules as no-arg discovery. A directory that yields nothing is an error: `no .dats files found in <dir>`.
 - **Discovery** (no-arg and directory args) skips hidden directories and hidden `.dats` files — except the walk root itself, so running inside a dotted directory still works. Paths that cannot be walked (e.g. unreadable directories) print `warning: skipping <path>: <err>` on stderr and discovery continues.
-- Arguments are **deduplicated** by absolute path (first-seen order), so a file named twice — or both named and covered by a directory argument — runs exactly once.
+- Absolute path (first-seen order) deduplicats arguments, so a file named twice — or both named and covered by a directory argument — runs exactly once.
 - A nonexistent or inaccessible argument is an error: `cannot access <arg>: <err>`.
 
 ## Flags
@@ -125,7 +125,7 @@ $ dats docs
 
 ## Sandboxing (--sandbox)
 
-**Test commands are sandboxed by default.** A `.dats` file is a list of shell commands from whoever wrote the file. Running them straight on your machine is a choice, so dats makes you make it. `--sandbox=auto` (the default) uses the platform's native sandbox — bubblewrap on Linux, `sandbox-exec` (seatbelt) on macOS — and falls back to docker where neither works.
+Default sandboxes Test commands.** A `.dats` file is a list of shell commands from whoever wrote the file. Running them straight on your machine is a choice, so dats makes you make it. `--sandbox=auto` (the default) uses the platform's native sandbox — bubblewrap on Linux, `sandbox-exec` (seatbelt) on macOS — and falls back to docker where neither works.
 
 Every command a file runs is sandboxed — test instances **and** the file-level `setup`/`teardown` hooks. A file cannot use its hooks as an unsandboxed side door.
 
@@ -145,7 +145,7 @@ Every command a file runs is sandboxed — test instances **and** the file-level
 
 All three make the file's temp directory writable, so fixtures, `{outputs.X}` assertions and snapshots work unchanged. The differences that bite: under bwrap a write to any host path outside the temp directory fails with `Read-only file system` and under seatbelt with `Operation not permitted`. Under docker it "succeeds" into the container's own throwaway filesystem and never reaches the host.
 
-The native backends are platform-exclusive — `bwrap` does not exist on macOS and `sandbox-exec` does not exist on Linux. So `auto` really resolves to "this platform's native sandbox, else docker". Asking for the wrong one by name is an error, not a silent substitution.
+The native backends are platform-exclusive — `bwrap` does not exist on macOS and `sandbox-exec` does not exist on Linux. So `auto` really resolves to "this platform's native sandbox, else docker". Asking for the incorrect one by name is an error, not a silent substitution.
 
 ### Selection and failure
 
@@ -172,8 +172,8 @@ The flag is the outer bound: a file can narrow what the CLI selected, not widen 
 
 ### What it does and does not isolate
 
-- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare additional writable HOST paths: something to write is the temp directory — a real filesystem inside every backend. This is a command that genuinely needs the host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE: copy it into the temp directory and run it. This is from there, or run the file unsandboxed. A command can modify a copy of an *existing* host file. To pull the file into the temp directory, use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)). This is the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
-- **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the working directory, and the paths the file declared — not `$HOME`. This is not `/var`, not another checkout on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose entirely different filesystems.
+- **Writes** are confined to the file's temp directory (plus `--coverdir`, whose data has to outlive the run). There is deliberately no way to declare more writable HOST paths: something to write is the temp directory — a real filesystem inside every backend. This is a command that genuinely needs the host is not a sandboxed command. As a result, it belongs to a `--no-sandbox` run. That includes a binary that rewrites itself on first run, such as an APE: copy it into the temp directory and run it. This is from there, or run the file unsandboxed. A command can change a copy of an *existing* host file. To pull the file into the temp directory, use `inputs.copy` or `shared.copy` (see [file-format.md](file-format.md#copy-fixtures-inputscopy-and-sharedcopy)). This is the read-write counterpart of the working directory's read-only bind mount, resolved and copied before the sandbox starts.
+- **Reads are confined under bwrap and docker**: a command sees the OS tool tree, the working directory, and the paths the file declared — not `$HOME`. This is not `/var`, not another checkout on the machine. bwrap used to bind `/` read-only. This made every suite a reader of the whole host and made the backends expose fully different filesystems.
 - **seatbelt (macOS) still does not restrict reads**: its profile denies writes only, so on a mac the host filesystem stays readable. That is a known gap, not the contract.
 - **The network is shared** unless a file sets `network: false`.
 - A command killed by a signal inside bwrap is reported as exit `128+N` rather than as a signal death. This is because bwrap exits that way on its child's behalf. Timeouts are unaffected — they kill through the sandbox and still report as timeouts.
@@ -193,7 +193,7 @@ dats --ssh build@box tests/
 
 - **Fixtures.** `inputs.files`, `inputs.copy`, `shared.files` and `shared.copy` are all built on this machine first, then copied over as a tar stream. As a result, a `copy` source still resolves against the `.dats` file's own directory and still keeps its permission bits.
 - **The environment.** An ssh session inherits none of the run's environment, so dats carries it explicitly. `inputs.env` and `inputs.stdin` behave as they do locally.
-- **Output files and snapshots.** Outputs come home before assertions run, and remote paths normalize to the same `{testdir}`/`{shareddir}`/`{tmproot}` tokens. As a result, a suite's goldens are byte-identical whether it ran here or there.
+- **Output files and snapshots.** Outputs come home before assertions run, and remote paths normalize to the same `{testdir}`/`{shareddir}`/`{tmproot}` tokens. As a result, a suite's goldens are byte-same whether it ran here or there.
 - **The working directory does NOT travel.** Every sandbox backend exposes the local working directory read-only so relative paths resolve as they do on the host. There is no such path on the target, so a command like `./scripts/thing.sh` passes locally and fails remotely with "No such file or directory". Pull what the command needs in with `inputs.copy` or `shared.copy` instead.
 - **`--coverdir` is refused** alongside `--ssh`. The data will be written on the far side and never come home, and collecting nothing quietly is the outcome that must not happen.
 
@@ -230,12 +230,12 @@ dats runs test commands concurrently by default — one per logical CPU. There i
 
 - **One global pool.** At most N workload commands run at once across ALL files. And file-level setup/teardown commands occupy pool slots exactly like test commands, so no more than N spawned processes ever exist at once.
 - **Per-file barriers are preserved.** Within each file, shared files are written and setup commands run (sequentially, in declared order) before any of that file's test instances start. A setup failure reports every instance as failed (`file setup failed`, not "skipped") without running them. Teardown commands run (sequentially, in declared order) only after the file's last instance finishes, and always run. Test instances of one file may run concurrently with each other and with other files' instances and hooks.
-- **A file's instances START in declaration order.** A worker takes its slot in the order the instances are declared, so `-j1` is a sequential run: instance 2 begins only after instance 1 has finished. This is what makes a stateful file — one whose tests mutate what the setup command built, in order — express that with `-j1`. At a higher `-j`, start order is still declaration order, but instances overlap, so finishing order is not.
+- **A file's instances START in declaration order.** A worker takes its slot in the order the instances are declared, so `-j1` is a sequential run. A later instance begins only after instance 1 finished. This is what makes a stateful file — one whose tests mutate what the setup command built, in order — express that with `-j1`. At a higher `-j`, start order is still declaration order, but instances overlap, so finishing order is not.
 - **Everything still runs.** `-j` changes scheduling only. There is no test filtering or selection, and per-test timeouts, exit-code semantics, fixture isolation, and `--coverdir` behave identically at every `-j` value.
 
 ### Output and determinism
 
-Output is buffered and printed in canonical order — files in the order given on the command line (or discovered), instances in expansion order within each file. This is regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run. A `-j64` run of the same corpus produce identical output whenever the outcomes are equal, and summary counts. The process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
+Output is buffered and printed in canonical order — files in the order given on the command line (or discovered), instances in expansion order within each file. This is regardless of completion order. The bytes depend only on the outcomes, not on `-j` or on scheduling: a `-j1` run. A `-j64` run of the same corpus produce same output when the outcomes are equal, and summary counts. The process exit code are computed identically. (Under `-v`, reported durations naturally vary between runs.)
 
 ### Priority
 
@@ -249,7 +249,7 @@ In jobs mode every file is parsed up front, so a parse error in any file aborts 
 
 `--report-junit <path>` and `--report-json <path>` write machine-readable reports of the run — for CI systems and editor integrations — at the end of the run. Either or both may be given. Parent directories are created automatically.
 
-- Reports are written whenever the run executed, **including failing runs** (the process still exits 1). They are built from the same data in serial and `-j` runs, in canonical order. Stdout output and exit codes are unchanged.
+- Reports are written when the run executed, **including failing runs** (the process still exits 1). They are built from the same data in serial and `-j` runs, in canonical order. Stdout output and exit codes are unchanged.
 - Hard errors that abort the run (unreadable file, parse error) write no report. A report file that cannot be written is itself an error (stderr message, exit 1) even when every test passed. `dats syntax` never writes reports.
 - JSON summary counts equal the CLI summary numbers (test instances only). JUnit totals additionally include synthetic `[setup]`/`[teardown]` cases for failed file-level hooks.
 
@@ -306,7 +306,7 @@ A run that fails — including a `.dats` file made temporarily unparseable mid-e
 
 ### Terminal UX
 
-- On a TTY, the screen is cleared before every run. Otherwise runs are separated by a `----------------------------------------` line (except before the first).
+- On a TTY, the screen is cleared before every run. A `----------------------------------------` line (except before the first) separats otherwise runs.
 - Every run starts with `# watch: run N at HH:MM:SS`, suffixed ` (initial)` on the first run or ` (changed: <up to 3 paths>, +K more)` afterwards, and ends with `# watch: waiting for changes (Ctrl-C to exit)`.
 
 ### Exiting

@@ -316,10 +316,10 @@ tests:
 }
 
 // A command that gives itself a terminal is doing its own plumbing, and real
-// tools do it unprompted: Homebrew runs every source build inside a pty so the
+// tools do it unprompted. Homebrew runs every source build inside a pty so the
 // build cannot reach the parent terminal. Without a writable /dev/ptmx that
 // allocation fails with "can't get Master/Slave device" -- a message that
-// names no path and reads as a broken toolchain rather than a sandbox rule.
+// names no path. It reads as a broken toolchain rather than a sandbox rule.
 // Both land in a directory the command never named, so a writable set missing
 // either kills an ordinary script before it runs a line.
 func TestRunFileSeatbeltAllowsShellScratchFiles(t *testing.T) {
