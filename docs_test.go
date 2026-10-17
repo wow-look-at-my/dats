@@ -11,7 +11,7 @@ import (
 
 // The topic table is what makes a page reachable from `dats docs`. A new
 // docs/*.md file that nobody added to it would ship inside the binary and be
-// unreachable, which is the whole failure this test exists to prevent.
+// unreachable. This is the whole failure this test exists to prevent.
 func TestDocPagesCoverEmbeddedFiles(t *testing.T) {
 	embedded, err := fs.Glob(docsFS, "docs/*.md")
 	require.NoError(t, err)

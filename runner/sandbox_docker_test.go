@@ -27,9 +27,7 @@ func requireDocker(t *testing.T) {
 	}
 }
 
-// A windows daemon answers `docker version` and then fails every run, which
-// used to reach the operator as a runc error per test rather than as a line
-// saying the backend was never usable.
+// A windows daemon answers `docker version` and then fails every run.
 func TestDockerServerUsable(t *testing.T) {
 	t.Run("a linux daemon is usable", func(t *testing.T) {
 		require.NoError(t, dockerServerUsable("1.51 linux"))

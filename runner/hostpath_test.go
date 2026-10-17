@@ -20,7 +20,7 @@ func TestHostCommandPathLeavesAPosixHostAlone(t *testing.T) {
 }
 
 // The conversion answers the HOST, never the separator this binary compiled
-// for: this case passes on a posix builder, which is where an APE is built.
+// for. This case passes on a posix builder, which is where an APE is built.
 func TestHostCommandPathGivesAnNTHostForwardSlashes(t *testing.T) {
 	forceHostGOOS(t, "windows")
 	assert.Equal(t, "C:/Users/RUNNER/AppData/Local/Temp/dats-x/test-1/inputs/a.txt",

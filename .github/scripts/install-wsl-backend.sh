@@ -9,7 +9,7 @@ ROOTFS_URL="${DATS_WSL_ROOTFS_URL:-https://cloud-images.ubuntu.com/wsl/releases/
 export WSL_UTF8=1
 
 # Every wsl.exe call is bounded and reads no input. An unbounded one waits on a
-# prompt no runner can answer, and the job then dies on its own timeout with no
+# prompt no runner can answer. The job then dies on its own timeout with no
 # line naming the step that hung.
 wsl_step() {
 	local seconds="$1" what="$2" status=0
