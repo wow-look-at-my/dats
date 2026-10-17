@@ -1,15 +1,15 @@
 # Sandboxing.
 #
-# Test commands are sandboxed by default (bubblewrap, falling back to docker):
-# the host filesystem is readable but not writable, and only this file's own
+# Test commands are sandboxed by default (bubblewrap, falling back to docker).
+# The host filesystem is readable but not writable, and only this file's own
 # temp directory -- fixtures, {outputs.X}, {shared.X} -- can be written. Nothing
 # in a .dats file has to change for that: the tests below are ordinary tests.
 #
 # The optional file-level `sandbox` block narrows the sandbox for one file. It
-# cannot widen it, and there is no way for a file to switch its sandbox off:
-# commands that need the host need a run someone started with --no-sandbox. The
-# CLI is the outer bound, so under --no-sandbox this block is inert and
-# everything here still runs (and passes).
+# cannot widen it, and there is no way for a file to switch its sandbox off.
+# There commands that need the host need a run someone started with
+# --no-sandbox. The CLI is the outer bound, so under --no-sandbox this block is
+# inert and everything here still runs (and passes).
 sandbox:
 	network: false # this file's commands need no network, so they get none
 
@@ -36,7 +36,7 @@ tests:
 			- generated
 
 	# Scratch space through TMPDIR, which the backends reach differently: bwrap
-	# mounts a private writable /tmp, and seatbelt mounts nothing and denies
+	# mounts a private writable /tmp, and seatbelt mounts nothing. It denies
 	# every write outside this file's temp tree. A command that scratches
 	# through TMPDIR must work on both, so this is one of the tests every host
 	# runs (.github/workflows/ci.yml, action-every-host).
@@ -52,8 +52,8 @@ tests:
 	# The working directory is bind-mounted read-only, so a plain read still
 	# works but a write to it would fail. inputs.copy is the read-write way in:
 	# it copies an existing host file into the sandbox's writable temp
-	# directory before the command runs, so this test can freely modify its
-	# own copy without touching the real fixture on disk.
+	# directory before the command runs. This test can freely modify its own
+	# copy without touching the real fixture on disk.
 	- desc: inputs.copy pulls a host file in, writable
 	  inputs:
 		copy:
