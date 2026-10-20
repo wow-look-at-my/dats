@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- Exit code: integer (0-255) or EXIT_* variable name -->
+  <xs:simpleType name="ExitCode">
+    <xs:union>
+      <xs:simpleType>
+        <xs:restriction base="xs:unsignedByte"/>
+      </xs:simpleType>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="EXIT_[A-Z_]+"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <!-- Line-specific regex assertion: <line n="0">^pattern$</line> -->
+  <xs:complexType name="LineCheck">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="n" type="xs:int" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Stream assertions for stdout/stderr -->
+  <xs:complexType name="StreamCheck">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="match" type="xs:string"/>
+        <xs:element name="not-match" type="xs:string"/>
+        <xs:element name="line" type="LineCheck"/>
+      </xs:choice>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Input fixture file: <input name="file.txt">content</input> -->
+  <xs:complexType name="InputFile">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="name" type="xs:string" use="required"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Output file assertion: <output name="result.txt" exists="true"> -->
+  <xs:complexType name="FileOutput">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="match" type="xs:string"/>
+        <xs:element name="not-match" type="xs:string"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="exists" type="xs:boolean" use="optional"/>
+  </xs:complexType>
+
+  <!-- Single test case -->
+  <xs:complexType name="Test">
+    <xs:sequence>
+      <xs:element name="stdin" type="xs:string" minOccurs="0"/>
+      <xs:element name="input" type="InputFile" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="stdout" type="StreamCheck" minOccurs="0"/>
+      <xs:element name="stderr" type="StreamCheck" minOccurs="0"/>
+      <xs:element name="output" type="FileOutput" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="desc" type="xs:string" use="optional"/>
+    <xs:attribute name="cmd" type="xs:string" use="required"/>
+    <xs:attribute name="exit" type="ExitCode" use="optional"/>
+  </xs:complexType>
+
+  <!-- Root element -->
+  <xs:element name="dats">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="test" type="Test" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

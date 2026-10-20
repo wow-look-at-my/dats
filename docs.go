@@ -95,6 +95,18 @@ var docPages = []DocPage{
 		Summary: "What a repository whose build tool links dats can rely on: layout, handoff dir, sandbox, goldens",
 		File:    "docs/embedding.md",
 	},
+	{
+		Name:    "architecture",
+		Aliases: []string{"core-flow", "packages"},
+		Summary: "How a run flows through the Go packages, the key types, and the placeholders",
+		File:    "docs/architecture.md",
+	},
+	{
+		Name:    "architecture-2",
+		Aliases: []string{"architecture-yaml"},
+		Summary: "The same core flow and package map, as master carried it before the XML migration",
+		File:    "docs/architecture-2.md",
+	},
 }
 
 // Docs returns every embedded documentation page, in topic-list order.

@@ -6,6 +6,10 @@ export COVER_DIR := justfile_directory() / "coverage"
 _help:
     @just --list
 
+# Generate Go code from XSD schema
+generate:
+    cd internal/schema && xgen -i ../../schema/dats.xsd -o generated -l Go -p schema
+
 # Build the binary
 build output="$BUILD_DIR/dats":
     go fmt ./...

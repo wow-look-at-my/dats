@@ -63,7 +63,9 @@ Sandbox{Mode: runner.SandboxDocker, Image: "golang:1.25"}
 Sandbox{Mode: runner.SandboxNone}          // host — the explicit opt-out
 ```
 
-The zero value sandboxes, so a caller that says nothing about isolation gets it. Running suite commands straight on the host is a decision someone makes on purpose, not one the library makes on their behalf. This is by defaulting to the weaker thing. Individual files can still narrow this (`network: false`, or an `image:` when `Image` is empty). A file can only ever narrow what the caller allowed, and a file asking to run unsandboxed is a parse error, not a permission. A non-empty `Image` is the caller's pin and a file cannot displace it. An empty one leaves the image to the file, then to the default.
+The zero value sandboxes, so a caller that says nothing about isolation gets it. Running suite commands straight on the host is a decision someone makes on purpose, not one the library makes on their behalf. This is by defaulting to the weaker thing. Individual files can still narrow this (`network: false`, or an `image:` when `Image` is empty). A file can only ever narrow what the caller allowed, and a file asking to run unsandboxed is a parse error, not a permission. A non-empty `Image` is the caller's pin and a file cannot displace it.
+
+An empty one leaves the image to the file, then to the default.
 
 ### SSH: a location, not an isolation setting
 
@@ -101,4 +103,4 @@ if err := res.WriteJSON(f); err != nil { ... }
 
 ## Lower-level packages
 
-`runner`, `schema`, and `report` are public too and can be used directly: the `runner.Runner` type, `schema.ParseFile`, `report.WriteJUnit`. They are the guts, not the front door — a direct `runner.Runner` has a nil `Sandbox` (the raw runner does not sandbox anything by itself. The safe default lives in `Run`), no file discovery, and no totals. Reach for them when you are building something dats itself does not do. Use `Run` for everything else.
+`runner`, `schema`, and `report` are public too and can be used directly: the `runner.Runner` type, `schema.ParseFile`, `report.WriteJUnit`. They are the guts, not the front door — a direct `runner.Runner` has a nil `Sandbox` (the raw runner does not sandbox anything by itself. The safe default lives in `Run`), no file discovery, and no totals. Reach for them when you builds something dats itself does not do. Use `Run` for everything else.

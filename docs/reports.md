@@ -12,7 +12,7 @@ Both flags are long-only and require a value (the output path). Parent directori
 
 ## When report files are (and are not) written
 
-- Reports are written at the **end of the run whenever the run executed** — and especially when it failed. Failing tests, setup failures, teardown failures, and runs about to exit 1 all produce reports. Default stdout output and exit-code semantics are unchanged.
+- Reports are written at the **end of the run when the run executed** — and especially when it failed. Failing tests, setup failures, teardown failures, and runs about to exit 1 all produce reports. Default stdout output and exit-code semantics are unchanged.
 - Reports are written from the **same result data in serial and parallel (`-j`) runs**, in the same canonical order: files in the order given. This is on the command line (or discovered), test instances in expansion order within each file. A failed file-level setup appears before the file's instances. Failed teardown commands appear after them.
 - **Hard errors that abort the run** keep their existing control flow and write **no** report file: an unreadable or unparseable `.dats` file. This is invalid arguments, or an infrastructure failure (e.g. the temp directory cannot be created). In jobs mode a parse error in any file aborts before anything runs — also without reports.
 - `dats syntax` never writes reports (the flags parse but are ignored).
@@ -23,7 +23,7 @@ Both flags are long-only and require a value (the output path). Parent directori
 The formats count differently, by design:
 
 - The **JSON** `summary.tests`/`passed`/`failed` count **test instances only** and always equal the CLI summary numbers (`N/M passed, K failed`). File-level setup/teardown failures are reported in `setup_failure`/`teardown_failures`, not as entries in `tests`.
-- The **JUnit** `tests`/`failures` attributes additionally count the synthetic `[setup]`/`[teardown]` cases (most JUnit consumers can only surface what is a testcase), so JUnit totals are **≥ the CLI summary counts** whenever a hook failed.
+- The **JUnit** `tests`/`failures` attributes additionally count the synthetic `[setup]`/`[teardown]` cases (most JUnit consumers can only surface what is a testcase), so JUnit totals are **≥ the CLI summary counts** when a hook failed.
 
 ## JSON format
 
@@ -110,7 +110,7 @@ The layout follows the common JUnit consumer conventions:
 - One `<testsuite name="<file path as given>" tests="..." failures="..." time="...">` per file, in canonical order. The suite `time` is the sum of its cases' durations.
 - One `<testcase classname="<file path>" name="<instance name>" time="...">` per test instance, in expansion order.
   - A **failed** instance carries `<failure message="<first failure message>">` with every failure message joined by newlines as the element text, plus the captured output in `<system-out>`/`<system-err>`. Passing instances carry none of these, keeping reports lean.
-- A failed file-level **setup** adds one synthetic **first** case named `[setup]`. Each failed **teardown** command adds a synthetic **trailing** case named `[teardown]` (suffixed ` #1`, ` #2`, … only when more than one failed). Their `<failure>` carries the failure detail (message attribute) and the command plus detail (text). Captured output goes to `<system-out>`/`<system-err>`. Synthetic cases have no `time` attribute and are counted by the `tests`/`failures` attributes (see [Counts contract](#counts-contract)).
+- A failed file-level **setup** adds one synthetic **first** case named `[setup]`. Each failed **teardown** command adds a synthetic **trailing** case named `[teardown]` (suffixed ` #1`, ` #2`, … only when more than one failed). Their `<failure>` carries the failure detail (message attribute) and the command plus detail (text). Captured output goes to `<system-out>`/`<system-err>`. The `tests`/`failures` attributes counts synthetic cases have no `time` attribute and (see [Counts contract](#counts-contract)).
 - Bytes that are illegal in XML 1.0 (e.g. `\x00`, `\x1b` from command output) are replaced with U+FFFD (`�`) so the document always stays well-formed. The JSON report preserves the exact bytes. Use it when fidelity matters.
 
 Trimmed example:
