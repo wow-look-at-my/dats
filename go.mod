@@ -1,4 +1,4 @@
-module github.com/wow-look-at-my/dats
+module github.com/wow-look-at-my/dats // go-toolchain:generate=d438bd0bc1e5
 
 go 1.26
 
