@@ -1,5 +1,17 @@
 // Builds a sanitized dats argv from the action's typed inputs and runs it.
 
+// This file stands on its own: the typescript action type-checks a `file:`
+// script as written.
+import * as fs from 'fs';
+import * as path from 'path';
+
+declare const inputs: Record<string, string | number | boolean | undefined>;
+declare const core: { setFailed(message: string): void };
+declare const $: (strings: TemplateStringsArray, ...values: unknown[]) => {
+	input(data: string): { nothrow(): Promise<{ exitCode: number }> };
+	nothrow(): Promise<{ exitCode: number }>;
+};
+
 const bin = process.env.DATS_BIN;
 if (!bin) throw new Error('DATS_BIN is not set');
 
