@@ -7,8 +7,6 @@ import (
 	"strconv"
 )
 
-//go:generate xgen -i ../../schema/dats.xsd -o generated -l Go -p schema
-
 var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
 
 // UnmarshalXMLAttr validates the exit code attribute value.

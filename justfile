@@ -8,7 +8,7 @@ _help:
 
 # Generate Go code from XSD schema
 generate:
-    go generate ./internal/schema/...
+    cd internal/schema && xgen -i ../../schema/dats.xsd -o generated -l Go -p schema
 
 # Build the binary
 build output="$BUILD_DIR/dats":
