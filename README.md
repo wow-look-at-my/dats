@@ -2,9 +2,9 @@
 
 A Go CLI that runs tests defined in declarative YAML files (`.dats`). It natively executes commands, captures output, and verifies assertions without requiring external test frameworks.
 
-Test commands are **sandboxed by default** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker). Writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs. This is the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
+**Default sandboxes Test commands** (bubblewrap on Linux, `sandbox-exec` on macOS, falling back to docker). Writes are confined to the test's temp directory, and running on the host is an explicit opt-out that belongs to whoever runs. This is the file: `--no-sandbox`. A `.dats` file can narrow its own sandbox but never switch it off. See [docs/cli.md](docs/cli.md#sandboxing---sandbox).
 
-Go programs can skip the binary entirely and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
+Go programs can skip the binary fully and link the runner: `dats.Run(ctx, dats.Options{...})` runs suites in-process, with the same behavior and output as the CLI. See [docs/library.md](docs/library.md).
 
 The whole reference under [docs/](docs/README.md) is compiled into the binary, so a machine with `dats`. Nothing else still has it: `dats docs` lists the topics, `dats docs format` prints the file-format reference, and `dats help <topic>` prints the same pages.
 
@@ -85,7 +85,7 @@ dats docs format
 dats help format
 ```
 
-Both `test` and `syntax` accept any mix of `.dats` files and directories. Directory arguments and no-arg discovery recurse the tree, skipping hidden directories and hidden `.dats` files (leading `.`). Explicitly named files are always accepted. Repeated arguments are deduplicated by absolute path.
+Both `test` and `syntax` accept any mix of `.dats` files and directories. Directory arguments and no-arg discovery recurse the tree, skipping hidden directories and hidden `.dats` files (leading `.`). Explicitly named files are always accepted. Absolute path deduplicates repeated arguments.
 
 ### Subcommands
 

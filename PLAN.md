@@ -27,7 +27,7 @@ Drop the intermediate BATS generation step. Instead of `dats generate foo.dats` 
    - `assert_output --partial` / `refute_output --partial`
    - `assert_line --index N --regexp`
    - Exit code comparison
-4. **Simpler debugging** - Native runner can provide better error messages
+4. **Simpler debugging** - Native runner can give better error messages
 
 ## CLI Interface (unchanged)
 

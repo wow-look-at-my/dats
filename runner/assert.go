@@ -60,24 +60,16 @@ func RefuteLineRegex(lines []string, lineNum int, pattern string) error {
 }
 
 // AssertExitCode checks if the actual exit code matches expected
-func AssertExitCode(actual int, expected *schema.ExitCode) error {
-	if expected == nil {
-		// Default is 0
-		if actual != 0 {
-			return fmt.Errorf("expected exit code 0, got %d", actual)
-		}
-		return nil
-	}
-
-	expectedVal := expected.IntValue()
-	if expected.IsVariable() {
-		switch expected.VariableName() {
+func AssertExitCode(actual int, expected schema.ExitCode) error {
+	expectedVal := expected.Value
+	if expected.Variable != "" {
+		switch expected.Variable {
 		case "EXIT_SUCCESS":
 			expectedVal = 0
 		case "EXIT_FAILURE":
 			expectedVal = 1
 		default:
-			return fmt.Errorf("unknown exit code variable: %s", expected.VariableName())
+			return fmt.Errorf("unknown exit code variable: %s", expected.Variable)
 		}
 	}
 

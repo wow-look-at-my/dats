@@ -12,7 +12,6 @@ import (
 var exitVarPattern = regexp.MustCompile(`^EXIT_[A-Z_]+$`)
 
 // UnmarshalXMLAttr validates the exit code attribute value.
-// Accepts an integer (0-255) or an EXIT_* variable name.
 func (e *ExitCode) UnmarshalXMLAttr(attr xml.Attr) error {
 	if attr.Value == "" {
 		return nil
@@ -30,7 +29,6 @@ func (e *ExitCode) UnmarshalXMLAttr(attr xml.Attr) error {
 	return nil
 }
 
-// IntValue returns the integer value of the exit code, or 0 if it's a variable.
 func (e ExitCode) IntValue() int {
 	if val, err := strconv.Atoi(string(e)); err == nil {
 		return val

@@ -1,20 +1,22 @@
 package runner
 
 import (
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
 	"time"
 
-	"github.com/mhaynie/bats-declarative/internal/schema"
+	"github.com/wow-look-at-my/dats/internal/schema"
+	datsrunner "github.com/wow-look-at-my/dats/runner"
 )
 
 // Runner executes tests from .dats files
 type Runner struct {
 	Verbose   bool
 	KeepTemp  bool // Keep temp directory for debugging
-	Formatter *Formatter
+	Formatter *datsrunner.Formatter
 }
 
 // NewRunner creates a new test runner
@@ -22,7 +24,7 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool) *Runner {
 	return &Runner{
 		Verbose:  verbose,
 		KeepTemp: keepTemp,
-		Formatter: &Formatter{
+		Formatter: &datsrunner.Formatter{
 			Writer:  output,
 			Verbose: verbose,
 		},
@@ -30,7 +32,7 @@ func NewRunner(output io.Writer, verbose bool, keepTemp bool) *Runner {
 }
 
 // RunFile runs all tests in a .dats file
-func (r *Runner) RunFile(path string) (*FileResult, error) {
+func (r *Runner) RunFile(path string) (*datsrunner.FileResult, error) {
 	// Read and parse the input file
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -55,9 +57,9 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 
 	r.Formatter.PrintHeader(path, len(testFile.Test))
 
-	result := &FileResult{
+	result := &datsrunner.FileResult{
 		Path:    path,
-		Results: make([]TestResult, 0, len(testFile.Test)),
+		Results: make([]datsrunner.TestResult, 0, len(testFile.Test)),
 	}
 
 	// Run each test
@@ -79,7 +81,7 @@ func (r *Runner) RunFile(path string) (*FileResult, error) {
 }
 
 // RunTest runs a single test
-func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResult {
+func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) datsrunner.TestResult {
 	start := time.Now()
 
 	// Determine test name
@@ -91,7 +93,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 		name = test.CmdAttr
 	}
 
-	result := TestResult{
+	result := datsrunner.TestResult{
 		Name:  name,
 		Index: index,
 	}
@@ -113,7 +115,7 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	if test.Stdin != nil {
 		stdin = *test.Stdin
 	}
-	execResult, err := Execute(cmd, stdin, nil)
+	execResult, err := datsrunner.Execute(context.Background(), cmd, stdin, nil, 0)
 	if err != nil {
 		result.Failures = append(result.Failures, fmt.Sprintf("execution: %v", err))
 		result.Duration = time.Since(start)
@@ -124,26 +126,26 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Stderr = execResult.Stderr
 
 	// Check exit code
-	if err := AssertExitCode(execResult.ExitCode, test.ExitAttr); err != nil {
+	if err := assertExitCode(execResult.ExitCode, test.ExitAttr); err != nil {
 		result.Failures = append(result.Failures, err.Error())
 	}
 
 	// Check stdout
 	if test.Stdout != nil {
 		for _, pattern := range test.Stdout.Match {
-			if err := AssertContains(execResult.Stdout, pattern); err != nil {
+			if err := datsrunner.AssertContains(execResult.Stdout, pattern); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stdout: %v", err))
 			}
 		}
 
 		for _, lineCheck := range test.Stdout.Line {
-			if err := AssertLineRegex(execResult.StdoutLines, lineCheck.NAttr, lineCheck.Value); err != nil {
+			if err := datsrunner.AssertLineRegex(execResult.StdoutLines, lineCheck.NAttr, lineCheck.Value); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stdout: %v", err))
 			}
 		}
 
 		for _, pattern := range test.Stdout.NotMatch {
-			if err := RefuteContains(execResult.Stdout, pattern); err != nil {
+			if err := datsrunner.RefuteContains(execResult.Stdout, pattern); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("!stdout: %v", err))
 			}
 		}
@@ -152,19 +154,19 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	// Check stderr
 	if test.Stderr != nil {
 		for _, pattern := range test.Stderr.Match {
-			if err := AssertContains(execResult.Stderr, pattern); err != nil {
+			if err := datsrunner.AssertContains(execResult.Stderr, pattern); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stderr: %v", err))
 			}
 		}
 
 		for _, lineCheck := range test.Stderr.Line {
-			if err := AssertLineRegex(execResult.StderrLines, lineCheck.NAttr, lineCheck.Value); err != nil {
+			if err := datsrunner.AssertLineRegex(execResult.StderrLines, lineCheck.NAttr, lineCheck.Value); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("stderr: %v", err))
 			}
 		}
 
 		for _, pattern := range test.Stderr.NotMatch {
-			if err := RefuteContains(execResult.Stderr, pattern); err != nil {
+			if err := datsrunner.RefuteContains(execResult.Stderr, pattern); err != nil {
 				result.Failures = append(result.Failures, fmt.Sprintf("!stderr: %v", err))
 			}
 		}
@@ -180,25 +182,25 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 
 		if output.ExistsAttr != nil {
 			if *output.ExistsAttr {
-				if err := AssertFileExists(path); err != nil {
+				if err := datsrunner.AssertFileExists(path); err != nil {
 					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 				}
 			} else {
-				if err := RefuteFileExists(path); err != nil {
+				if err := datsrunner.RefuteFileExists(path); err != nil {
 					result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 				}
 			}
 		}
 
 		if len(output.Match) > 0 {
-			errs := AssertFileContains(path, output.Match)
+			errs := datsrunner.AssertFileContains(path, output.Match)
 			for _, err := range errs {
 				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 			}
 		}
 
 		if len(output.NotMatch) > 0 {
-			errs := RefuteFileContains(path, output.NotMatch)
+			errs := datsrunner.RefuteFileContains(path, output.NotMatch)
 			for _, err := range errs {
 				result.Failures = append(result.Failures, fmt.Sprintf("file %s: %v", output.NameAttr, err))
 			}
@@ -209,4 +211,30 @@ func (r *Runner) RunTest(test *schema.Test, baseDir string, index int) TestResul
 	result.Duration = time.Since(start)
 
 	return result
+}
+
+func assertExitCode(actual int, expected *schema.ExitCode) error {
+	if expected == nil {
+		if actual != 0 {
+			return fmt.Errorf("expected exit code 0, got %d", actual)
+		}
+		return nil
+	}
+
+	expectedVal := expected.IntValue()
+	if expected.IsVariable() {
+		switch expected.VariableName() {
+		case "EXIT_SUCCESS":
+			expectedVal = 0
+		case "EXIT_FAILURE":
+			expectedVal = 1
+		default:
+			return fmt.Errorf("unknown exit code variable: %s", expected.VariableName())
+		}
+	}
+
+	if actual != expectedVal {
+		return fmt.Errorf("expected exit code %d, got %d", expectedVal, actual)
+	}
+	return nil
 }

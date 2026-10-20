@@ -31,7 +31,9 @@ That directory sits **inside the module root**, under the build directory. A san
 
 ## Suites are sandboxed
 
-The phase does not pass `--no-sandbox`. That decision does not belong to the consumer. The handoff directory is read-only there, like the rest of the working directory. Nothing can declare otherwise. A test whose binary must write to itself copies it into the private `/tmp` first and execs the copy. A file cannot turn its own sandbox off. A suite that needs something specific of the docker backend names it with `image:`.
+The phase does not pass `--no-sandbox`. That decision does not belong to the consumer. The handoff directory is read-only there, like the rest of the working directory. Nothing can declare otherwise. A test whose binary must write to itself copies it into the private `/tmp` first and execs the copy. A file cannot turn its own sandbox off.
+
+A suite that needs something specific of the docker backend names it with `image:`.
 
 A consumer that bootstraps a language toolchain on every invocation must pin an image with that toolchain. Otherwise the docker fallback downloads one per command. bwrap and seatbelt ignore `image` and use the toolchain of the host.
 

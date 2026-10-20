@@ -218,7 +218,7 @@ tests:
 
 ## Snapshot (Golden-File) Assertions
 
-Pin an entire output verbatim without spelling it out in YAML: the captured stream must byte-match a golden file stored next. This is to the `.dats` file. Create and refresh goldens with `dats --update`. See the [file format reference](file-format.md#snapshot-assertions-outputssnapshot) for storage, naming, and normalization details, and `examples/snapshot.dats` in the repository for a runnable demo with committed goldens.
+Pin an entire output verbatim without spelling it out in YAML: the captured stream must byte-match a golden file stored next. This is to the `.dats` file. Create and refresh goldens with `dats --update`. See the [file format reference](file-format.md#snapshot-assertions-outputssnapshot) for storage, naming. And normalization details, and `examples/snapshot.dats` in the repository for a runnable demo with committed goldens.
 
 ```yaml
 tests:
@@ -239,7 +239,7 @@ tests:
 
 ## Sandboxing
 
-Test commands are sandboxed by default, and ordinary tests need no changes for it. Fixtures, `{outputs.X}` and `{shared.X}` all live in the sandbox's writable temp directory.
+Default sandboxes Test commands, and ordinary tests need no changes for it. Fixtures, `{outputs.X}` and `{shared.X}` all live in the sandbox's writable temp directory.
 
 ### Narrowing the sandbox for one file
 

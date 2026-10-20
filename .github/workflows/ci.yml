@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       id-token: write
       contents: write
@@ -46,7 +46,7 @@ jobs:
           for t in localhost 127.0.0.1; do
             ssh -o BatchMode=yes -o ConnectTimeout=5 "$t" 'echo ssh ok; command -v tar bash'
           done
-      - uses: wow-look-at-my/go-toolchain@master
+      - uses: wow-look-at-my/go-toolchain@lkgb
         env:
           # Job level, not step level: the tests run inside the action.
           DATS_TEST_SSH_TARGET: localhost
@@ -56,19 +56,24 @@ jobs:
           apt-depends: 'bubblewrap | docker.io'
 
   schema:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
+      id-token: write
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: wow-look-at-my/json-validator@master
+      - uses: wow-look-at-my/json-validator@lkgb
         with:
           schema: schema.json
           files: testdata/schema/*.json
 
   # This repo's own action, sandboxing examples/sandbox.dats.
   self-hosted-sandbox:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
+    permissions:
+      # The action downloads the published binary from buildhost, whose secret server needs the OIDC grant.
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: ./
@@ -80,8 +85,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: ${{ github.event.repository.visibility == 'public' && fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' || !contains(fromJSON('["ubuntu-latest"]'), matrix.os)) && matrix.os || vars.CI_RUNNER || matrix.os }}
+    permissions:
+      # The action downloads the published binary from buildhost, whose secret server needs the OIDC grant.
+      id-token: write
+      contents: read
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -98,8 +107,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        os: ${{ github.event.repository.visibility == 'public' && fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' || !contains(fromJSON('["ubuntu-latest"]'), matrix.os)) && matrix.os || vars.CI_RUNNER || matrix.os }}
     needs: test
     timeout-minutes: 15
     steps:
@@ -124,8 +133,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        os: ${{ github.event.repository.visibility == 'public' && fromJSON('["ubuntu-latest","macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+    runs-on: ${{ (github.event.repository.visibility == 'public' || !contains(fromJSON('["ubuntu-latest"]'), matrix.os)) && matrix.os || vars.CI_RUNNER || matrix.os }}
     needs: test
     timeout-minutes: 15
     steps:
@@ -154,7 +163,7 @@ jobs:
 
   # A sandbox exercised only under privilege is not exercised.
   sandbox-unprivileged-masked:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.repository.visibility == 'public' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
     needs: test
     steps:
       - uses: actions/checkout@v4

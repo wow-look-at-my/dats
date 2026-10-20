@@ -10,7 +10,7 @@ Docker mounts shapes over `/proc` in every container:
 - a bind of `/dev/null` over `/proc/kcore`, `/proc/keys`, `/proc/latency_stats`, `/proc/timer_list`, `/proc/sched_debug`
 - read-only self-binds of `/proc/bus`, `/proc/fs`, `/proc/irq`, `/proc/sys`, `/proc/sysrq-trigger`
 
-When bwrap unshares a user namespace, every mount copied into the new mount namespace becomes `MNT_LOCKED`. The sandbox must not be able to reveal what they hide by unmounting them. `mount_too_revealing()` in `fs/namespace.c` then refuses a fresh procfs unless some procfs mount in that namespace is fully visible, and each of those shapes. This is on its own is enough to disqualify the container's `/proc`. bwrap reports the refusal as:
+When bwrap unshares a user namespace, every mount copied into the new mount namespace becomes `MNT_LOCKED`. The sandbox must not be able to show what they hide by unmounting them. `mount_too_revealing()` in `fs/namespace.c` then refuses a fresh procfs unless some procfs mount in that namespace is fully visible, and each of those shapes. This is on its own is enough to disqualify the container's `/proc`. bwrap reports the refusal as:
 
 ```
 bwrap: Can't mount proc on /newroot/proc: Operation not permitted
@@ -22,7 +22,7 @@ Nothing in the container can clear those mounts. Unmounting them needs `CAP_SYS_
 
 ### `subset=pid` does not help
 
-A procfs mounted `-o subset=pid` is a "restricted variant", and current mainline exempts restricted variants from the visibility rule entirely. That exemption is not in any shipping kernel yet: `v6.18`'s `mount_too_revealing()` goes straight to `!mnt_already_visible(...)` with no such branch. It measured on 6.18 both a plain procfs and `-o subset=pid` are refused under masking. It will also hide `/proc/cpuinfo`, `/proc/meminfo`, `/proc/stat` and `/proc/mounts`, which real test commands read.
+A procfs mounted `-o subset=pid` is a "restricted variant", and current mainline exempts restricted variants from the visibility rule fully. That exemption is not in any shipping kernel yet: `v6.18`'s `mount_too_revealing()` goes straight to `!mnt_already_visible(...)` with no such branch. It measured on 6.18 both a plain procfs and `-o subset=pid` are refused under masking. It will also hide `/proc/cpuinfo`, `/proc/meminfo`, `/proc/stat` and `/proc/mounts`, which real test commands read.
 
 ## What the fallback keeps
 
@@ -38,7 +38,7 @@ A procfs mounted `-o subset=pid` is a "restricted variant", and current mainline
 | hides the other processes | yes | **no** |
 | reads another process's `environ`, `mem`, `maps`, `cwd`, fd targets | no | no |
 
-The loss is concealment, in ONE direction: a command can see the other processes of the container dats runs in. It cannot be seen by them, and the container's `/proc` never contained the host's processes to begin with. Docker gave the container its own PID namespace long before bwrap ran.
+The loss is concealment, in ONE direction: a command can see the other processes of the container dats runs in. Them cannot see it, and the container's `/proc` never contained the host's processes to start with. Docker gave the container its own PID namespace long before bwrap ran.
 
 ## The host's process table is never in scope, and that is CHECKED
 
